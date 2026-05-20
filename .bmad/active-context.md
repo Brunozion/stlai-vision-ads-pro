@@ -1080,10 +1080,35 @@ O que foi feito:
 
 - O job passa a armazenar e retornar `video_frames`.
 - Cada clipe pode trazer `prepared_frame_url`, dimensões do frame e `aspect_ratio`.
-- O passo 5 e o Resultado final exibem "Imagens para vídeo 9:16/16:9" separadas da galeria quadrada.
+- O passo 5 e o Resultado final exibem "Imagens no formato 9:16/16:9" separadas da galeria quadrada.
 - Os clipes e frames usam layout vertical para 9:16 e horizontal para 16:9.
 - O preparo de frames para Veo passou a encaixar o produto com margem segura, sem crop agressivo.
 - O prompt do Veo foi reforçado para manter produto inteiro visível, especialmente no formato horizontal.
+
+Status:
+
+- Correção concluida.
+
+## 2026-05-20 - Imagens no formato e primeiro frame correto
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-veo-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O preparo de imagem para Veo agora cria um canvas final no aspect ratio escolhido com fundo cover/blur e foreground em contain.
+- O provider continua enviando o `base64` do frame preparado ao Veo, não a imagem quadrada original.
+- O prompt do Veo reforça que o primeiro frame deve bater com a imagem formatada e manter o mesmo aspect ratio até o final.
+- A UI pública passou a usar "Imagens no formato 9:16/16:9".
+- Cards passaram a exibir "Imagem 1" a "Imagem 4", com botões de baixar e ampliar.
 
 Status:
 

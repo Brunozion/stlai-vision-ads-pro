@@ -702,7 +702,7 @@ Decidido
 
 ### Decisao
 
-Os frames preparados para o Veo devem ser salvos no job e exibidos publicamente em uma seção separada chamada "Imagens para vídeo", com o formato escolhido no título: "Imagens para vídeo 9:16" ou "Imagens para vídeo 16:9".
+Os frames preparados para o Veo devem ser salvos no job e exibidos publicamente em uma seção separada chamada "Imagens no formato", com o formato escolhido no título: "Imagens no formato 9:16" ou "Imagens no formato 16:9".
 
 Os players dos clipes devem respeitar o formato escolhido. Em 9:16, cards e players usam proporção vertical; em 16:9, usam proporção horizontal.
 
@@ -715,6 +715,28 @@ O usuário precisa ver não só as imagens quadradas originais, mas também os f
 ### Impacto
 
 O contrato do job passa a retornar `video_frames`. A interface separa galeria original, clipes preparados e imagens preparadas para vídeo. O provider Veo gera frames com encaixe seguro e reforça o prompt para manter o produto inteiro visível.
+
+### Status
+
+Decidido
+
+## 2026-05-20 - Imagens no formato como asset final
+
+### Decisao
+
+A seção pública deixa de usar o termo técnico "frame" e passa a se chamar "Imagens no formato 9:16" ou "Imagens no formato 16:9".
+
+Essas imagens são assets úteis para o usuário baixar e usar em anúncios, stories, reels e marketplaces, não uma área de debug. Elas devem ser exatamente os inputs formatados enviados ao provider de vídeo.
+
+O vídeo não pode começar com uma imagem quadrada quando o formato escolhido é 9:16 ou 16:9. O provider deve receber apenas a imagem já preparada no aspect ratio final, e o prompt deve exigir que o primeiro frame do vídeo respeite essa imagem formatada.
+
+### Motivo
+
+No teste real, o clipe parecia começar quadrado e depois abrir para o formato final. Isso quebra a percepção de qualidade e indica que o input visual precisa nascer no aspect ratio escolhido.
+
+### Impacto
+
+O preparo de imagem para vídeo usa canvas final com fundo cover/blur da própria imagem e foreground em contain, evitando padding branco técnico. A UI mostra "Imagem 1" a "Imagem 4", com baixar e ampliar funcionais.
 
 ### Status
 

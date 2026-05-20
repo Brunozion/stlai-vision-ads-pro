@@ -314,11 +314,11 @@ class STLAI_Veo_Provider {
                 'Purpose:',
                 $purpose_line,
                 'Reference priority:',
-                'Use the provided image as the exact full scene and exact product reference. The script is only marketing context. Do not create scenes from the script. Follow the reference image exactly. The selected image has priority over any text context.',
+                'Use the provided formatted image as the exact first frame, full scene, aspect ratio and product reference. The script is only marketing context. Do not create scenes from the script. Follow the formatted reference image exactly. The selected formatted image has priority over any text context.',
                 'Clip role:',
                 ( $role_label ?: 'Product visual clip' ) . ( $role_direction ? '. Direction: ' . $role_direction : '' ),
                 'Visual direction:',
-                'Create one continuous 8-second silent, visual-only product video from the same image. Single continuous shot. No scene changes. No cuts. No internal transitions. No fade inside the clip. No before/after. No montage. No new location. Do not create a new scene. Do not change the background. Do not change the composition. Do not cut to another shot. Do not fade to another scene. Do not transition inside the clip. Keep the product mostly still, like a realistic high-quality smartphone product recording. Only add subtle camera movement, gentle handheld feel, slow zoom in or slow zoom out, and slight natural parallax. Avoid exaggerated animation.',
+                'Create one continuous 8-second silent, visual-only product video from the provided formatted image. The first video frame must match the formatted image composition and aspect ratio. Maintain the same aspect ratio from the first frame to the last frame. Do not transition from a square image into a vertical or horizontal layout. Do not reveal padding, canvas changes, reframing, format conversion or layout changes inside the clip. Single continuous shot. No scene changes. No cuts. No internal transitions. No fade inside the clip. No before/after. No montage. No new location. Do not create a new scene. Do not change the background. Do not change the composition. Do not cut to another shot. Do not fade to another scene. Do not transition inside the clip. Keep the product mostly still, like a realistic high-quality smartphone product recording. Only add subtle camera movement, gentle handheld feel, slow zoom in or slow zoom out, and slight natural parallax. Avoid exaggerated animation.',
                 'Framing and safe area:',
                 'Keep the full product visible during most of the clip. Do not crop the head, face, top, base, support, ring, hook, stand, surface or any important product detail. Use stable camera movement, light natural motion, and a professional smartphone product-recording feel. ' . $format_direction,
                 'Product anchoring rules:',
@@ -365,11 +365,20 @@ class STLAI_Veo_Provider {
             return self::error( 'IMAGE_PREPROCESSOR_UNAVAILABLE', 'Não foi possível preparar a imagem no formato do vídeo.', 'Falha ao criar canvas GD.' );
         }
 
-        $white = imagecolorallocate( $canvas, 255, 255, 255 );
-        imagefilledrectangle( $canvas, 0, 0, $target_w, $target_h, $white );
+        $bg_scale = max( $target_w / $src_w, $target_h / $src_h );
+        $bg_w = max( 1, (int) ceil( $src_w * $bg_scale ) );
+        $bg_h = max( 1, (int) ceil( $src_h * $bg_scale ) );
+        $bg_x = (int) floor( ( $target_w - $bg_w ) / 2 );
+        $bg_y = (int) floor( ( $target_h - $bg_h ) / 2 );
 
-        $safe_w = (int) floor( $target_w * 0.9 );
-        $safe_h = (int) floor( $target_h * 0.9 );
+        imagecopyresampled( $canvas, $source, $bg_x, $bg_y, 0, 0, $bg_w, $bg_h, $src_w, $src_h );
+        for ( $i = 0; $i < 18; $i++ ) {
+            imagefilter( $canvas, IMG_FILTER_GAUSSIAN_BLUR );
+        }
+        imagefilter( $canvas, IMG_FILTER_BRIGHTNESS, 8 );
+
+        $safe_w = (int) floor( $target_w * 0.94 );
+        $safe_h = (int) floor( $target_h * ( '16:9' === $aspect_ratio ? 0.9 : 0.92 ) );
         $scale = min( $safe_w / $src_w, $safe_h / $src_h );
         $draw_w = max( 1, (int) floor( $src_w * $scale ) );
         $draw_h = max( 1, (int) floor( $src_h * $scale ) );
@@ -401,17 +410,24 @@ class STLAI_Veo_Provider {
 
             list( $target_w, $target_h ) = self::frame_dimensions_for_aspect_ratio( $aspect_ratio );
 
-            $source->thumbnailImage( (int) floor( $target_w * 0.9 ), (int) floor( $target_h * 0.9 ), true );
-            $source->setImageBackgroundColor( 'white' );
-            $source->setImagePage( 0, 0, 0, 0 );
-            $x = (int) floor( ( $target_w - $source->getImageWidth() ) / 2 );
-            $y = (int) floor( ( $target_h - $source->getImageHeight() ) / 2 );
-            $source->extentImage( $target_w, $target_h, -$x, -$y );
-            $source->setImageFormat( 'jpeg' );
-            $source->setImageCompressionQuality( 92 );
+            $background = clone $source;
+            $background->cropThumbnailImage( $target_w, $target_h );
+            $background->blurImage( 0, 22 );
+            $background->modulateImage( 108, 100, 100 );
+            $background->setImageFormat( 'jpeg' );
 
-            $saved = self::save_prepared_frame_binary( $source->getImagesBlob(), $aspect_ratio, $target_w, $target_h, 'imagick' );
+            $foreground = clone $source;
+            $foreground->thumbnailImage( (int) floor( $target_w * 0.94 ), (int) floor( $target_h * ( '16:9' === $aspect_ratio ? 0.9 : 0.92 ) ), true );
+            $x = (int) floor( ( $target_w - $foreground->getImageWidth() ) / 2 );
+            $y = (int) floor( ( $target_h - $foreground->getImageHeight() ) / 2 );
+            $background->compositeImage( $foreground, Imagick::COMPOSITE_OVER, $x, $y );
+            $background->setImageFormat( 'jpeg' );
+            $background->setImageCompressionQuality( 92 );
 
+            $saved = self::save_prepared_frame_binary( $background->getImagesBlob(), $aspect_ratio, $target_w, $target_h, 'imagick' );
+
+            $foreground->clear();
+            $background->clear();
             $source->clear();
 
             return $saved;

@@ -1055,7 +1055,7 @@ class STLAI_Video_Job_Service {
                     'index'        => (int) ( $clip['index'] ?? 0 ),
                     'url'          => $clip['prepared_frame_url'],
                     'aspect_ratio' => $clip['aspect_ratio'] ?? '',
-                    'label'        => 'Imagem para vídeo ' . (int) ( $clip['index'] ?? 0 ),
+                    'label'        => 'Imagem ' . (int) ( $clip['index'] ?? 0 ),
                     'width'        => (int) ( $clip['prepared_frame_width'] ?? 0 ),
                     'height'       => (int) ( $clip['prepared_frame_height'] ?? 0 ),
                 )
@@ -1071,7 +1071,7 @@ class STLAI_Video_Job_Service {
             'index'        => $index,
             'url'          => esc_url_raw( $frame['url'] ?? '' ),
             'aspect_ratio' => sanitize_text_field( $frame['aspect_ratio'] ?? '' ),
-            'label'        => sanitize_text_field( $frame['label'] ?? ( 'Imagem para vídeo ' . $index ) ),
+            'label'        => sanitize_text_field( $frame['label'] ?? ( 'Imagem ' . $index ) ),
             'width'        => (int) ( $frame['width'] ?? 0 ),
             'height'       => (int) ( $frame['height'] ?? 0 ),
         );

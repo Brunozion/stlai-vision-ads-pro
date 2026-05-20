@@ -1138,7 +1138,7 @@ function videoFormatClass(){
 
 function videoFramesTitle(){
   const format=normalizeVideoFormat(S.video.format);
-  return format ? `Imagens para vídeo ${format}` : "Imagens para vídeo";
+  return format ? `Imagens no formato ${format}` : "Imagens no formato";
 }
 
 function recoverableVideoErrorStatus(status){
@@ -1899,7 +1899,7 @@ function videoFramesFromClips(clips){
       index:Number(clip.index || idx + 1),
       url:clip.prepared_frame_url,
       aspect_ratio:clip.aspect_ratio || S.video.format,
-      label:`Imagem para vídeo ${Number(clip.index || idx + 1)}`,
+      label:`Imagem ${Number(clip.index || idx + 1)}`,
       width:Number(clip.prepared_frame_width || 0),
       height:Number(clip.prepared_frame_height || 0)
     }));
@@ -1916,7 +1916,7 @@ function normalizedVideoFrames(){
       index,
       url:frame.url,
       aspect_ratio:frame.aspect_ratio || S.video.format,
-      label:frame.label || `Imagem para vídeo ${index}`,
+      label:`Imagem ${index}`,
       width:Number(frame.width || frame.prepared_frame_width || 0),
       height:Number(frame.height || frame.prepared_frame_height || 0)
     };
@@ -1926,9 +1926,35 @@ function normalizedVideoFrames(){
 
 function renderVideoFramesGridMarkup(frames){
   return frames.map(frame=>`<div class="video-frame-card">
-    <div class="video-frame-title">Frame ${Number(frame.index || 0)}</div>
-    <div class="video-frame-media"><img src="${esc(frame.url || "")}" alt="${esc(frame.label || "Imagem para vídeo")}"></div>
+    <div class="video-frame-title">Imagem ${Number(frame.index || 0)}</div>
+    <div class="video-frame-media">
+      <img src="${esc(frame.url || "")}" alt="${esc(frame.label || "Imagem no formato")}">
+      <div class="video-frame-actions">
+        <button class="btn bs bsm" type="button" data-frame-action="download" data-url="${esc(frame.url || "")}" data-label="${esc(frame.label || `Imagem ${Number(frame.index || 0)}`)}">Baixar</button>
+        <button class="btn bs bsm" type="button" data-frame-action="preview" data-url="${esc(frame.url || "")}">Ampliar</button>
+      </div>
+    </div>
   </div>`).join("");
+}
+
+function bindVideoFrameActions(root){
+  if(!root || root.dataset.frameActionsBound==="1") return;
+  root.dataset.frameActionsBound="1";
+  root.addEventListener("click", event=>{
+    const btn=event.target.closest("[data-frame-action]");
+    if(!btn || !root.contains(btn)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const url=btn.dataset.url || "";
+    if(!url) return;
+    if(btn.dataset.frameAction==="download"){
+      dlImg(url, btn.dataset.label || "imagem-formato");
+      return;
+    }
+    if(btn.dataset.frameAction==="preview"){
+      openLightbox(url);
+    }
+  });
 }
 
 function videoFramesSignature(frames){
@@ -1959,6 +1985,7 @@ function renderVideoFrames(){
     grid.innerHTML=renderVideoFramesGridMarkup(frames);
     grid.dataset.sig=sig;
   }
+  bindVideoFrameActions(grid);
 }
 
 async function generateTestVeoClip(btn){
@@ -2190,6 +2217,7 @@ function renderSummaryVideo(){
         framesGrid.innerHTML=renderVideoFramesGridMarkup(frames);
         framesGrid.dataset.sig=framesSig;
       }
+      bindVideoFrameActions(framesGrid);
     }else{
       framesGrid.innerHTML="";
       framesGrid.dataset.sig="";

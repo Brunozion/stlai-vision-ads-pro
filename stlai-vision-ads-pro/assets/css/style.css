@@ -323,10 +323,13 @@ body::before{content:'';position:fixed;top:-200px;left:-200px;width:700px;height
 .video-frame-card{background:var(--bg-el);border:1px solid var(--bd);border-radius:12px;padding:12px}
 .video-frames-grid.is-format-vertical .video-frame-card{max-width:260px;width:100%;justify-self:center}
 .video-frame-title{font-family:'Syne',sans-serif;font-size:12px;font-weight:800;color:#fff;margin-bottom:10px}
-.video-frame-media{width:100%;border-radius:10px;overflow:hidden;background:#0b0b14;border:1px solid rgba(255,255,255,.06)}
+.video-frame-media{width:100%;border-radius:10px;overflow:hidden;background:#0b0b14;border:1px solid rgba(255,255,255,.06);position:relative}
 .video-frames-grid.is-format-vertical .video-frame-media{aspect-ratio:9/16}
 .video-frames-grid.is-format-horizontal .video-frame-media{aspect-ratio:16/9}
 .video-frame-media img{width:100%;height:100%;display:block;object-fit:cover}
+.video-frame-actions{position:absolute;inset:auto 8px 8px 8px;display:flex;gap:6px;justify-content:center;opacity:0;transform:translateY(6px);transition:opacity .2s,transform .2s}
+.video-frame-media:hover .video-frame-actions{opacity:1;transform:translateY(0)}
+.video-frame-actions .btn{padding:6px 8px;font-size:10px;background:rgba(10,10,20,.82);backdrop-filter:blur(10px)}
 .video-audio-box audio,.sum-video-audio-wrap audio{width:100%;display:block}
 .sum-video-final-wrap{background:var(--bg-el);border:1px solid rgba(45,212,191,.28);border-radius:10px;padding:12px;margin-bottom:10px}
 .sum-video-final-wrap span,.sum-video-clips-wrap span,.sum-video-frames-wrap span{display:block;font-size:10px;font-family:'Syne',sans-serif;font-weight:800;color:var(--tx3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
@@ -393,6 +396,7 @@ body::before{content:'';position:fixed;top:-200px;left:-200px;width:700px;height
 @media(max-width:700px){
   .main{padding:20px 14px 60px}
   .g2,.g3,.g4,.voice-grid,.video-prep-grid,.video-pipeline-list,.video-format-grid,.video-clips-grid,.video-frames-grid{grid-template-columns:1fr}
+  .video-frame-actions{opacity:1;transform:none}
   .video-panel-head{flex-direction:column;align-items:stretch}
   .video-shot{width:88px;height:88px}
   .video-format-card{min-height:116px}

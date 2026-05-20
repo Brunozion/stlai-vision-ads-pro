@@ -911,9 +911,9 @@ Regras:
 - Se `status` chegar atrasado como `generating_audio` ou `generating_narration`, o frontend pode inferir `generating_clip_X` quando `current_clip_index` ou `clips.length` indicar uma fase mais avançada.
 - Com 4 clipes prontos e sem `final_video_url`, a UI deve mostrar composição em fila/processamento, não narração.
 
-## 17. Frames preparados para vídeo
+## 17. Imagens no formato para vídeo
 
-Os endpoints de job podem retornar `video_frames`, com os frames preparados no aspect ratio usado para gerar cada clipe no Veo:
+Os endpoints de job podem retornar `video_frames`, com as imagens já preparadas no aspect ratio usado para gerar cada clipe no Veo. Publicamente, esses assets são exibidos como "Imagens no formato 9:16" ou "Imagens no formato 16:9":
 
 ```json
 {
@@ -922,7 +922,7 @@ Os endpoints de job podem retornar `video_frames`, com os frames preparados no a
       "index": 1,
       "url": "https://.../uploads/stlai-vision-video/frames/stlai-veo-frame-xxx.jpg",
       "aspect_ratio": "9:16",
-      "label": "Imagem para vídeo 1",
+      "label": "Imagem 1",
       "width": 1080,
       "height": 1920
     }
@@ -933,6 +933,7 @@ Os endpoints de job podem retornar `video_frames`, com os frames preparados no a
 Regras:
 
 - `video_frames` é separado da galeria quadrada original.
-- Cada frame representa a imagem preparada e enviada ao Veo para aquele clipe.
-- Se o frame não existir, a UI não deve quebrar e deve apenas ocultar a seção.
+- Cada item representa exatamente a imagem formatada enviada ao Veo para aquele clipe.
+- Se a imagem formatada não existir, a UI não deve quebrar e deve apenas ocultar a seção.
+- O vídeo não deve começar com uma imagem quadrada quando o usuário escolheu 9:16 ou 16:9.
 - Os clipes também podem carregar metadados auxiliares `prepared_frame_url`, `prepared_frame_width`, `prepared_frame_height` e `aspect_ratio`.
