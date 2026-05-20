@@ -582,11 +582,12 @@
   <div class="arow" style="margin-top:24px">
     <button class="btn bs" onclick="go(4)">← Voltar para imagens</button>
     <div class="arr">
-      <button class="btn bs" onclick="go(6)">Ir para resultado</button>
+      <button class="btn bs" id="btn-video-result" onclick="goVideoResult()">Ir para resultado</button>
       <button class="btn bs" id="btn-test-veo-clip" onclick="generateTestVeoClip(this)">Testar clipe IA</button>
       <button class="btn bp" id="btn-generate-video" onclick="mockGenerateVideo()">Gerar vídeo</button>
     </div>
   </div>
+  <div class="video-result-hint" id="video-result-hint" style="display:none">Seu vídeo está sendo produzido. Acompanhe o progresso no Resultado Final.</div>
 </section>
 
 <section class="screen" id="s6">
@@ -662,7 +663,7 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> Gerar mais 4 imagens por vez
     </button>
   </div>
-  <div class="smb">
+  <div class="smb" id="result-video-section">
     <div class="ssh">
       <div class="sst"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--coral)"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg> Vídeo</div>
     </div>

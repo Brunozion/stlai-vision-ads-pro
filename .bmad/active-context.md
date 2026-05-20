@@ -1010,3 +1010,29 @@ O que foi feito:
 Status:
 
 - Correção concluida.
+
+## 2026-05-20 - Ajustes UX do fluxo de vídeo e galerias
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- .bmad/active-context.md
+- .bmad/decisions.md
+
+O que foi feito:
+
+- "Gerar vídeo" não redireciona mais automaticamente para Resultado final.
+- O usuário permanece no passo 5 enquanto o job segue rodando e o polling continua.
+- O botão de Resultado no passo 5 ganha motion/glow quando há vídeo em geração, pronto ou erro recuperável.
+- O botão muda para "Acompanhar resultado" durante processamento e "Ver resultado final" quando pronto.
+- Ao clicar no botão, o frontend abre o passo 6 e rola até a seção de vídeo.
+- Corrigidos os steps do motion para acender "Clipes IA" durante geração/retry de clipes.
+- Os players de clipes preparados deixam de ser recriados a cada tick do motion, evitando flicker.
+- A galeria do passo 4 deixa de exibir botões de hover; cards servem para seleção de vídeo.
+- A galeria do Resultado final mantém botões funcionais de baixar, ampliar e regenerar.
+
+Status:
+
+- Correção concluida.

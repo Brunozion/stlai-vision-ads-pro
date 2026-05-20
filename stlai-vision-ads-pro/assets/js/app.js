@@ -723,19 +723,21 @@ async function genMoreImages(btn) {
     const masterUrl = await apiGenerateImage(prompt, ref);
     const croppedUrls = await splitImageInto4(masterUrl);
     
-    const sumG4 = document.getElementById("sum-g4");
     const grid4 = document.getElementById("grid4");
 
     for(let i=0; i<4; i++){
        const url = await resizeSquare(croppedUrls[i], getSelectedSquarePx());
        const tKey = "extra_" + Date.now() + "_" + i;
        const tLabel = "Ambientada Extra " + (S.imgs4.length + 1);
-       S.imgs4.push({ key: tKey, label: tLabel, url });
-       
-       const tileHtml = `<div class="img4-tile" id="t4-${tKey}"><img src="${url}" alt="${esc(tLabel)}" style="opacity:0; transition:opacity 0.6s ease" onload="this.style.opacity=1"><div class="img4-tile-lbl">${esc(tLabel)}</div><div class="img4-tile-ov" style="flex-direction:row;gap:5px"><button class="btn bs bsm" onclick="dlImg('${url}','${escAttr(tLabel)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button><button class="btn bs bsm" onclick="openLightbox('${url}')" title="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button></div></div>`;
-       
-       if (sumG4) sumG4.insertAdjacentHTML('beforeend', tileHtml);
-       if (grid4) grid4.insertAdjacentHTML('beforeend', tileHtml);
+       const img={ key: tKey, label: tLabel, url };
+       S.imgs4.push(img);
+       if (grid4) {
+         const tile=document.createElement("div");
+         tile.className="img4-tile";
+         tile.id=`t4-${tKey}`;
+         grid4.appendChild(tile);
+         renderTile4(img, url);
+       }
     }
     
     // Update score since we added 4 images
@@ -889,7 +891,7 @@ function renderTile4(t,url){
   const tile=document.getElementById(`t4-${t.key}`);
   if(!tile)return;
   tile.classList.remove("gen", "error");
-  tile.innerHTML=`<img src="${url}" alt="${esc(t.label)}" style="opacity:0; transition:opacity 0.6s ease" onload="this.style.opacity=1"><div class="img4-tile-lbl">${esc(t.label)}</div><div class="img4-tile-ov" style="flex-direction:row;gap:5px"><button class="btn bs bsm" onclick="window.triggerDlImg('${t.key}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button><button class="btn bs bsm" onclick="window.triggerLightbox('${t.key}')" title="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button><button class="btn bs bsm" onclick="window.regenSingleImage('${t.key}')" title="Regerar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button></div>`;
+  tile.innerHTML=`<img src="${url}" alt="${esc(t.label)}" style="opacity:0; transition:opacity 0.6s ease" onload="this.style.opacity=1"><div class="img4-tile-lbl">${esc(t.label)}</div>`;
   tile.onclick=(e)=>{ if(e.target.closest('button')) return; togVid(t.key,tile); };
 }
 
@@ -1011,6 +1013,15 @@ function goVideoStep(){
   go(5);
 }
 
+function goVideoResult(){
+  unlock(6);
+  go(6);
+  setTimeout(()=>{
+    const target=document.getElementById("result-video-section");
+    if(target) target.scrollIntoView({behavior:"smooth", block:"start"});
+  }, 120);
+}
+
 function dlImg(url,label){
   const a=document.createElement("a");
   a.href=url;
@@ -1119,6 +1130,10 @@ function recoverableVideoErrorStatus(status){
   return ["clips_partial_error","clip_generation_error","composition_error","composition_pending","ready_for_composition"].includes(String(status || ""));
 }
 
+function hasVideoActivity(){
+  return Boolean(S.video.jobId || S.video.renderJobId || S.video.finalVideoUrl || S.video.audioUrl || (Array.isArray(S.video.clips) && S.video.clips.length));
+}
+
 function isVideoBusyStatus(status){
   return status==="submitting"
     || status==="queued"
@@ -1217,6 +1232,28 @@ function stopVideoProgressLoop(clearVisual=true){
   }
 }
 
+function renderVideoResultCta(){
+  const btn=document.getElementById("btn-video-result");
+  const hint=document.getElementById("video-result-hint");
+  if(!btn) return;
+  const busy=isVideoBusyStatus(S.video.status);
+  const hasFinal=Boolean(S.video.finalVideoUrl);
+  const recoverable=recoverableVideoErrorStatus(S.video.status) || (S.video.status==="error" && Boolean(S.video.jobId));
+  const active=busy || hasFinal || recoverable || hasVideoActivity();
+  btn.classList.toggle("is-video-live", active);
+  if(hasFinal){
+    btn.textContent="Ver resultado final";
+  }else if(busy){
+    btn.textContent="Acompanhar resultado";
+  }else{
+    btn.textContent="Ir para resultado";
+  }
+  if(hint){
+    hint.style.display=busy ? "block" : "none";
+    hint.textContent="Seu vídeo está sendo produzido. Você pode acompanhar o processamento no Resultado Final enquanto continua revisando suas criações.";
+  }
+}
+
 async function mockGenerateVideo(){
   const ajaxurl=S.cfg.ajaxurl || window.stlaiConfig?.ajaxurl;
   if(!ajaxurl){
@@ -1300,7 +1337,7 @@ async function mockGenerateVideo(){
     S.video.renderJobId=data.render_job_id || "";
     renderVideoStatus();
     unlock(6);
-    go(6);
+    renderSummaryVideo();
     toast(S.video.finalVideoUrl ? "Vídeo final preparado com sucesso." : (S.video.renderJobId ? "Composição final iniciada." : (S.video.clips.length===4 ? "4 clipes gerados com sucesso." : (S.video.audioUrl ? "Narração gerada com sucesso." : "Job de vídeo criado com sucesso."))),"success");
     if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
       S.video.mockReady=true;
@@ -1338,7 +1375,7 @@ async function mockGenerateVideo(){
     renderVideoStatus();
     if(S.video.jobId && (S.video.clips.length || S.video.status==="composition_error" || S.video.status==="composition_pending")){
       unlock(6);
-      go(6);
+      renderSummaryVideo();
     }
     toast(S.video.message,"error");
   }
@@ -1353,6 +1390,7 @@ function renderVideoStatus(){
   const displayStatus=videoStatusForDisplay();
   box.classList.toggle("ready", S.video.status==="ready" || S.video.status==="prepared" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_queued" || S.video.status==="composition_processing" || S.video.status==="composition_error");
   renderVideoActionButton();
+  renderVideoResultCta();
   renderVideoTestClip();
   renderVideoClips();
   renderFinalVideo();
@@ -1537,13 +1575,31 @@ function videoMotionState(){
     visible=false;
   }
 
-  return {visible,stage,progress,title,subtitle,mode};
+  const fourClipsReady=(Array.isArray(S.video.clips) ? S.video.clips : []).filter(clip=>clip && clip.url).length>=4;
+  let stepStates=["pending","pending","pending","pending"];
+  if(status==="submitting" || status==="queued" || status==="generating_audio" || status==="generating_narration"){
+    stepStates=["active","pending","pending","pending"];
+  }else if(clipMatch || retryMatch || status==="generating_clips"){
+    stepStates=["done","active","pending","pending"];
+  }else if(status==="clips_ready" || status==="ready_for_composition"){
+    stepStates=["done","done","pending","pending"];
+  }else if(status==="composition_pending" || status==="composition_queued" || status==="composing" || status==="composing_final_video" || status==="composition_processing"){
+    stepStates=["done","done","active","pending"];
+  }else if(status==="composition_error"){
+    stepStates=[S.video.audioUrl ? "done" : "pending", fourClipsReady ? "done" : "pending", "active", "pending"];
+  }else if(status==="clips_partial_error" || status==="clip_generation_error"){
+    stepStates=[S.video.audioUrl ? "done" : "pending", "active", "pending", "pending"];
+  }
+
+  return {visible,stage,progress,title,subtitle,mode,stepStates};
 }
 
 function renderMotionMarkup(state){
   const steps=["Narração","Clipes IA","Composição","Finalização"];
   const stepHtml=steps.map((label,index)=>{
-    const cls=index<state.stage ? "done" : (index===state.stage ? "active" : "pending");
+    const cls=Array.isArray(state.stepStates)
+      ? state.stepStates[index]
+      : (index<state.stage ? "done" : (index===state.stage ? "active" : "pending"));
     return `<div class="video-motion-step ${cls}"><b>${esc(label)}</b></div>`;
   }).join("");
   const progress=Math.max(0,Math.min(100,Number(state.progress || 0)));
@@ -1702,20 +1758,37 @@ function renderVideoClipsGridMarkup(clips){
   return cards.join("");
 }
 
+function videoClipsGridSignature(clips){
+  const normalized=Array.isArray(clips) ? clips : [];
+  const clipSig=normalized
+    .map((clip,idx)=>`${clip.index || idx + 1}:${clip.url || ""}`)
+    .join("|");
+  const status=videoStatusForDisplay();
+  const placeholderSig=isVideoBusyStatus(S.video.status) || recoverableVideoErrorStatus(S.video.status)
+    ? `${status}:${activeVideoClipIndex()}:${S.video.failedClipIndex || 0}`
+    : "";
+  return `${clipSig}::${placeholderSig}`;
+}
+
 function renderVideoClips(){
   const box=document.getElementById("video-clips-box");
   const grid=document.getElementById("video-clips-grid");
   if(!box || !grid) return;
   const clips=Array.isArray(S.video.clips) ? S.video.clips : [];
   const html=renderVideoClipsGridMarkup(clips);
+  const signature=videoClipsGridSignature(clips);
   if(!html){
     grid.innerHTML="";
+    grid.dataset.sig="";
     box.style.display="none";
     return;
   }
 
   box.style.display="block";
-  grid.innerHTML=html;
+  if(grid.dataset.sig!==signature){
+    grid.innerHTML=html;
+    grid.dataset.sig=signature;
+  }
 
   grid.querySelectorAll("video").forEach(video=>{
     video.muted=true;
@@ -1857,7 +1930,7 @@ function renderSummaryVideo(){
     badgeText="Pendente";
   }else if(composing){
     statusText="Compondo vídeo final";
-    noteText="Montando o vídeo completo com clipes e narração.";
+    noteText="Seu vídeo está sendo produzido. Enquanto isso, você pode revisar as imagens, textos e clipes já criados.";
     badgeText="Gerando";
   }else if(generatingClip){
     statusText=retryMatch ? "Ajustando clipe IA" : (clipMatch ? `Gerando clipe ${clipMatch[1]} de 4...` : "Gerando clipes...");
@@ -1917,15 +1990,20 @@ function renderSummaryVideo(){
   }
   if(clipsWrap && clipsGrid){
     const clipsHtml=renderVideoClipsGridMarkup(clips);
+    const clipsSig=videoClipsGridSignature(clips);
     if(clipsHtml){
       clipsWrap.style.display="block";
-      clipsGrid.innerHTML=clipsHtml;
+      if(clipsGrid.dataset.sig!==clipsSig){
+        clipsGrid.innerHTML=clipsHtml;
+        clipsGrid.dataset.sig=clipsSig;
+      }
       clipsGrid.querySelectorAll("video").forEach(video=>{
         video.muted=true;
         video.defaultMuted=true;
       });
     }else{
       clipsGrid.innerHTML="";
+      clipsGrid.dataset.sig="";
       clipsWrap.style.display="none";
     }
   }
@@ -2137,11 +2215,14 @@ function popSum(){
     const tile = document.createElement("div");
     tile.className = "img4-tile";
     tile.id = `sum-t4-${img.key}`;
-    tile.innerHTML = `<div class="img-ph-pulse"></div><img src="${img.url}" alt="${esc(img.label)}"><div class="img4-tile-lbl">${esc(img.label)}</div><div class="img4-tile-ov" style="flex-direction:row;gap:5px"><button class="btn bs bsm dl-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button><button class="btn bs bsm lb-btn" title="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button><button class="btn bs bsm rg-btn" title="Regerar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button></div>`;
+    const canRegen=Boolean(currentImageTypes().find(type=>type.key===img.key));
+    const regenButton=canRegen ? `<button class="btn bs bsm rg-btn" type="button" title="Regerar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button>` : "";
+    tile.innerHTML = `<img src="${img.url}" alt="${esc(img.label)}"><div class="img4-tile-lbl">${esc(img.label)}</div><div class="img4-tile-ov" style="flex-direction:row;gap:5px"><button class="btn bs bsm dl-btn" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button><button class="btn bs bsm lb-btn" type="button" title="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button>${regenButton}</div>`;
     
     tile.querySelector('.dl-btn').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); triggerDlImg(img.key); });
     tile.querySelector('.lb-btn').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); triggerLightbox(img.key); });
-    tile.querySelector('.rg-btn').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); regenSingleImage(img.key); });
+    const regenBtn=tile.querySelector('.rg-btn');
+    if(regenBtn) regenBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); regenSingleImage(img.key); });
 
     g.appendChild(tile);
   });

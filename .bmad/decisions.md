@@ -637,3 +637,43 @@ O frontend usa progresso visual por fase:
 ### Status
 
 Decidido
+
+## 2026-05-20 - Geração de vídeo permanece no passo 5
+
+### Decisao
+
+Ao clicar em "Gerar vídeo", o usuário deve permanecer no passo 5. O fluxo não redireciona automaticamente para o Resultado final.
+
+O botão do passo 5 para Resultado final passa a receber destaque visual quando houver job de vídeo em andamento, final pronto ou erro recuperável. Ao clicar nesse botão, o frontend navega para o passo 6 e rola diretamente até a seção de vídeo.
+
+### Motivo
+
+No teste real, o redirecionamento automático quebrou a expectativa de controle do usuário. O usuário deve decidir quando deseja acompanhar o processamento na página final.
+
+### Impacto
+
+O polling continua ativo no passo 5. O CTA muda para "Acompanhar resultado" durante geração e "Ver resultado final" quando o vídeo está pronto. A seção de vídeo do Resultado final permanece o ponto de acompanhamento quando o usuário escolhe abri-la.
+
+### Status
+
+Decidido
+
+## 2026-05-20 - Galeria do passo 4 focada em seleção
+
+### Decisao
+
+Na galeria de imagens do passo 4, os botões de hover para download, ampliar e regenerar devem ficar ocultos/removidos. O card deve priorizar seleção/desseleção para vídeo.
+
+Na galeria do Resultado final, os botões de ampliar, baixar e regenerar podem existir, desde que funcionem. Botões sem ação não devem aparecer.
+
+### Motivo
+
+No passo 4, o usuário está selecionando imagens para vídeo e pode clicar acidentalmente em botões sobrepostos. No Resultado final, a galeria já é uma área de revisão/exportação e pode oferecer ações de imagem.
+
+### Impacto
+
+O passo 4 mantém o check visual de seleção. O Resultado final renderiza botões próprios e mantém eventos de download, lightbox e regeneração.
+
+### Status
+
+Decidido
