@@ -936,4 +936,5 @@ Regras:
 - Cada item representa exatamente a imagem formatada enviada ao Veo para aquele clipe.
 - Se a imagem formatada não existir, a UI não deve quebrar e deve apenas ocultar a seção.
 - O vídeo não deve começar com uma imagem quadrada quando o usuário escolheu 9:16 ou 16:9.
+- A imagem formatada não pode ser square foreground sobre blurred background, padding, barras ou moldura. Deve preencher o aspect ratio escolhido como asset comercial final.
 - Os clipes também podem carregar metadados auxiliares `prepared_frame_url`, `prepared_frame_width`, `prepared_frame_height` e `aspect_ratio`.

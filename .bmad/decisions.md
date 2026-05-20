@@ -736,7 +736,27 @@ No teste real, o clipe parecia começar quadrado e depois abrir para o formato f
 
 ### Impacto
 
-O preparo de imagem para vídeo usa canvas final com fundo cover/blur da própria imagem e foreground em contain, evitando padding branco técnico. A UI mostra "Imagem 1" a "Imagem 4", com baixar e ampliar funcionais.
+O preparo de imagem para vídeo usa crop/recomposição nativa no aspect ratio final. É proibido usar square foreground com blurred background, padding visível, barras ou moldura como resultado final. A UI mostra "Imagem 1" a "Imagem 4", com baixar e ampliar funcionais.
+
+### Status
+
+Decidido
+
+## 2026-05-20 - Proibição de moldura blur em imagens no formato
+
+### Decisao
+
+"Imagens no formato" são assets comerciais reais, não previews técnicos. O input do vídeo deve ser exatamente a imagem já preparada no formato final.
+
+Fica proibido usar como resultado final: imagem quadrada centralizada sobre fundo desfocado, imagem quadrada sobre fundo esticado, padding visível, barras laterais, moldura perceptível ou placeholder. Quando a imagem original não estiver no aspect ratio escolhido, o preparo deve usar crop/recomposição nativa, priorizando produto inteiro quando possível e aceitando recorte de fundo/cenário.
+
+### Motivo
+
+A solução com foreground quadrado e blur ainda parecia uma imagem quadrada dentro de um canvas maior, e fazia o clipe nascer com aparência errada para anúncios em 9:16 ou 16:9.
+
+### Impacto
+
+O frame enviado ao Veo passa a preencher integralmente o formato escolhido. O vídeo deve começar com esse frame real no formato final, sem transição de quadrado para vertical/horizontal.
 
 ### Status
 

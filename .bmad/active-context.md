@@ -1104,11 +1104,32 @@ Arquivos alterados:
 
 O que foi feito:
 
-- O preparo de imagem para Veo agora cria um canvas final no aspect ratio escolhido com fundo cover/blur e foreground em contain.
+- O preparo de imagem para Veo agora cria um frame final nativo no aspect ratio escolhido usando crop/recomposição, sem quadrado central sobre blur.
 - O provider continua enviando o `base64` do frame preparado ao Veo, não a imagem quadrada original.
 - O prompt do Veo reforça que o primeiro frame deve bater com a imagem formatada e manter o mesmo aspect ratio até o final.
 - A UI pública passou a usar "Imagens no formato 9:16/16:9".
 - Cards passaram a exibir "Imagem 1" a "Imagem 4", com botões de baixar e ampliar.
+
+Status:
+
+- Correção concluida.
+
+## 2026-05-20 - Correção regressão frame quadrado com blur
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-veo-provider.php
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- Removida a estratégia de foreground quadrado com fundo desfocado.
+- O frame formatado passa a ser gerado por crop/recomposição nativa no aspect ratio final.
+- A preparação GD prefere crop inteligente com heurística simples de foco; fallback é crop central cover.
+- O fallback Imagick usa crop nativo no aspect ratio final, sem blur/moldura.
+- O prompt reforça que não pode revelar square source framing, smaller centered square ou blurred background framing.
 
 Status:
 

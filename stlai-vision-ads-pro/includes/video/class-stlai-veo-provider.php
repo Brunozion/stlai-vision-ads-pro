@@ -318,7 +318,7 @@ class STLAI_Veo_Provider {
                 'Clip role:',
                 ( $role_label ?: 'Product visual clip' ) . ( $role_direction ? '. Direction: ' . $role_direction : '' ),
                 'Visual direction:',
-                'Create one continuous 8-second silent, visual-only product video from the provided formatted image. The first video frame must match the formatted image composition and aspect ratio. Maintain the same aspect ratio from the first frame to the last frame. Do not transition from a square image into a vertical or horizontal layout. Do not reveal padding, canvas changes, reframing, format conversion or layout changes inside the clip. Single continuous shot. No scene changes. No cuts. No internal transitions. No fade inside the clip. No before/after. No montage. No new location. Do not create a new scene. Do not change the background. Do not change the composition. Do not cut to another shot. Do not fade to another scene. Do not transition inside the clip. Keep the product mostly still, like a realistic high-quality smartphone product recording. Only add subtle camera movement, gentle handheld feel, slow zoom in or slow zoom out, and slight natural parallax. Avoid exaggerated animation.',
+                'Create one continuous 8-second silent, visual-only product video from the provided formatted image. The first video frame must match the formatted image composition and aspect ratio. Maintain the exact same aspect ratio from the first frame to the last frame. Do not transition from a square image into a vertical or horizontal layout. Do not reveal square source framing. Do not place the subject inside a smaller centered square. Do not create blurred background framing. Do not reveal padding, canvas changes, reframing, format conversion or layout changes inside the clip. The full frame must feel natively composed for the selected aspect ratio. Single continuous shot. No scene changes. No cuts. No internal transitions. No fade inside the clip. No before/after. No montage. No new location. Do not create a new scene. Do not change the background. Do not change the composition. Do not cut to another shot. Do not fade to another scene. Do not transition inside the clip. Keep the product mostly still, like a realistic high-quality smartphone product recording. Only add subtle camera movement, gentle handheld feel, slow zoom in or slow zoom out, and slight natural parallax. Avoid exaggerated animation.',
                 'Framing and safe area:',
                 'Keep the full product visible during most of the clip. Do not crop the head, face, top, base, support, ring, hook, stand, surface or any important product detail. Use stable camera movement, light natural motion, and a professional smartphone product-recording feel. ' . $format_direction,
                 'Product anchoring rules:',
@@ -330,12 +330,12 @@ class STLAI_Veo_Provider {
     }
 
     private static function prepare_frame_for_aspect_ratio( array $image, $aspect_ratio ) {
-        if ( class_exists( 'Imagick' ) ) {
-            return self::prepare_frame_with_imagick( $image, $aspect_ratio );
-        }
-
         if ( function_exists( 'imagecreatefromstring' ) && function_exists( 'imagecreatetruecolor' ) ) {
             return self::prepare_frame_with_gd( $image, $aspect_ratio );
+        }
+
+        if ( class_exists( 'Imagick' ) ) {
+            return self::prepare_frame_with_imagick( $image, $aspect_ratio );
         }
 
         return self::error( 'IMAGE_PREPROCESSOR_UNAVAILABLE', 'Não foi possível preparar a imagem no formato do vídeo.', 'GD/Imagick indisponível.' );
@@ -365,27 +365,8 @@ class STLAI_Veo_Provider {
             return self::error( 'IMAGE_PREPROCESSOR_UNAVAILABLE', 'Não foi possível preparar a imagem no formato do vídeo.', 'Falha ao criar canvas GD.' );
         }
 
-        $bg_scale = max( $target_w / $src_w, $target_h / $src_h );
-        $bg_w = max( 1, (int) ceil( $src_w * $bg_scale ) );
-        $bg_h = max( 1, (int) ceil( $src_h * $bg_scale ) );
-        $bg_x = (int) floor( ( $target_w - $bg_w ) / 2 );
-        $bg_y = (int) floor( ( $target_h - $bg_h ) / 2 );
-
-        imagecopyresampled( $canvas, $source, $bg_x, $bg_y, 0, 0, $bg_w, $bg_h, $src_w, $src_h );
-        for ( $i = 0; $i < 18; $i++ ) {
-            imagefilter( $canvas, IMG_FILTER_GAUSSIAN_BLUR );
-        }
-        imagefilter( $canvas, IMG_FILTER_BRIGHTNESS, 8 );
-
-        $safe_w = (int) floor( $target_w * 0.94 );
-        $safe_h = (int) floor( $target_h * ( '16:9' === $aspect_ratio ? 0.9 : 0.92 ) );
-        $scale = min( $safe_w / $src_w, $safe_h / $src_h );
-        $draw_w = max( 1, (int) floor( $src_w * $scale ) );
-        $draw_h = max( 1, (int) floor( $src_h * $scale ) );
-        $draw_x = (int) floor( ( $target_w - $draw_w ) / 2 );
-        $draw_y = (int) floor( ( $target_h - $draw_h ) / 2 );
-
-        imagecopyresampled( $canvas, $source, $draw_x, $draw_y, 0, 0, $draw_w, $draw_h, $src_w, $src_h );
+        $crop = self::smart_crop_rect_gd( $source, $src_w, $src_h, $target_w / $target_h );
+        imagecopyresampled( $canvas, $source, 0, 0, $crop['x'], $crop['y'], $target_w, $target_h, $crop['w'], $crop['h'] );
 
         $saved = self::save_prepared_frame_from_gd( $canvas, $aspect_ratio );
 
@@ -410,24 +391,12 @@ class STLAI_Veo_Provider {
 
             list( $target_w, $target_h ) = self::frame_dimensions_for_aspect_ratio( $aspect_ratio );
 
-            $background = clone $source;
-            $background->cropThumbnailImage( $target_w, $target_h );
-            $background->blurImage( 0, 22 );
-            $background->modulateImage( 108, 100, 100 );
-            $background->setImageFormat( 'jpeg' );
+            $source->cropThumbnailImage( $target_w, $target_h );
+            $source->setImageFormat( 'jpeg' );
+            $source->setImageCompressionQuality( 92 );
 
-            $foreground = clone $source;
-            $foreground->thumbnailImage( (int) floor( $target_w * 0.94 ), (int) floor( $target_h * ( '16:9' === $aspect_ratio ? 0.9 : 0.92 ) ), true );
-            $x = (int) floor( ( $target_w - $foreground->getImageWidth() ) / 2 );
-            $y = (int) floor( ( $target_h - $foreground->getImageHeight() ) / 2 );
-            $background->compositeImage( $foreground, Imagick::COMPOSITE_OVER, $x, $y );
-            $background->setImageFormat( 'jpeg' );
-            $background->setImageCompressionQuality( 92 );
+            $saved = self::save_prepared_frame_binary( $source->getImagesBlob(), $aspect_ratio, $target_w, $target_h, 'imagick' );
 
-            $saved = self::save_prepared_frame_binary( $background->getImagesBlob(), $aspect_ratio, $target_w, $target_h, 'imagick' );
-
-            $foreground->clear();
-            $background->clear();
             $source->clear();
 
             return $saved;
@@ -447,6 +416,129 @@ class STLAI_Veo_Provider {
         }
 
         return self::save_prepared_frame_binary( $binary, $aspect_ratio, $target_w, $target_h, 'gd' );
+    }
+
+    private static function smart_crop_rect_gd( $source, $src_w, $src_h, $target_ratio ) {
+        $src_ratio = $src_w / max( 1, $src_h );
+        if ( $src_ratio > $target_ratio ) {
+            $crop_h = $src_h;
+            $crop_w = (int) floor( $src_h * $target_ratio );
+        } else {
+            $crop_w = $src_w;
+            $crop_h = (int) floor( $src_w / $target_ratio );
+        }
+
+        $focus = self::detect_focus_box_gd( $source, $src_w, $src_h );
+        $center_x = $src_w / 2;
+        $center_y = $src_h / 2;
+
+        if ( $focus ) {
+            $center_x = ( $focus['x1'] + $focus['x2'] ) / 2;
+            $center_y = ( $focus['y1'] + $focus['y2'] ) / 2;
+            $focus_w = ( $focus['x2'] - $focus['x1'] ) * 1.08;
+            $focus_h = ( $focus['y2'] - $focus['y1'] ) * 1.08;
+
+            if ( $crop_w < $focus_w ) {
+                $crop_w = min( $src_w, (int) ceil( $focus_w ) );
+                $crop_h = (int) ceil( $crop_w / $target_ratio );
+            }
+
+            if ( $crop_h < $focus_h ) {
+                $crop_h = min( $src_h, (int) ceil( $focus_h ) );
+                $crop_w = (int) ceil( $crop_h * $target_ratio );
+            }
+
+            if ( $crop_w > $src_w ) {
+                $crop_w = $src_w;
+                $crop_h = (int) floor( $crop_w / $target_ratio );
+            }
+
+            if ( $crop_h > $src_h ) {
+                $crop_h = $src_h;
+                $crop_w = (int) floor( $crop_h * $target_ratio );
+            }
+        }
+
+        $crop_w = max( 1, min( $src_w, (int) $crop_w ) );
+        $crop_h = max( 1, min( $src_h, (int) $crop_h ) );
+        $crop_x = (int) round( $center_x - ( $crop_w / 2 ) );
+        $crop_y = (int) round( $center_y - ( $crop_h / 2 ) );
+        $crop_x = max( 0, min( $crop_x, $src_w - $crop_w ) );
+        $crop_y = max( 0, min( $crop_y, $src_h - $crop_h ) );
+
+        return array(
+            'x' => $crop_x,
+            'y' => $crop_y,
+            'w' => $crop_w,
+            'h' => $crop_h,
+        );
+    }
+
+    private static function detect_focus_box_gd( $source, $src_w, $src_h ) {
+        $corner_points = array(
+            array( 0, 0 ),
+            array( max( 0, $src_w - 1 ), 0 ),
+            array( 0, max( 0, $src_h - 1 ) ),
+            array( max( 0, $src_w - 1 ), max( 0, $src_h - 1 ) ),
+        );
+        $bg = array( 'r' => 0, 'g' => 0, 'b' => 0 );
+        foreach ( $corner_points as $point ) {
+            $rgb = self::gd_pixel_rgba( $source, $point[0], $point[1] );
+            $bg['r'] += $rgb['r'];
+            $bg['g'] += $rgb['g'];
+            $bg['b'] += $rgb['b'];
+        }
+        $bg['r'] /= 4;
+        $bg['g'] /= 4;
+        $bg['b'] /= 4;
+
+        $step = max( 1, (int) floor( min( $src_w, $src_h ) / 140 ) );
+        $x1 = $src_w;
+        $y1 = $src_h;
+        $x2 = 0;
+        $y2 = 0;
+        $hits = 0;
+        $samples = 0;
+
+        for ( $y = 0; $y < $src_h; $y += $step ) {
+            for ( $x = 0; $x < $src_w; $x += $step ) {
+                $samples++;
+                $rgb = self::gd_pixel_rgba( $source, $x, $y );
+                $distance = abs( $rgb['r'] - $bg['r'] ) + abs( $rgb['g'] - $bg['g'] ) + abs( $rgb['b'] - $bg['b'] );
+                $opaque_subject = isset( $rgb['a'] ) && $rgb['a'] < 96 && $distance > 38;
+                if ( $distance <= 58 && ! $opaque_subject ) {
+                    continue;
+                }
+
+                $hits++;
+                $x1 = min( $x1, $x );
+                $y1 = min( $y1, $y );
+                $x2 = max( $x2, $x );
+                $y2 = max( $y2, $y );
+            }
+        }
+
+        if ( $samples <= 0 || $hits < 8 || ( $hits / $samples ) > 0.82 ) {
+            return null;
+        }
+
+        $pad = max( 8, (int) floor( min( $src_w, $src_h ) * 0.04 ) );
+        return array(
+            'x1' => max( 0, $x1 - $pad ),
+            'y1' => max( 0, $y1 - $pad ),
+            'x2' => min( $src_w, $x2 + $pad ),
+            'y2' => min( $src_h, $y2 + $pad ),
+        );
+    }
+
+    private static function gd_pixel_rgba( $source, $x, $y ) {
+        $color = imagecolorat( $source, (int) $x, (int) $y );
+        return array(
+            'a' => ( $color >> 24 ) & 0x7F,
+            'r' => ( $color >> 16 ) & 0xFF,
+            'g' => ( $color >> 8 ) & 0xFF,
+            'b' => $color & 0xFF,
+        );
     }
 
     private static function save_prepared_frame_binary( $binary, $aspect_ratio, $width, $height, $processor ) {
