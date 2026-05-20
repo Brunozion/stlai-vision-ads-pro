@@ -1,0 +1,35 @@
+# Sistema
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+!.vscode/extensions.json
+
+# Zips/exportações
+*.zip
+
+# Logs
+*.log
+debug.log
+
+# Node/dependências, se algum dia tiver
+node_modules/
+
+# Uploads/arquivos gerados
+uploads/
+stlai-vision-audio/
+stlai-vision-video/
+
+# Backups
+backup/
+backups/
+
+# Arquivos temporários
+*.tmp
+*.bak
+*.swp
+
+# Ambiente
+.env
+.env.*

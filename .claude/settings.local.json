@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Test-Path \"$env:USERPROFILE\\\\.master-skill\\\\config.json\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"$env:USERPROFILE\\\\.master-skill\\\\logs\" | Out-Null; Write-Output \"Diretório criado: $env:USERPROFILE\\\\.master-skill\")"
+    ]
+  }
+}

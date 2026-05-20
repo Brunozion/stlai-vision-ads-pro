@@ -1,0 +1,579 @@
+# API Contracts — STLAI Vision Ads Pro
+
+## 1. Objetivo
+
+Este arquivo documenta os contratos atuais entre o frontend do wizard, os endpoints AJAX do WordPress e os serviços internos de vídeo do plugin.
+
+Ele reflete o estado do projeto após as Stories 4, 5, 6, 7A, 7A.2 e 7B:
+
+- geração de narração real com ElevenLabs;
+- geração de clipe real isolado com Veo para teste;
+- geração sequencial de 4 clipes visuais com Veo;
+- vídeo final composto ainda pendente.
+
+## 2. Princípios gerais
+
+- O frontend chama apenas endpoints AJAX do WordPress.
+- API keys ficam exclusivamente no backend.
+- O frontend público não deve expor nomes técnicos ou credenciais de providers.
+- Não expor API keys, headers sensíveis, payloads completos com base64 ou detalhes internos de autenticação.
+- O frontend público não deve depender diretamente de Veo, ElevenLabs, Seedance ou MuAPI.
+- Erros retornados ao frontend devem ser seguros: mensagem amigável, código e debug resumido sem segredos.
+- O vídeo final composto ainda não existe nesta etapa; o retorno atual prepara áudio e clipes visuais para composição futura.
+
+## 3. Endpoints AJAX atuais
+
+Todos os endpoints usam `admin-ajax.php` e são registrados com versões autenticadas e públicas (`wp_ajax_` e `wp_ajax_nopriv_`) quando usados pelo shortcode público.
+
+Endpoints atuais:
+
+- `stlai_create_video_job`
+- `stlai_check_video_status`
+- `stlai_get_video_result`
+- `stlai_generate_test_veo_clip`
+
+## 4. Contratos por endpoint
+
+### 4.1 `stlai_create_video_job`
+
+Objetivo:
+
+Criar um job de vídeo, gerar narração com ElevenLabs e gerar 4 clipes visuais mudos com Veo, ainda sem compor o vídeo final.
+
+Entrada esperada:
+
+```json
+{
+  "action": "stlai_create_video_job",
+  "selected_images": ["https://..."],
+  "narration_type": "persuasiva",
+  "format": "9:16",
+  "script": "Texto da narração",
+  "product_name": "Nome do produto",
+  "product_description": "Descrição do produto"
+}
+```
+
+Campos:
+
+- `selected_images`: array de imagens selecionadas pelo usuário. O fluxo principal espera de 4 a 8 imagens.
+- `narration_type`: `persuasiva` ou `emocional`.
+- `format`: `9:16` ou `16:9` no MVP. Estado legado `1:1` deve cair para `9:16`.
+- `script`: texto de narração enviado ao ElevenLabs.
+- `product_name`: nome do produto.
+- `product_description`: descrição do produto.
+
+Resposta de sucesso:
+
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "stlai_video_...",
+    "status": "ready_for_composition",
+    "progress": 96,
+    "message": "4 clipes gerados. Composição final será feita na próxima etapa.",
+    "audio_url": "https://.../uploads/stlai-vision-audio/....mp3",
+    "clips": [
+      {
+        "index": 1,
+        "role": "apresentacao_geral",
+        "label": "Clipe 1 — Apresentação geral",
+        "url": "https://.../uploads/stlai-vision-video/....mp4",
+        "duration": 8,
+        "muted": true
+      }
+    ],
+    "final_video_url": "",
+    "thumbnail_url": "",
+    "composition_status": "pending",
+    "format": "9:16",
+    "narration_type": "persuasiva"
+  }
+}
+```
+
+Resposta de erro:
+
+```json
+{
+  "success": false,
+  "data": {
+    "message": "Mensagem amigável",
+    "code": "VEO_CLIP_2_ERROR",
+    "debug": "Resumo seguro",
+    "job_id": "stlai_video_...",
+    "failed_clip": 2,
+    "clips": []
+  }
+}
+```
+
+Status possíveis durante o fluxo:
+
+- `queued`
+- `generating_audio`
+- `generating_clip_1`
+- `generating_clip_2`
+- `generating_clip_3`
+- `generating_clip_4`
+- `clips_ready`
+- `ready_for_composition`
+- `error`
+
+Observações:
+
+- Os 4 clipes são gerados sequencialmente.
+- Clipes já gerados podem ser preservados no job se uma etapa posterior falhar.
+- O vídeo final composto ainda não é gerado neste endpoint.
+
+### 4.2 `stlai_check_video_status`
+
+Objetivo:
+
+Consultar o estado atual de um job já criado.
+
+Entrada esperada:
+
+```json
+{
+  "action": "stlai_check_video_status",
+  "job_id": "stlai_video_..."
+}
+```
+
+Resposta de sucesso:
+
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "stlai_video_...",
+    "status": "generating_clip_3",
+    "progress": 78,
+    "message": "Gerando clipe 3 de 4...",
+    "audio_url": "https://...",
+    "clips": [],
+    "final_video_url": "",
+    "thumbnail_url": "",
+    "composition_status": "pending"
+  }
+}
+```
+
+Resposta de erro:
+
+```json
+{
+  "success": false,
+  "data": {
+    "message": "Job de video nao encontrado.",
+    "code": "JOB_NOT_FOUND",
+    "debug": ""
+  }
+}
+```
+
+Status possíveis:
+
+- `queued`
+- `generating_audio`
+- `generating_clip_1`
+- `generating_clip_2`
+- `generating_clip_3`
+- `generating_clip_4`
+- `clips_ready`
+- `ready_for_composition`
+- `ready`
+- `error`
+- `cancelled`
+
+Observações:
+
+- `ready_for_composition` significa que áudio e clipes estão prontos, mas a composição final ainda não foi executada.
+- `ready` fica reservado para o fluxo final composto ou para compatibilidade com o mock anterior.
+- `cancelled` é status reservado para contrato futuro.
+
+### 4.3 `stlai_get_video_result`
+
+Objetivo:
+
+Obter o resultado persistido de um job.
+
+Entrada esperada:
+
+```json
+{
+  "action": "stlai_get_video_result",
+  "job_id": "stlai_video_..."
+}
+```
+
+Resposta de sucesso:
+
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "stlai_video_...",
+    "status": "ready_for_composition",
+    "progress": 96,
+    "message": "4 clipes gerados. Composição final será feita na próxima etapa.",
+    "audio_url": "https://...",
+    "clips": [],
+    "final_video_url": "",
+    "thumbnail_url": "",
+    "composition_status": "pending"
+  }
+}
+```
+
+Resposta de erro:
+
+```json
+{
+  "success": false,
+  "data": {
+    "message": "Job de video nao encontrado.",
+    "code": "JOB_NOT_FOUND",
+    "debug": ""
+  }
+}
+```
+
+Status possíveis:
+
+- `ready_for_composition`
+- `ready`
+- `error`
+- demais status persistidos do job, se a consulta ocorrer antes do fim do processamento.
+
+Observações:
+
+- `final_video_url` e `thumbnail_url` ainda são pendentes.
+- A composição final com áudio será definida em story futura.
+
+### 4.4 `stlai_generate_test_veo_clip`
+
+Objetivo:
+
+Gerar um único clipe real de teste com Veo a partir da primeira imagem selecionada, sem acionar o fluxo completo dos 4 clipes.
+
+Entrada esperada:
+
+```json
+{
+  "action": "stlai_generate_test_veo_clip",
+  "selected_images": ["https://..."],
+  "format": "9:16",
+  "script": "Texto ou roteiro opcional",
+  "product_name": "Nome do produto",
+  "product_description": "Descrição do produto"
+}
+```
+
+Resposta de sucesso:
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "ready",
+    "message": "Clipe de teste gerado com sucesso.",
+    "test_clip_url": "https://.../uploads/stlai-vision-video/....mp4",
+    "operation_id": "operations/...",
+    "debug": {
+      "model": "veo-3.1-lite-generate-preview",
+      "aspectRatio": "9:16",
+      "mimeType": "image/jpeg",
+      "uses_image_bytesBase64Encoded": true,
+      "prepared_frame_url": "https://.../uploads/stlai-vision-video/frames/....jpg"
+    }
+  }
+}
+```
+
+Resposta de erro:
+
+```json
+{
+  "success": false,
+  "data": {
+    "message": "Nao foi possivel gerar o clipe de teste.",
+    "code": "VEO_HTTP_ERROR",
+    "debug": "HTTP 400 — resumo seguro sem API key"
+  }
+}
+```
+
+Status possíveis:
+
+- `ready`
+- `error`
+
+Observações:
+
+- O teste usa apenas a primeira imagem selecionada.
+- O player de teste deve vir `muted`.
+- O nome técnico do provider não deve aparecer como texto público.
+
+## 5. Status atuais do job
+
+- `queued`: job criado e aguardando processamento.
+- `generating_audio`: narração ElevenLabs em geração.
+- `generating_clip_1`: geração do clipe 1.
+- `generating_clip_2`: geração do clipe 2.
+- `generating_clip_3`: geração do clipe 3.
+- `generating_clip_4`: geração do clipe 4.
+- `clips_ready`: clipes visuais disponíveis.
+- `ready_for_composition`: áudio e 4 clipes prontos; composição final pendente.
+- `ready`: resultado final pronto ou compatibilidade com fluxo mock anterior.
+- `error`: job falhou.
+- `cancelled`: reservado para cancelamento futuro.
+
+## 6. Payloads atuais
+
+Campos usados pelo fluxo de vídeo:
+
+- `selected_images`: imagens selecionadas pelo usuário.
+- `narration_type`: estilo de narração, `persuasiva` ou `emocional`.
+- `format`: formato do vídeo, `9:16` ou `16:9`.
+- `script`: roteiro/narração.
+- `product_name`: nome do produto.
+- `product_description`: descrição do produto.
+
+Regras atuais:
+
+- O MVP de vídeo aceita apenas `9:16` e `16:9`.
+- `1:1` está fora do MVP e deve cair para `9:16` se aparecer por estado legado.
+- O frontend não deve enviar nem receber API keys.
+- O backend deve sanitizar entradas antes de usar providers externos.
+
+## 7. Retornos atuais
+
+Campos comuns retornados pelos endpoints de vídeo:
+
+- `job_id`: identificador do job salvo em transient.
+- `status`: status atual do processamento.
+- `progress`: progresso numérico aproximado.
+- `message`: mensagem amigável para UI.
+- `audio_url`: URL pública do áudio ElevenLabs.
+- `clips`: lista pública dos clipes gerados.
+- `final_video_url`: pendente; ainda vazio até a composição final.
+- `thumbnail_url`: pendente; ainda vazio até a composição final.
+- `composition_status`: `pending` enquanto a composição final não existir.
+- `format`: formato normalizado.
+- `narration_type`: tipo de narração usado.
+- `error_code`: código de erro, quando houver falha.
+- `error_message`: mensagem de erro segura.
+- `debug`: resumo seguro para diagnóstico.
+
+Contrato público de item em `clips`:
+
+```json
+{
+  "index": 1,
+  "role": "apresentacao_geral",
+  "label": "Clipe 1 — Apresentação geral",
+  "url": "https://...",
+  "duration": 8,
+  "muted": true
+}
+```
+
+Observação:
+
+- Caminhos locais (`path`) podem existir no job interno, mas não devem ser expostos desnecessariamente ao frontend público.
+
+## 8. Contrato do ElevenLabs
+
+Objetivo:
+
+Gerar a narração real do anúncio a partir do `script`.
+
+Contrato atual:
+
+- Provider executado somente no backend.
+- Gera `audio_url` real.
+- Salva arquivos em `uploads/stlai-vision-audio/`.
+- Não expõe API key no frontend.
+- Usa voice ID configurado para narração emocional ou persuasiva.
+- Usa modelo configurado ou fallback seguro do provider.
+- Retorna dados públicos suficientes para o job, sem headers sensíveis.
+
+Entradas principais:
+
+- texto da narração;
+- `narration_type`.
+
+Saída interna esperada:
+
+```json
+{
+  "audio_url": "https://.../uploads/stlai-vision-audio/....mp3",
+  "audio_path": "/.../uploads/stlai-vision-audio/....mp3",
+  "provider": "elevenlabs",
+  "model": "eleven_multilingual_v2",
+  "voice_id": "..."
+}
+```
+
+## 9. Contrato do Veo
+
+Objetivo:
+
+Gerar clipes visuais mudos para o pipeline de vídeo.
+
+Contrato atual:
+
+- Provider executado somente no backend.
+- Modelo esperado no MVP: `veo-3.1-lite-generate-preview`.
+- Base URL esperada: `https://generativelanguage.googleapis.com/v1beta`.
+- Salva clipes em `uploads/stlai-vision-video/`.
+- Salva frames preparados em `uploads/stlai-vision-video/frames/`.
+- Formatos aceitos no MVP: `9:16` e `16:9`.
+- `1:1` está fora do MVP e cai para `9:16` quando aparecer por estado legado.
+- Frames enviados ao provider são preparados no aspect ratio final.
+- O preparo de frame usa imagem única full-frame com cover crop central.
+- Não usar contain, fundo desfocado, imagem duplicada, picture-in-picture, reflection ou bordas pretas.
+- Clipes devem ser tratados como visual only.
+- Se FFmpeg estiver disponível, o áudio nativo do clipe deve ser removido.
+- Se FFmpeg não estiver disponível, o frontend deve exibir players `muted`.
+- Os players dos clipes no frontend devem ficar `muted` por padrão.
+
+Payload externo conceitual usado no Veo:
+
+```json
+{
+  "instances": [
+    {
+      "prompt": "Prompt estruturado e restritivo",
+      "image": {
+        "bytesBase64Encoded": "...",
+        "mimeType": "image/jpeg"
+      }
+    }
+  ],
+  "parameters": {
+    "durationSeconds": 8,
+    "aspectRatio": "9:16"
+  }
+}
+```
+
+Regras importantes:
+
+- Nunca enviar `inlineData` ou `inline_data`.
+- `bytesBase64Encoded` deve conter somente base64 puro, sem prefixo `data:image/...;base64,`.
+- `mimeType` aceitos: `image/jpeg`, `image/png`, `image/webp`.
+- Não logar base64 completo.
+- Debug seguro pode informar modelo, aspect ratio, mime type, uso de `image.bytesBase64Encoded` e frame preparado.
+
+## 10. Contrato dos 4 clipes
+
+Os 4 clipes são gerados sequencialmente, com duração de 8 segundos cada.
+
+Clipe 1:
+
+- Role: `apresentacao_geral`
+- Label: `Clipe 1 — Apresentação geral`
+- Direção: produto parado, destaque geral, câmera suave, leve zoom in ou zoom out, visual limpo.
+
+Clipe 2:
+
+- Role: `uso_contexto`
+- Label: `Clipe 2 — Uso / contexto`
+- Direção: produto em contexto de uso como chaveiro decorativo para chaves, bolsas, mochila ou acessório, sem inventar função.
+
+Clipe 3:
+
+- Role: `detalhe_acabamento`
+- Label: `Clipe 3 — Detalhe / acabamento`
+- Direção: foco em textura, acabamento, material, detalhes do produto, aparência 3D/impressa e qualidade visual.
+
+Clipe 4:
+
+- Role: `hero_fechamento`
+- Label: `Clipe 4 — Hero / fechamento`
+- Direção: take final premium, produto valorizado, composição bonita, iluminação comercial e movimento suave.
+
+Restrições comuns dos prompts:
+
+- O produto deve permanecer com identidade, formato, cor, material, textura e design preservados.
+- Se o produto for um chaveiro, tratar sempre como chaveiro decorativo.
+- Não transformar o produto em abridor de garrafa, ferramenta, brinquedo para pets ou gadget funcional.
+- Não inventar função nova.
+- Manter o produto quase parado.
+- Evitar animação exagerada, partes móveis ou mudança de pose.
+- Usar apenas movimento sutil de câmera, zoom lento e parallax leve.
+- Sem narração, fala, música ou efeitos sonoros.
+- Sem logos, texto, legendas, marcas d'água ou pessoas, salvo se já presentes na imagem de referência.
+
+## 11. Erros conhecidos
+
+ElevenLabs:
+
+- `MISSING_ELEVENLABS_API_KEY`
+- `MISSING_VOICE_ID`
+- `EMPTY_NARRATION_TEXT`
+- `NARRATION_TOO_LONG`
+- `ELEVENLABS_HTTP_ERROR`
+- `ELEVENLABS_REQUEST_ERROR`
+- `ELEVENLABS_INVALID_RESPONSE`
+- `AUDIO_SAVE_ERROR`
+
+Veo e imagem:
+
+- `MISSING_VIDEO_API_KEY`
+- `MISSING_VIDEO_MODEL`
+- `MISSING_VIDEO_BASE_URL`
+- `MISSING_SELECTED_IMAGE`
+- `IMAGE_FETCH_ERROR`
+- `INVALID_IMAGE_MIME_TYPE`
+- `INVALID_VIDEO_FORMAT`
+- `IMAGE_PREPROCESSOR_UNAVAILABLE`
+- `VEO_REQUEST_ERROR`
+- `VEO_HTTP_ERROR`
+- `VEO_OPERATION_TIMEOUT`
+- `VEO_INVALID_RESPONSE`
+- `VIDEO_SAVE_ERROR`
+- `FFMPEG_UNAVAILABLE_AUDIO_NOT_STRIPPED`
+- `FFMPEG_AUDIO_STRIP_ERROR`
+
+4 clipes:
+
+- `VEO_CLIP_1_ERROR`
+- `VEO_CLIP_2_ERROR`
+- `VEO_CLIP_3_ERROR`
+- `VEO_CLIP_4_ERROR`
+- `VEO_FOUR_CLIPS_ERROR`
+- `VIDEO_CLIP_SAVE_ERROR`
+
+Job:
+
+- `JOB_NOT_FOUND`
+- `MISSING_JOB_ID`
+- `NO_SELECTED_IMAGES`
+- `INSUFFICIENT_SELECTED_IMAGES`
+- `INVALID_NARRATION_TYPE`
+- `INVALID_VIDEO_FORMAT`
+- `EMPTY_SCRIPT`
+
+Observação:
+
+- Alguns códigos são reservados para contrato e podem não ser emitidos por todos os caminhos atuais.
+
+## 12. Fora do escopo atual
+
+Ainda não faz parte do contrato implementado:
+
+- composição final com áudio;
+- concatenação dos 4 clipes;
+- fade entre clipes;
+- mixagem de ElevenLabs no vídeo final;
+- download do vídeo final composto;
+- thumbnail final real;
+- integração Seedance;
+- integração MuAPI;
+- UGC;
+- providers alternativos públicos no frontend.
