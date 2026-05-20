@@ -8,6 +8,10 @@ class STLAI_Video_Composer_Provider {
     const DEFAULT_TIMEOUT = 300;
 
     public static function compose( array $job ) {
+        return self::start_composition( $job );
+    }
+
+    public static function start_composition( array $job ) {
         $settings = self::settings();
         $mode = self::composer_mode( $settings['videoComposerMode'] ?? '' );
 
@@ -15,18 +19,96 @@ class STLAI_Video_Composer_Provider {
             return self::local_ffmpeg_unavailable();
         }
 
-        return self::compose_with_external_service( $job, $settings, $mode );
+        return self::start_external_job( $job, $settings, $mode );
     }
 
-    private static function compose_with_external_service( array $job, array $settings, $mode ) {
-        $endpoint = esc_url_raw( trim( (string) ( $settings['videoComposerEndpoint'] ?? '' ) ) );
-        if ( empty( $endpoint ) ) {
-            return self::error( 'COMPOSER_ENDPOINT_MISSING', 'Configure o endpoint do serviço externo de composição de vídeo.', 'videoComposerEndpoint vazio.' );
+    public static function get_composition_status( $render_job_id ) {
+        $settings = self::settings();
+        $mode = self::composer_mode( $settings['videoComposerMode'] ?? '' );
+
+        if ( 'local_ffmpeg' === $mode ) {
+            return self::local_ffmpeg_unavailable();
         }
 
-        $api_key = trim( (string) ( $settings['videoComposerApiKey'] ?? '' ) );
-        if ( empty( $api_key ) ) {
-            return self::error( 'COMPOSER_API_KEY_MISSING', 'Configure a API key do serviço externo de composição de vídeo.', 'videoComposerApiKey vazio.' );
+        $endpoint = self::endpoint( $settings );
+        if ( is_wp_error( $endpoint ) ) {
+            return $endpoint;
+        }
+
+        $api_key = self::api_key( $settings );
+        if ( is_wp_error( $api_key ) ) {
+            return $api_key;
+        }
+
+        $render_job_id = sanitize_text_field( (string) $render_job_id );
+        if ( empty( $render_job_id ) ) {
+            return self::error( 'COMPOSER_STATUS_ERROR', 'Job de composição externo ausente.', 'render_job_id vazio.' );
+        }
+
+        $timeout = self::timeout( $settings['videoComposerTimeout'] ?? self::DEFAULT_TIMEOUT );
+        $status_url = rtrim( $endpoint, '/' ) . '/' . rawurlencode( $render_job_id );
+        $response = wp_remote_get(
+            $status_url,
+            array(
+                'timeout' => min( 30, $timeout ),
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $api_key,
+                ),
+            )
+        );
+
+        if ( is_wp_error( $response ) ) {
+            return self::error( 'COMPOSER_STATUS_ERROR', 'Não foi possível consultar o status da composição.', self::safe_debug( $response->get_error_message() ) );
+        }
+
+        $status_code = (int) wp_remote_retrieve_response_code( $response );
+        $body = (string) wp_remote_retrieve_body( $response );
+        if ( $status_code < 200 || $status_code >= 300 ) {
+            return self::error( 'COMPOSER_STATUS_ERROR', 'O serviço de composição retornou erro ao consultar o status.', 'HTTP ' . $status_code . '; ' . self::safe_debug( $body ) );
+        }
+
+        $json = json_decode( $body, true );
+        if ( ! is_array( $json ) ) {
+            return self::error( 'COMPOSER_STATUS_ERROR', 'O serviço de composição retornou status inválido.', self::safe_debug( $body ) );
+        }
+
+        if ( empty( $json['success'] ) ) {
+            return self::error(
+                self::safe_code( $json['code'] ?? 'COMPOSER_RENDER_ERROR' ),
+                sanitize_text_field( $json['message'] ?? 'Não foi possível compor o vídeo final.' ),
+                self::safe_debug( $json['debug'] ?? '' )
+            );
+        }
+
+        $status = sanitize_key( $json['status'] ?? 'processing' );
+        $final_video_url = esc_url_raw( $json['final_video_url'] ?? '' );
+        if ( 'ready' === $status && empty( $final_video_url ) ) {
+            return self::error( 'FINAL_VIDEO_URL_MISSING', 'O serviço de composição não retornou a URL do vídeo final.', 'status ready sem final_video_url.' );
+        }
+
+        return array(
+            'render_job_id'        => sanitize_text_field( $json['render_job_id'] ?? $render_job_id ),
+            'status'               => $status,
+            'progress'             => max( 0, min( 100, (int) ( $json['progress'] ?? 0 ) ) ),
+            'message'              => sanitize_text_field( $json['message'] ?? 'Composição final em andamento...' ),
+            'final_video_url'      => $final_video_url,
+            'final_video_duration' => max( 0, (float) ( $json['duration'] ?? 0 ) ),
+            'composer_mode'        => $mode,
+            'composer_provider'    => 'external_service',
+            'composed_at'          => 'ready' === $status ? current_time( 'mysql' ) : '',
+            'debug'                => 'external_status=' . $status . '; progress=' . max( 0, min( 100, (int) ( $json['progress'] ?? 0 ) ) ),
+        );
+    }
+
+    private static function start_external_job( array $job, array $settings, $mode ) {
+        $endpoint = self::endpoint( $settings );
+        if ( is_wp_error( $endpoint ) ) {
+            return $endpoint;
+        }
+
+        $api_key = self::api_key( $settings );
+        if ( is_wp_error( $api_key ) ) {
+            return $api_key;
         }
 
         $payload = self::external_payload( $job );
@@ -38,7 +120,7 @@ class STLAI_Video_Composer_Provider {
         $response = wp_remote_post(
             $endpoint,
             array(
-                'timeout' => $timeout,
+                'timeout' => min( 30, $timeout ),
                 'headers' => array(
                     'Content-Type'  => 'application/json',
                     'Authorization' => 'Bearer ' . $api_key,
@@ -48,43 +130,61 @@ class STLAI_Video_Composer_Provider {
         );
 
         if ( is_wp_error( $response ) ) {
-            return self::error( 'COMPOSER_REQUEST_ERROR', 'Não foi possível conectar ao serviço de composição de vídeo.', self::safe_debug( $response->get_error_message() ) );
+            return self::error( 'COMPOSER_JOB_START_ERROR', 'Não foi possível iniciar a composição externa.', self::safe_debug( $response->get_error_message() ) );
         }
 
         $status_code = (int) wp_remote_retrieve_response_code( $response );
         $body = (string) wp_remote_retrieve_body( $response );
 
         if ( $status_code < 200 || $status_code >= 300 ) {
-            return self::error( 'COMPOSER_HTTP_ERROR', 'O serviço de composição retornou erro ao preparar o vídeo final.', 'HTTP ' . $status_code . '; ' . self::safe_debug( $body ) );
+            return self::error( 'COMPOSER_JOB_START_ERROR', 'O serviço externo não aceitou o job de composição.', 'HTTP ' . $status_code . '; ' . self::safe_debug( $body ) );
         }
 
         $json = json_decode( $body, true );
         if ( ! is_array( $json ) ) {
-            return self::error( 'COMPOSER_INVALID_RESPONSE', 'O serviço de composição retornou uma resposta inválida.', self::safe_debug( $body ) );
+            return self::error( 'COMPOSER_JOB_START_ERROR', 'O serviço externo retornou uma resposta inválida ao iniciar composição.', self::safe_debug( $body ) );
         }
 
         if ( empty( $json['success'] ) ) {
             return self::error(
-                self::safe_code( $json['code'] ?? 'COMPOSER_REQUEST_ERROR' ),
-                sanitize_text_field( $json['message'] ?? 'O serviço externo não conseguiu compor o vídeo final.' ),
+                self::safe_code( $json['code'] ?? 'COMPOSER_JOB_START_ERROR' ),
+                sanitize_text_field( $json['message'] ?? 'Não foi possível iniciar a composição externa.' ),
                 self::safe_debug( $json['debug'] ?? '' )
             );
         }
 
-        $final_video_url = esc_url_raw( $json['final_video_url'] ?? '' );
-        if ( empty( $final_video_url ) ) {
-            return self::error( 'FINAL_VIDEO_URL_MISSING', 'O serviço de composição não retornou a URL do vídeo final.', 'final_video_url ausente.' );
+        $render_job_id = sanitize_text_field( $json['render_job_id'] ?? '' );
+        if ( empty( $render_job_id ) ) {
+            return self::error( 'COMPOSER_JOB_START_ERROR', 'O serviço externo não retornou o ID do job de composição.', 'render_job_id ausente.' );
         }
 
         return array(
-            'final_video_url'      => $final_video_url,
-            'final_video_duration' => max( 0, (float) ( $json['duration'] ?? 0 ) ),
-            'composer_mode'        => $mode,
-            'composer_provider'    => 'external_service',
-            'composed_at'          => current_time( 'mysql' ),
-            'message'              => sanitize_text_field( $json['message'] ?? 'Vídeo final composto com sucesso.' ),
-            'debug'                => 'external_service=ok; duration=' . max( 0, (float) ( $json['duration'] ?? 0 ) ),
+            'render_job_id'     => $render_job_id,
+            'status'            => sanitize_key( $json['status'] ?? 'queued' ),
+            'progress'          => 90,
+            'composer_mode'     => $mode,
+            'composer_provider' => 'external_service',
+            'message'           => sanitize_text_field( $json['message'] ?? 'Composição recebida e iniciada.' ),
+            'debug'             => 'external_job_started=' . $render_job_id,
         );
+    }
+
+    private static function endpoint( array $settings ) {
+        $endpoint = esc_url_raw( trim( (string) ( $settings['videoComposerEndpoint'] ?? '' ) ) );
+        if ( empty( $endpoint ) ) {
+            return self::error( 'COMPOSER_ENDPOINT_MISSING', 'Configure o endpoint do serviço externo de composição de vídeo.', 'videoComposerEndpoint vazio.' );
+        }
+
+        return $endpoint;
+    }
+
+    private static function api_key( array $settings ) {
+        $api_key = trim( (string) ( $settings['videoComposerApiKey'] ?? '' ) );
+        if ( empty( $api_key ) ) {
+            return self::error( 'COMPOSER_API_KEY_MISSING', 'Configure a API key do serviço externo de composição de vídeo.', 'videoComposerApiKey vazio.' );
+        }
+
+        return $api_key;
     }
 
     private static function external_payload( array $job ) {

@@ -501,3 +501,46 @@ Depois que a narração ElevenLabs e os 4 clipes Veo estiverem prontos, o backen
 ### Status
 
 Decidido
+
+## 2026-05-20 - Composição externa assíncrona e leve para Render Free
+
+### Decisao
+
+O microserviço `stlai-video-renderer` passa a compor vídeos de forma assíncrona. O `POST /render` apenas cria um job externo e retorna `render_job_id`; o plugin consulta `GET /render/{render_job_id}` durante o polling.
+
+Para o MVP em Render Free, a qualidade padrão é `preview`, com saída `720x1280` para `9:16` e `1280x720` para `16:9`. A concatenação simples é o padrão. `xfade` fica opcional via `ENABLE_XFADE=true` e restrito ao modo `full`, com fallback para concatenação simples se falhar.
+
+### Motivo
+
+O Render Free derrubou a instância por exceder 512 MB durante a composição com filtros pesados. O fluxo precisava retornar rápido para o WordPress e reduzir o consumo de memória do FFmpeg.
+
+### Impacto
+
+O plugin passa a salvar `render_job_id`, `composer_status`, `composer_mode` e `composer_provider`, usando os estados `composition_queued`, `composition_processing`, `composition_error` e `ready`. Áudio e clipes continuam preservados em qualquer falha de composição.
+
+### Status
+
+Decidido
+
+## 2026-05-20 - UX motion para processamento de vídeo
+
+### Decisao
+
+Adicionar um bloco visual animado no passo 5 e no resumo para representar o processamento do vídeo, com preview em blur, ponto pulsante, barra com shimmer, equalizer e etapas do pipeline:
+
+- Narração
+- Clipes IA
+- Composição
+- Finalização
+
+### Motivo
+
+O usuário não percebia claramente que o vídeo estava sendo gerado, especialmente durante filas e composição externa assíncrona.
+
+### Impacto
+
+O frontend passa a mapear `generating_audio`, `generating_clip_*`, `composition_queued`, `composition_processing` e `composition_error` para estados visuais `done`, `active` e `pending`, mantendo áudio e clipes visíveis enquanto o vídeo final ainda não existe.
+
+### Status
+
+Decidido

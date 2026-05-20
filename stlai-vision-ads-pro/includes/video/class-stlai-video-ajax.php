@@ -96,6 +96,8 @@ class STLAI_Video_Ajax {
             'final_video_duration' => (float) ( $job['final_video_duration'] ?? 0 ),
             'composer_mode'   => sanitize_key( $job['composer_mode'] ?? '' ),
             'composer_provider' => sanitize_key( $job['composer_provider'] ?? '' ),
+            'composer_status' => sanitize_key( $job['composer_status'] ?? '' ),
+            'render_job_id'   => sanitize_text_field( $job['render_job_id'] ?? '' ),
             'composed_at'      => sanitize_text_field( $job['composed_at'] ?? '' ),
             'thumbnail_url'   => $job['thumbnail_url'] ?? '',
             'composition_status' => $job['composition_status'] ?? 'pending',
@@ -165,6 +167,14 @@ class STLAI_Video_Ajax {
 
             if ( ! empty( $data['composition_status'] ) ) {
                 $response['composition_status'] = sanitize_key( $data['composition_status'] );
+            }
+
+            if ( ! empty( $data['composer_status'] ) ) {
+                $response['composer_status'] = sanitize_key( $data['composer_status'] );
+            }
+
+            if ( ! empty( $data['render_job_id'] ) ) {
+                $response['render_job_id'] = sanitize_text_field( $data['render_job_id'] );
             }
 
             if ( ! empty( $data['audio_url'] ) ) {

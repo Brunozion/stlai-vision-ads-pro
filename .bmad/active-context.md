@@ -889,3 +889,63 @@ O que nao foi feito:
 Status:
 
 - Correção concluida.
+
+## 2026-05-20 - Correção de composição assíncrona e memory-safe
+
+Problema corrigido:
+
+- O Render Free derrubou o `stlai-video-renderer` por exceder 512 MB durante a composição final com FFmpeg.
+
+Arquivos alterados:
+
+- stlai-video-renderer/server.js
+- stlai-video-renderer/README.md
+- stlai-video-renderer/temp/jobs/.gitkeep
+- stlai-vision-ads-pro/includes/video/class-stlai-video-composer-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- `POST /render` agora inicia um job assíncrono e retorna `render_job_id`.
+- Criado `GET /render/{render_job_id}` para consultar `queued`, `processing`, `ready` ou `error`.
+- Jobs do renderer são salvos em `temp/jobs/`.
+- `RENDER_OUTPUT_QUALITY=preview` usa `720x1280` ou `1280x720`.
+- `ENABLE_XFADE=false` deixa concatenação simples como padrão.
+- `ENABLE_XFADE=true` fica opcional no modo `full`, com fallback para concatenação simples.
+- O plugin salva `render_job_id` e faz polling pelo backend.
+- O frontend mostra composição em andamento e mantém áudio/clipes visíveis.
+
+Status:
+
+- Correção concluida.
+
+## 2026-05-20 - UX motion de processamento de vídeo
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- stlai-video-renderer/.env.example
+- .bmad/active-context.md
+- .bmad/decisions.md
+
+O que foi feito:
+
+- Adicionado bloco motion no passo 5 para estados de geração/composição.
+- Adicionado bloco motion na seção de vídeo do resumo.
+- Criada barra de progresso com shimmer e progresso estimado por estado.
+- Criados steps visuais: Narração, Clipes IA, Composição e Finalização.
+- Criado preview em blur com overlay animado.
+- Criado estado visual de erro para `composition_error`.
+- Confirmado modo leve do renderer por padrão: `RENDER_OUTPUT_QUALITY=preview` e `ENABLE_XFADE=false`.
+
+Status:
+
+- Correção concluida.

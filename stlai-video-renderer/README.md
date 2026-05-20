@@ -25,6 +25,8 @@ PORT=3000
 RENDER_API_KEY=uma-chave-forte-aqui
 PUBLIC_BASE_URL=http://localhost:3000
 MAX_RENDER_SECONDS=300
+RENDER_OUTPUT_QUALITY=preview
+ENABLE_XFADE=false
 ```
 
 ## Rodar localmente
@@ -50,13 +52,17 @@ Resposta esperada:
 ```json
 {
   "ok": true,
-  "ffmpeg": true
+  "ffmpeg": true,
+  "quality": "preview",
+  "xfade": false
 }
 ```
 
 Se `ffmpeg` vier `false`, instale FFmpeg/FFprobe ou configure `FFMPEG_PATH` e `FFPROBE_PATH` no ambiente.
 
-## Testar render com curl
+## Testar render assíncrono com curl
+
+Iniciar composição:
 
 ```bash
 curl -X POST http://localhost:3000/render \
@@ -80,12 +86,45 @@ curl -X POST http://localhost:3000/render \
   }'
 ```
 
-Resposta de sucesso:
+Resposta inicial:
 
 ```json
 {
   "success": true,
-  "final_video_url": "http://localhost:3000/renders/stlai-final-....mp4",
+  "render_job_id": "render_xxx",
+  "status": "queued",
+  "message": "Composição recebida e iniciada."
+}
+```
+
+Consultar status:
+
+```bash
+curl http://localhost:3000/render/render_xxx \
+  -H "Authorization: Bearer uma-chave-forte-aqui"
+```
+
+Enquanto processando:
+
+```json
+{
+  "success": true,
+  "render_job_id": "render_xxx",
+  "status": "processing",
+  "progress": 40,
+  "message": "Compondo vídeo final..."
+}
+```
+
+Quando pronto:
+
+```json
+{
+  "success": true,
+  "render_job_id": "render_xxx",
+  "status": "ready",
+  "progress": 100,
+  "final_video_url": "http://localhost:3000/renders/stlai-final-render_xxx.mp4",
   "duration": 72,
   "message": "Vídeo final composto com sucesso."
 }
@@ -127,6 +166,8 @@ PORT=3000
 RENDER_API_KEY=uma-chave-longa-e-secreta
 PUBLIC_BASE_URL=https://video-render.seudominio.com
 MAX_RENDER_SECONDS=300
+RENDER_OUTPUT_QUALITY=preview
+ENABLE_XFADE=false
 ```
 
 4. Rode com PM2:
@@ -162,6 +203,39 @@ server {
 
 Depois habilite HTTPS com Certbot ou outro gerenciador de certificado.
 
+## Deploy com Docker
+
+Build da imagem:
+
+```bash
+cd stlai-video-renderer
+docker build -t stlai-video-renderer .
+```
+
+Rodar localmente:
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e PORT=3000 \
+  -e RENDER_API_KEY=uma-chave-forte-aqui \
+  -e PUBLIC_BASE_URL=http://localhost:3000 \
+  -e MAX_RENDER_SECONDS=300 \
+  -e RENDER_OUTPUT_QUALITY=preview \
+  -e ENABLE_XFADE=false \
+  stlai-video-renderer
+```
+
+Variáveis necessárias no serviço online:
+
+- `PORT`: porta interna usada pelo Express. Padrão `3000`.
+- `RENDER_API_KEY`: chave secreta enviada pelo plugin no header `Authorization: Bearer`.
+- `PUBLIC_BASE_URL`: URL pública do serviço, por exemplo `https://video-render.seudominio.com`.
+- `MAX_RENDER_SECONDS`: tempo máximo de renderização antes de abortar, por exemplo `300`.
+- `RENDER_OUTPUT_QUALITY`: `preview` para Render Free ou `full` para renderização maior.
+- `ENABLE_XFADE`: `false` por padrão. Use `true` apenas no modo `full` se houver memória suficiente.
+
+O container instala FFmpeg e FFprobe via `apt-get`, não copia `.env`, não copia `node_modules` e ignora arquivos gerados em `temp/` e `renders/` durante o build.
+
 ## Segurança
 
 - `/render` exige `Authorization: Bearer`.
@@ -171,11 +245,13 @@ Depois habilite HTTPS com Certbot ou outro gerenciador de certificado.
 - O MP4 final fica em `renders/`.
 - A API key não é logada nem retornada.
 - Erros retornam mensagem, código e debug resumido, sem stack trace completo.
+- Jobs assíncronos são salvos em `temp/jobs/{render_job_id}.json`.
 
 ## Observações técnicas
 
-- A composição usa `xfade` com fade padrão de `0.4s` entre clipes.
-- Para `9:16`, a saída é normalizada em `1080x1920`.
-- Para `16:9`, a saída é normalizada em `1920x1080`.
+- Em `RENDER_OUTPUT_QUALITY=preview`, a composição usa concatenação simples por padrão.
+- Em `preview`, `9:16` gera `720x1280` e `16:9` gera `1280x720`.
+- Em `RENDER_OUTPUT_QUALITY=full`, `9:16` gera `1080x1920` e `16:9` gera `1920x1080`.
+- `xfade` fica desligado por padrão. Se `ENABLE_XFADE=true` e o modo for `full`, o serviço tenta fade entre clipes; se falhar, cai automaticamente para concatenação simples.
 - O vídeo é escalado com `force_original_aspect_ratio=increase` e `crop`, evitando distorção.
 - O áudio nativo dos clipes é ignorado; apenas o áudio ElevenLabs é mapeado no MP4 final.

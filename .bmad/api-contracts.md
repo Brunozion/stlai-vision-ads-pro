@@ -431,7 +431,7 @@ Configuração administrativa:
 - `videoComposerApiKey`: chave enviada apenas pelo backend em header seguro.
 - `videoComposerTimeout`: timeout da requisição, sugestão `300`.
 
-Requisição:
+Requisição para iniciar composição:
 
 ```http
 POST {videoComposerEndpoint}
@@ -476,11 +476,44 @@ Body:
 }
 ```
 
-Resposta de sucesso:
+Resposta de sucesso inicial:
 
 ```json
 {
   "success": true,
+  "render_job_id": "render_xxx",
+  "status": "queued",
+  "message": "Composição recebida e iniciada."
+}
+```
+
+Consulta de status:
+
+```http
+GET {videoComposerEndpoint}/{render_job_id}
+Authorization: Bearer {videoComposerApiKey}
+```
+
+Resposta em processamento:
+
+```json
+{
+  "success": true,
+  "render_job_id": "render_xxx",
+  "status": "processing",
+  "progress": 40,
+  "message": "Compondo vídeo final..."
+}
+```
+
+Resposta pronta:
+
+```json
+{
+  "success": true,
+  "render_job_id": "render_xxx",
+  "status": "ready",
+  "progress": 100,
   "final_video_url": "https://...",
   "duration": 72,
   "message": "Vídeo final composto com sucesso."
@@ -492,8 +525,10 @@ Resposta de erro:
 ```json
 {
   "success": false,
+  "render_job_id": "render_xxx",
+  "status": "error",
   "message": "Mensagem amigável",
-  "code": "COMPOSER_ERROR",
+  "code": "COMPOSER_RENDER_ERROR",
   "debug": "Resumo seguro"
 }
 ```
@@ -502,13 +537,21 @@ Códigos estruturados do composer:
 
 - `COMPOSER_ENDPOINT_MISSING`
 - `COMPOSER_API_KEY_MISSING`
-- `COMPOSER_REQUEST_ERROR`
-- `COMPOSER_HTTP_ERROR`
-- `COMPOSER_INVALID_RESPONSE`
+- `COMPOSER_JOB_START_ERROR`
+- `COMPOSER_STATUS_ERROR`
+- `COMPOSER_RENDER_ERROR`
+- `COMPOSER_TIMEOUT`
 - `FINAL_VIDEO_URL_MISSING`
 - `LOCAL_FFMPEG_UNAVAILABLE`
 
-Persistência no job quando houver sucesso:
+Persistência no job ao iniciar:
+
+- `render_job_id`
+- `composer_status`
+- `composer_mode`
+- `composer_provider`
+
+Persistência no job quando ficar pronto:
 
 - `final_video_url`
 - `final_video_duration`
@@ -521,8 +564,17 @@ Comportamento em falha:
 - manter `audio_url`;
 - manter os 4 itens em `clips`;
 - não apagar ativos;
-- usar `composition_pending` para configuração pendente/local indisponível;
-- usar `composition_error` para falhas de requisição, HTTP ou resposta inválida.
+- usar `composition_queued` ou `composition_processing` durante o polling;
+- usar `composition_error` para falhas de renderização/status;
+- permitir nova tentativa de composição com os mesmos ativos.
+
+Configuração recomendada do renderer no Render Free:
+
+- `RENDER_OUTPUT_QUALITY=preview`
+- `ENABLE_XFADE=false`
+- saída `9:16` em `720x1280`
+- saída `16:9` em `1280x720`
+- concatenação simples como padrão para reduzir uso de memória.
 
 ## 10. Contrato do Veo
 

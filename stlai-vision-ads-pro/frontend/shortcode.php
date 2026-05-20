@@ -562,6 +562,8 @@
     </div>
   </div>
 
+  <div class="video-motion-host mt" id="video-motion-box" style="display:none"></div>
+
   <div class="video-final-box mt" id="video-final-box" style="display:none">
     <div class="sl">Vídeo final</div>
     <video id="video-final-player" controls playsinline preload="metadata"></video>
@@ -685,6 +687,7 @@
         <span>Vídeo final</span>
         <video id="sum-video-final-player" controls playsinline preload="metadata"></video>
       </div>
+      <div class="sum-video-motion-wrap" id="sum-video-motion-wrap" style="display:none"></div>
       <div class="sum-video-script-wrap">
         <span>Roteiro</span>
         <p id="sum-video-script">Roteiro ainda não preparado.</p>

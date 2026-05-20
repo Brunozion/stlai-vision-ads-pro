@@ -36,6 +36,8 @@ class STLAI_Video_Storage {
                 'final_video_debug' => '',
                 'composer_mode'   => '',
                 'composer_provider' => '',
+                'composer_status' => '',
+                'render_job_id'   => '',
                 'composed_at'     => '',
                 'thumbnail_url'   => '',
                 'composition_status' => 'pending',
