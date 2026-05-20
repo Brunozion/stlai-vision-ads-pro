@@ -563,7 +563,7 @@
   </div>
 
   <div class="video-final-box mt" id="video-final-box" style="display:none">
-    <div class="sl">Vídeo final preparado</div>
+    <div class="sl">Vídeo final</div>
     <video id="video-final-player" controls playsinline preload="metadata"></video>
   </div>
 

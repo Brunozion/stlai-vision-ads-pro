@@ -418,7 +418,113 @@ Saída interna esperada:
 }
 ```
 
-## 9. Contrato do Veo
+## 9. Contrato do serviço externo de composição
+
+Objetivo:
+
+Compor o vídeo final fora do WordPress, usando os 4 clipes visuais e a narração ElevenLabs já gerados.
+
+Configuração administrativa:
+
+- `videoComposerMode`: `external_service` ou `local_ffmpeg`; padrão `external_service`.
+- `videoComposerEndpoint`: endpoint HTTP do serviço externo.
+- `videoComposerApiKey`: chave enviada apenas pelo backend em header seguro.
+- `videoComposerTimeout`: timeout da requisição, sugestão `300`.
+
+Requisição:
+
+```http
+POST {videoComposerEndpoint}
+Content-Type: application/json
+Authorization: Bearer {videoComposerApiKey}
+```
+
+Body:
+
+```json
+{
+  "job_id": "stlai_video_xxx",
+  "format": "9:16",
+  "audio_url": "https://...",
+  "clips": [
+    {
+      "index": 1,
+      "role": "apresentacao_geral",
+      "url": "https://..."
+    },
+    {
+      "index": 2,
+      "role": "uso_contexto",
+      "url": "https://..."
+    },
+    {
+      "index": 3,
+      "role": "detalhe_acabamento",
+      "url": "https://..."
+    },
+    {
+      "index": 4,
+      "role": "hero_fechamento",
+      "url": "https://..."
+    }
+  ],
+  "transition": "fade",
+  "fade_duration": 0.4,
+  "repeat_clips_until_audio_ends": true,
+  "trim_to_audio_duration": true,
+  "remove_clip_audio": true
+}
+```
+
+Resposta de sucesso:
+
+```json
+{
+  "success": true,
+  "final_video_url": "https://...",
+  "duration": 72,
+  "message": "Vídeo final composto com sucesso."
+}
+```
+
+Resposta de erro:
+
+```json
+{
+  "success": false,
+  "message": "Mensagem amigável",
+  "code": "COMPOSER_ERROR",
+  "debug": "Resumo seguro"
+}
+```
+
+Códigos estruturados do composer:
+
+- `COMPOSER_ENDPOINT_MISSING`
+- `COMPOSER_API_KEY_MISSING`
+- `COMPOSER_REQUEST_ERROR`
+- `COMPOSER_HTTP_ERROR`
+- `COMPOSER_INVALID_RESPONSE`
+- `FINAL_VIDEO_URL_MISSING`
+- `LOCAL_FFMPEG_UNAVAILABLE`
+
+Persistência no job quando houver sucesso:
+
+- `final_video_url`
+- `final_video_duration`
+- `composer_mode`
+- `composer_provider`
+- `composed_at`
+
+Comportamento em falha:
+
+- manter `audio_url`;
+- manter os 4 itens em `clips`;
+- não apagar ativos;
+- usar `composition_pending` para configuração pendente/local indisponível;
+- usar `composition_error` para falhas de requisição, HTTP ou resposta inválida.
+
+## 10. Contrato do Veo
 
 Objetivo:
 
@@ -469,7 +575,7 @@ Regras importantes:
 - Não logar base64 completo.
 - Debug seguro pode informar modelo, aspect ratio, mime type, uso de `image.bytesBase64Encoded` e frame preparado.
 
-## 10. Contrato dos 4 clipes
+## 11. Contrato dos 4 clipes
 
 Os 4 clipes são gerados sequencialmente, com duração de 8 segundos cada.
 

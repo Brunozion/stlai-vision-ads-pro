@@ -474,3 +474,30 @@ Quando o FFmpeg nao esta disponivel, o job permanece em `ready_for_composition`,
 ### Status
 
 Decidido
+
+## 2026-05-20 - Composição externa como caminho principal
+
+### Decisao
+
+A hospedagem atual em cPanel compartilhado não permite instalar nem usar FFmpeg local em `/usr/bin/ffmpeg` ou `/usr/local/bin/ffmpeg`.
+
+A composição final do vídeo passa a usar um serviço externo de renderização com FFmpeg como caminho principal, configurado por:
+
+- `videoComposerMode`
+- `videoComposerEndpoint`
+- `videoComposerApiKey`
+- `videoComposerTimeout`
+
+O modo `external_service` é o padrão.
+
+### Motivo
+
+O plano de hospedagem não oferece FFmpeg local e o suporte confirmou que esse recurso não pode ser habilitado nesse ambiente. A composição precisa acontecer fora do WordPress para preservar o MVP em hospedagem compartilhada.
+
+### Impacto
+
+Depois que a narração ElevenLabs e os 4 clipes Veo estiverem prontos, o backend envia apenas URLs públicas e metadados seguros para o serviço externo. Se a composição falhar, áudio e clipes permanecem salvos no job e o frontend exibe composição final pendente ou com erro, sem apagar ativos já gerados.
+
+### Status
+
+Decidido

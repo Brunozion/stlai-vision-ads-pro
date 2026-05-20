@@ -238,10 +238,46 @@ O que nao foi feito:
 - Nenhuma integracao de API.
 - Nenhuma alteracao em admin/backend.
 
+## 2026-05-20 - Story 8B concluida
+
+Story implementada:
+
+- Preparar composição final via serviço externo de renderização com FFmpeg.
+
+Arquivos alterados nesta story:
+
+- stlai-vision-ads-pro/admin/settings-page.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-composer-provider.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/frontend/shortcode.php
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- Adicionada a seção administrativa "Configuração de Composição de Vídeo".
+- Adicionados `videoComposerMode`, `videoComposerEndpoint`, `videoComposerApiKey` e `videoComposerTimeout`.
+- Criado `STLAI_Video_Composer_Provider` para enviar áudio e 4 clipes ao serviço externo.
+- Definido `external_service` como modo padrão de composição.
+- O provider envia `Authorization: Bearer` apenas no backend.
+- O job salva `final_video_url`, `final_video_duration`, `composer_mode`, `composer_provider` e `composed_at` quando a composição externa retorna sucesso.
+- Se a composição falhar, o job fica em `composition_pending` ou `composition_error`, preservando narração e clipes.
+- O frontend mostra vídeo final quando existir e mantém áudio/clipes separados abaixo.
+- Sem vídeo final, o frontend mostra composição pendente e mantém ativos visíveis.
+
+O que nao foi feito:
+
+- Nenhuma alteração nos providers ElevenLabs ou Veo.
+- Nenhuma alteração em geração de textos, imagens, Seedance ou MuAPI.
+- Nenhuma API key foi exposta no frontend.
+
 Status:
 
-- Story 2A concluida.
-- Proxima story recomendada: ajustar selecao de imagens do passo 4 para permitir 4 a 8 imagens, ainda sem gerar video real.
+- Story 8B concluida.
 
 ## 2026-05-19 - Story 2B concluida
 

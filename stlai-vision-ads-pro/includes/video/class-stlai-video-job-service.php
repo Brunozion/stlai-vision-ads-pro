@@ -3,6 +3,10 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+if ( ! class_exists( 'STLAI_Video_Composer_Provider' ) ) {
+    require_once __DIR__ . '/class-stlai-video-composer-provider.php';
+}
+
 class STLAI_Video_Job_Service {
     const CLIP_DURATION = 8.0;
     const FADE_DURATION = 0.4;
@@ -39,6 +43,9 @@ class STLAI_Video_Job_Service {
                         'final_video_path'     => '',
                         'final_video_duration' => 0,
                         'final_video_debug'    => '',
+                        'composer_mode'        => '',
+                        'composer_provider'    => '',
+                        'composed_at'          => '',
                         'failed_clip_index'    => 0,
                         'failed_clip_role'     => '',
                         'error_code'           => '',
@@ -230,14 +237,19 @@ class STLAI_Video_Job_Service {
             )
         );
 
-        $final = self::compose_final_video( $job );
+        $final = STLAI_Video_Composer_Provider::compose( $job );
         if ( is_wp_error( $final ) ) {
             $error_data = $final->get_error_data();
-            $is_ffmpeg_error = 'FFMPEG_NOT_AVAILABLE' === $final->get_error_code();
-            $fallback_status = $is_ffmpeg_error ? 'ready_for_composition' : 'error';
-            $fallback_composition_status = $is_ffmpeg_error ? 'pending' : 'error';
-            $fallback_message = $is_ffmpeg_error
-                ? 'Os 4 clipes e a narração foram gerados. Para criar o vídeo final, ative o FFmpeg no servidor.'
+            $pending_codes = array(
+                'COMPOSER_ENDPOINT_MISSING',
+                'COMPOSER_API_KEY_MISSING',
+                'LOCAL_FFMPEG_UNAVAILABLE',
+            );
+            $is_pending_config = in_array( $final->get_error_code(), $pending_codes, true );
+            $fallback_status = $is_pending_config ? 'composition_pending' : 'composition_error';
+            $fallback_composition_status = $is_pending_config ? 'pending' : 'error';
+            $fallback_message = $is_pending_config
+                ? 'Narração e clipes preparados. A composição final está pendente.'
                 : $final->get_error_message();
 
             STLAI_Video_Storage::update_job(
@@ -252,6 +264,9 @@ class STLAI_Video_Job_Service {
                     'final_video_url'    => '',
                     'final_video_path'   => '',
                     'final_video_duration' => 0,
+                    'composer_mode'      => '',
+                    'composer_provider'  => '',
+                    'composed_at'        => '',
                     'error_code'         => $final->get_error_code(),
                     'error_message'      => $final->get_error_message(),
                     'error_debug'        => is_array( $error_data ) ? ( $error_data['debug'] ?? '' ) : '',
@@ -280,10 +295,13 @@ class STLAI_Video_Job_Service {
                 'message'              => 'Vídeo final preparado. Narração aplicada com sucesso e 4 clipes compostos.',
                 'clips'                => $clips,
                 'composition_status'   => 'complete',
-                'final_video_url'      => $final['url'],
-                'final_video_path'     => $final['path'],
-                'final_video_duration' => $final['duration'],
-                'final_video_debug'    => $final['debug'],
+                'final_video_url'      => $final['final_video_url'] ?? '',
+                'final_video_path'     => $final['final_video_path'] ?? '',
+                'final_video_duration' => $final['final_video_duration'] ?? 0,
+                'final_video_debug'    => $final['debug'] ?? '',
+                'composer_mode'        => $final['composer_mode'] ?? '',
+                'composer_provider'    => $final['composer_provider'] ?? '',
+                'composed_at'          => $final['composed_at'] ?? current_time( 'mysql' ),
                 'thumbnail_url'        => '',
             )
         );

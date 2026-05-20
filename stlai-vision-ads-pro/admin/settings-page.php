@@ -63,6 +63,13 @@ function stlai_vision_ads_pro_settings_init() {
     add_settings_field('videoBaseUrl', 'Video Base URL', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_video_section', array('id' => 'videoBaseUrl', 'placeholder' => 'Endpoint/base URL da API de video'));
     add_settings_field('ffmpegPath', 'Caminho do FFmpeg', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_video_section', array('id' => 'ffmpegPath', 'placeholder' => 'Auto detectar, /usr/bin/ffmpeg ou /usr/local/bin/ffmpeg', 'description' => 'Necessário para compor o vídeo final com clipes, fade e narração. Se vazio, o plugin tentará detectar automaticamente.'));
 
+    // ======== PAGINA: CONFIG DE IA (COMPOSICAO DE VIDEO) ========
+    add_settings_section('stlai_config_video_composer_section', 'Configuração de Composição de Vídeo', '__return_empty_string', 'stlai_config_ia_page');
+    add_settings_field('videoComposerMode', 'Modo de Composição', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_video_composer_section', array('id' => 'videoComposerMode', 'default' => 'external_service', 'options' => array('external_service' => 'Serviço externo', 'local_ffmpeg' => 'FFmpeg local')));
+    add_settings_field('videoComposerEndpoint', 'Endpoint do Serviço de Composição', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_video_composer_section', array('id' => 'videoComposerEndpoint', 'placeholder' => 'https://video-render.seudominio.com/render'));
+    add_settings_field('videoComposerApiKey', 'API Key do Serviço de Composição', 'stlai_render_password_field', 'stlai_config_ia_page', 'stlai_config_video_composer_section', array('id' => 'videoComposerApiKey'));
+    add_settings_field('videoComposerTimeout', 'Timeout da Composição', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_video_composer_section', array('id' => 'videoComposerTimeout', 'default' => '300'));
+
     // ======== PAGINA: CONFIG DE IA (NARRACAO / ELEVENLABS) ========
     add_settings_section('stlai_config_audio_section', 'Configuracoes de Narracao / ElevenLabs', '__return_empty_string', 'stlai_config_ia_page');
     add_settings_field('audioProvider', 'Provider de Audio', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_audio_section', array('id' => 'audioProvider', 'default' => 'elevenlabs', 'options' => array('elevenlabs' => 'ElevenLabs')));
