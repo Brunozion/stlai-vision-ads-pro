@@ -677,3 +677,45 @@ O passo 4 mantém o check visual de seleção. O Resultado final renderiza botõ
 ### Status
 
 Decidido
+
+## 2026-05-20 - Status granular de clipes e música futura
+
+### Decisao
+
+O job de vídeo deve expor `progress_hint`, `current_clip_index` e `current_clip_attempt` para que a interface acompanhe melhor a geração de cada clipe. O frontend pode corrigir visualmente status atrasados usando esses campos e a quantidade de clipes já salvos.
+
+Música de fundo fica para uma story futura e será implementada no renderer/FFmpeg, não misturada diretamente no TTS. A opção padrão futura deve ser desligada, com presets suaves como `suave`, `comercial` e `emocional`, volume baixo entre 5% e 12%.
+
+### Motivo
+
+O fluxo PHP ainda pode executar chamadas longas; sem sinais granulares, a UI fica presa em "Gerando narração" mesmo quando os clipes já estão em andamento. A música precisa ser controlada na composição final para preservar a narração ElevenLabs limpa.
+
+### Impacto
+
+A UI passa a inferir fases de clipe por `current_clip_index`, `progress_hint` e `clips.length`, sem exigir uma refatoração completa do pipeline nesta story. Música de fundo permanece apenas documentada e não foi implementada.
+
+### Status
+
+Decidido
+
+## 2026-05-20 - Frames preparados para vídeo e enquadramento seguro
+
+### Decisao
+
+Os frames preparados para o Veo devem ser salvos no job e exibidos publicamente em uma seção separada chamada "Imagens para vídeo", com o formato escolhido no título: "Imagens para vídeo 9:16" ou "Imagens para vídeo 16:9".
+
+Os players dos clipes devem respeitar o formato escolhido. Em 9:16, cards e players usam proporção vertical; em 16:9, usam proporção horizontal.
+
+O preparo do frame para Veo deve preservar o produto inteiro com margem segura, em vez de cortar a imagem para preencher o aspect ratio. O prompt 16:9 deve pedir câmera mais aberta, produto centralizado e espaço seguro acima/abaixo para evitar cortar cabeça, topo, base ou partes importantes.
+
+### Motivo
+
+O usuário precisa ver não só as imagens quadradas originais, mas também os frames realmente enviados ao pipeline de vídeo. No teste real, vídeos verticais apareciam em cards largos e o horizontal podia cortar partes importantes do produto.
+
+### Impacto
+
+O contrato do job passa a retornar `video_frames`. A interface separa galeria original, clipes preparados e imagens preparadas para vídeo. O provider Veo gera frames com encaixe seguro e reforça o prompt para manter o produto inteiro visível.
+
+### Status
+
+Decidido

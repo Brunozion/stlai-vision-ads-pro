@@ -133,6 +133,11 @@ class STLAI_Veo_Provider {
             'path'           => $clip['path'],
             'duration'       => 8,
             'muted'          => true,
+            'prepared_frame_url' => $prepared_frame['prepared_frame_url'] ?? '',
+            'prepared_frame_path' => $prepared_frame['prepared_frame_path'] ?? '',
+            'prepared_frame_width' => (int) ( $prepared_frame['prepared_width'] ?? 0 ),
+            'prepared_frame_height' => (int) ( $prepared_frame['prepared_height'] ?? 0 ),
+            'aspect_ratio'   => $aspect_ratio['value'],
             'provider'       => 'veo',
             'model'          => $config['model'],
             'operation_id'   => $operation_name,
@@ -281,7 +286,15 @@ class STLAI_Veo_Provider {
         $product_description = self::compact_text( $product_description, 320 );
         $script_context = self::compact_text( $script, 260 );
         $role_label = self::compact_text( sanitize_text_field( $payload['role_label'] ?? '' ), 120 );
-        $role_direction = self::compact_text( sanitize_text_field( $payload['role_direction'] ?? '' ), 320 );
+        $role_direction = self::compact_text( sanitize_text_field( $payload['role_direction'] ?? '' ), 520 );
+        $format = sanitize_text_field( $payload['format'] ?? '' );
+        $format_direction = 'Keep the full product visible with safe space around all important edges. Stable camera, natural professional smartphone movement, no scene change, no internal fade.';
+
+        if ( '16:9' === $format ) {
+            $format_direction = 'For 16:9 horizontal output, use a wider framing. Center the product with safe space above, below and on both sides. If the product has a character, face, head, top ornament, cake topper shape, keychain ring, base or stand, keep the whole object inside the frame. Start with a medium or wide shot and use only a very gentle zoom in. Avoid close-ups that cut the head, face, top, base or important product details.';
+        } elseif ( '9:16' === $format || '1:1' === $format ) {
+            $format_direction = 'For 9:16 vertical output, keep the product centered vertically with safe space at the top and base. Use only a light natural zoom or slight parallax and never crop the product top, base, ring, support or display position.';
+        }
 
         $product_line = $product_name ?: 'Decorative 3D printed keychain.';
         if ( ! empty( $product_description ) ) {
@@ -306,6 +319,8 @@ class STLAI_Veo_Provider {
                 ( $role_label ?: 'Product visual clip' ) . ( $role_direction ? '. Direction: ' . $role_direction : '' ),
                 'Visual direction:',
                 'Create one continuous 8-second silent, visual-only product video from the same image. Single continuous shot. No scene changes. No cuts. No internal transitions. No fade inside the clip. No before/after. No montage. No new location. Do not create a new scene. Do not change the background. Do not change the composition. Do not cut to another shot. Do not fade to another scene. Do not transition inside the clip. Keep the product mostly still, like a realistic high-quality smartphone product recording. Only add subtle camera movement, gentle handheld feel, slow zoom in or slow zoom out, and slight natural parallax. Avoid exaggerated animation.',
+                'Framing and safe area:',
+                'Keep the full product visible during most of the clip. Do not crop the head, face, top, base, support, ring, hook, stand, surface or any important product detail. Use stable camera movement, light natural motion, and a professional smartphone product-recording feel. ' . $format_direction,
                 'Product anchoring rules:',
                 'Preserve the exact product presentation from the reference image. Do not detach the product from its support or display position. Do not show a hand picking it up, removing it, lifting it, hanging it, placing it, or transforming its usage. Keep the product anchored exactly as shown in the reference image. No interaction action unless already clearly present in the source image.',
                 'Strict restrictions:',
@@ -350,22 +365,18 @@ class STLAI_Veo_Provider {
             return self::error( 'IMAGE_PREPROCESSOR_UNAVAILABLE', 'Não foi possível preparar a imagem no formato do vídeo.', 'Falha ao criar canvas GD.' );
         }
 
-        $target_ratio = $target_w / $target_h;
-        $source_ratio = $src_w / $src_h;
+        $white = imagecolorallocate( $canvas, 255, 255, 255 );
+        imagefilledrectangle( $canvas, 0, 0, $target_w, $target_h, $white );
 
-        if ( $source_ratio > $target_ratio ) {
-            $crop_h = $src_h;
-            $crop_w = (int) floor( $src_h * $target_ratio );
-            $crop_x = (int) floor( ( $src_w - $crop_w ) / 2 );
-            $crop_y = 0;
-        } else {
-            $crop_w = $src_w;
-            $crop_h = (int) floor( $src_w / $target_ratio );
-            $crop_x = 0;
-            $crop_y = (int) floor( ( $src_h - $crop_h ) / 2 );
-        }
+        $safe_w = (int) floor( $target_w * 0.9 );
+        $safe_h = (int) floor( $target_h * 0.9 );
+        $scale = min( $safe_w / $src_w, $safe_h / $src_h );
+        $draw_w = max( 1, (int) floor( $src_w * $scale ) );
+        $draw_h = max( 1, (int) floor( $src_h * $scale ) );
+        $draw_x = (int) floor( ( $target_w - $draw_w ) / 2 );
+        $draw_y = (int) floor( ( $target_h - $draw_h ) / 2 );
 
-        imagecopyresampled( $canvas, $source, 0, 0, $crop_x, $crop_y, $target_w, $target_h, $crop_w, $crop_h );
+        imagecopyresampled( $canvas, $source, $draw_x, $draw_y, 0, 0, $draw_w, $draw_h, $src_w, $src_h );
 
         $saved = self::save_prepared_frame_from_gd( $canvas, $aspect_ratio );
 
@@ -390,7 +401,12 @@ class STLAI_Veo_Provider {
 
             list( $target_w, $target_h ) = self::frame_dimensions_for_aspect_ratio( $aspect_ratio );
 
-            $source->cropThumbnailImage( $target_w, $target_h );
+            $source->thumbnailImage( (int) floor( $target_w * 0.9 ), (int) floor( $target_h * 0.9 ), true );
+            $source->setImageBackgroundColor( 'white' );
+            $source->setImagePage( 0, 0, 0, 0 );
+            $x = (int) floor( ( $target_w - $source->getImageWidth() ) / 2 );
+            $y = (int) floor( ( $target_h - $source->getImageHeight() ) / 2 );
+            $source->extentImage( $target_w, $target_h, -$x, -$y );
             $source->setImageFormat( 'jpeg' );
             $source->setImageCompressionQuality( 92 );
 

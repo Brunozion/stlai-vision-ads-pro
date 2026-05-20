@@ -31,6 +31,7 @@ class STLAI_Video_Job_Service {
                     array(
                         'status'               => 'queued',
                         'progress'             => max( 10, (int) ( $existing_job['progress'] ?? 10 ) ),
+                        'progress_hint'        => max( 10, (int) ( $existing_job['progress_hint'] ?? ( $existing_job['progress'] ?? 10 ) ) ),
                         'message'              => 'Retomando geração do vídeo.',
                         'audio_url'            => $existing_job['audio_url'] ?? '',
                         'audio_path'           => $existing_job['audio_path'] ?? '',
@@ -39,6 +40,7 @@ class STLAI_Video_Job_Service {
                         'audio_voice_id'       => $existing_job['audio_voice_id'] ?? '',
                         'clips'                => self::normalize_clip_list( $existing_job['clips'] ?? array() ),
                         'partial_clips'        => self::normalize_clip_list( $existing_job['partial_clips'] ?? ( $existing_job['clips'] ?? array() ) ),
+                        'video_frames'         => self::normalize_video_frames( $existing_job['video_frames'] ?? self::video_frames_from_clips( $existing_job['clips'] ?? array() ) ),
                         'composition_status'   => 'pending',
                         'current_clip_index'   => 0,
                         'current_clip_attempt' => 0,
@@ -74,6 +76,7 @@ class STLAI_Video_Job_Service {
                 array(
                     'status'   => 'generating_audio',
                     'progress' => 18,
+                    'progress_hint' => 18,
                     'message'  => 'Gerando narracao profissional.',
                 )
             );
@@ -86,6 +89,7 @@ class STLAI_Video_Job_Service {
                     array(
                         'status'        => 'error',
                         'progress'      => 0,
+                        'progress_hint' => 0,
                         'message'       => $audio->get_error_message(),
                         'error_code'    => $audio->get_error_code(),
                         'error_message' => $audio->get_error_message(),
@@ -101,6 +105,7 @@ class STLAI_Video_Job_Service {
                 array(
                     'status'         => 'generating_audio',
                     'progress'       => 22,
+                    'progress_hint'  => 24,
                     'message'        => 'Narracao gerada com sucesso.',
                     'audio_url'      => $audio['audio_url'] ?? '',
                     'audio_path'     => $audio['audio_path'] ?? '',
@@ -115,12 +120,14 @@ class STLAI_Video_Job_Service {
                 array(
                     'status'   => 'generating_audio',
                     'progress' => max( 22, (int) ( $job['progress'] ?? 22 ) ),
+                    'progress_hint' => 24,
                     'message'  => 'Narracao existente reutilizada.',
                 )
             );
         }
 
         $clips = self::normalize_clip_list( $job['clips'] ?? array() );
+        $video_frames = self::normalize_video_frames( $job['video_frames'] ?? self::video_frames_from_clips( $clips ) );
         $clip_roles = self::clip_roles();
         $selected_images = array_slice( $validated['selected_images'], 0, 4 );
 
@@ -151,14 +158,17 @@ class STLAI_Video_Job_Service {
                 $safe_debug = is_array( $error_data ) ? ( $error_data['debug'] ?? self::clip_error_debug( $error_data, $role, $validated['format'] ) ) : '';
                 $message = 'Não foi possível gerar o clipe ' . $clip_index . '.';
                 $partial_clips = self::normalize_clip_list( $clips );
+                $video_frames = self::video_frames_from_clips( $partial_clips );
                 STLAI_Video_Storage::update_job(
                     $job['job_id'],
                     array(
                         'status'            => 'clip_generation_error',
                         'progress'          => self::clip_progress( $clip_index ),
+                        'progress_hint'     => self::clip_progress_hint( $clip_index ),
                         'message'           => $message,
                         'clips'             => $partial_clips,
                         'partial_clips'     => $partial_clips,
+                        'video_frames'      => $video_frames,
                         'composition_status' => 'pending',
                         'current_clip_index' => $clip_index,
                         'current_clip_attempt' => self::CLIP_MAX_ATTEMPTS,
@@ -182,6 +192,7 @@ class STLAI_Video_Job_Service {
                         'audio_url'         => $job['audio_url'] ?? '',
                         'clips'             => $partial_clips,
                         'partial_clips'     => $partial_clips,
+                        'video_frames'      => $video_frames,
                         'failed_clip'       => $clip_index,
                         'failed_clip_index' => $clip_index,
                         'failed_clip_role'  => $role['role'],
@@ -189,18 +200,22 @@ class STLAI_Video_Job_Service {
                         'current_clip_attempt' => self::CLIP_MAX_ATTEMPTS,
                         'clip_retry_count'  => self::CLIP_MAX_ATTEMPTS - 1,
                         'last_clip_error'   => is_array( $error_data ) ? ( $error_data['last_error_summary'] ?? $clip->get_error_message() ) : $clip->get_error_message(),
+                        'progress_hint'     => self::clip_progress_hint( $clip_index ),
                     )
                 );
             }
 
             $clips[] = self::public_clip_data( $clip );
+            $video_frames = self::video_frames_from_clips( $clips );
             STLAI_Video_Storage::update_job(
                 $job['job_id'],
                 array(
                     'status'   => 'generating_clip_' . $clip_index,
                     'progress' => self::clip_progress( $clip_index ),
+                    'progress_hint' => self::clip_progress_hint( $clip_index, true ),
                     'message'  => 'Clipe ' . $clip_index . ' gerado com sucesso.',
                     'clips'    => $clips,
+                    'video_frames' => $video_frames,
                     'current_clip_index' => 0,
                     'current_clip_attempt' => 0,
                     'clip_retry_count' => 0,
@@ -221,9 +236,11 @@ class STLAI_Video_Job_Service {
                 array(
                     'status'             => 'ready_for_composition',
                     'progress'           => 79,
+                    'progress_hint'      => 79,
                     'message'            => 'Aguardando todos os clipes para compor o vídeo final.',
                     'clips'              => $clips,
                     'partial_clips'      => $clips,
+                    'video_frames'       => self::video_frames_from_clips( $clips ),
                     'composition_status' => 'pending',
                 )
             );
@@ -234,9 +251,11 @@ class STLAI_Video_Job_Service {
             array(
                 'status'             => 'clips_ready',
                 'progress'           => 79,
+                'progress_hint'      => 79,
                 'message'            => '4 clipes gerados. Preparando composição final.',
                 'clips'              => $clips,
                 'partial_clips'      => array(),
+                'video_frames'       => self::video_frames_from_clips( $clips ),
                 'composition_status' => 'pending',
                 'current_clip_index' => 0,
                 'current_clip_attempt' => 0,
@@ -252,6 +271,7 @@ class STLAI_Video_Job_Service {
             array(
                 'status'             => 'composing_final_video',
                 'progress'           => 80,
+                'progress_hint'      => 80,
                 'message'            => 'Compondo vídeo final...',
                 'composition_status' => 'processing',
             )
@@ -277,9 +297,11 @@ class STLAI_Video_Job_Service {
                 array(
                     'status'             => $fallback_status,
                     'progress'           => 80,
+                    'progress_hint'      => 80,
                     'message'            => $fallback_message,
                     'clips'              => $clips,
                     'partial_clips'      => array(),
+                    'video_frames'       => self::video_frames_from_clips( $clips ),
                     'composition_status' => $fallback_composition_status,
                     'final_video_url'    => '',
                     'final_video_path'   => '',
@@ -305,6 +327,7 @@ class STLAI_Video_Job_Service {
                     'composition_status' => $fallback_composition_status,
                     'audio_url'          => $job['audio_url'] ?? '',
                     'clips'              => $clips,
+                    'video_frames'       => self::video_frames_from_clips( $clips ),
                 )
             );
         }
@@ -314,8 +337,10 @@ class STLAI_Video_Job_Service {
             array(
                 'status'               => 'composition_queued',
                 'progress'             => max( 80, min( 82, (int) ( $composer['progress'] ?? 80 ) ) ),
+                'progress_hint'        => 80,
                 'message'              => 'Composição final em andamento...',
                 'clips'                => $clips,
+                'video_frames'         => self::video_frames_from_clips( $clips ),
                 'composition_status'   => 'queued',
                 'composer_status'      => $composer['status'] ?? 'queued',
                 'render_job_id'        => $composer['render_job_id'] ?? '',
@@ -380,6 +405,7 @@ class STLAI_Video_Job_Service {
                 array(
                     'status'             => 'composition_error',
                     'progress'           => max( 80, (int) ( $job['progress'] ?? 80 ) ),
+                    'progress_hint'      => max( 80, (int) ( $job['progress_hint'] ?? ( $job['progress'] ?? 80 ) ) ),
                     'message'            => $remote->get_error_message(),
                     'composition_status' => 'error',
                     'composer_status'    => 'error',
@@ -397,6 +423,7 @@ class STLAI_Video_Job_Service {
                 array(
                     'status'               => 'ready',
                     'progress'             => 100,
+                    'progress_hint'        => 100,
                     'message'              => $remote['message'] ?? 'Vídeo final composto com sucesso.',
                     'composition_status'   => 'complete',
                     'composer_status'      => 'ready',
@@ -420,6 +447,7 @@ class STLAI_Video_Job_Service {
             array(
                 'status'             => 'queued' === $remote_status ? 'composition_queued' : 'composition_processing',
                 'progress'           => self::composition_progress( $remote_status, $remote['progress'] ?? 0, $job['progress'] ?? 80 ),
+                'progress_hint'      => self::composition_progress( $remote_status, $remote['progress'] ?? 0, $job['progress_hint'] ?? ( $job['progress'] ?? 80 ) ),
                 'message'            => $remote['message'] ?? 'Composição final em andamento...',
                 'composition_status' => 'queued' === $remote_status ? 'queued' : 'processing',
                 'composer_status'    => $remote_status,
@@ -866,6 +894,10 @@ class STLAI_Video_Job_Service {
                 'path'     => sanitize_text_field( $clip['path'] ?? '' ),
                 'duration' => (int) ( $clip['duration'] ?? 8 ),
                 'muted'    => true,
+                'prepared_frame_url' => esc_url_raw( $clip['prepared_frame_url'] ?? '' ),
+                'prepared_frame_width' => (int) ( $clip['prepared_frame_width'] ?? 0 ),
+                'prepared_frame_height' => (int) ( $clip['prepared_frame_height'] ?? 0 ),
+                'aspect_ratio' => sanitize_text_field( $clip['aspect_ratio'] ?? '' ),
             );
         }
 
@@ -946,22 +978,22 @@ class STLAI_Video_Job_Service {
             array(
                 'role'      => 'apresentacao_geral',
                 'label'     => 'Clipe 1 — Apresentação geral',
-                'direction' => 'Use the selected image as-is. Slow zoom in, stable product presentation. Do not create a new scene.',
+                'direction' => 'Use the selected image as-is. Start with the full product visible, stable product presentation, medium/wide framing, slow gentle zoom in. Do not create a new scene. Do not crop the product top, base, face, ring, support or display stand.',
             ),
             array(
                 'role'      => 'uso_contexto',
                 'label'     => 'Clipe 2 — Uso / contexto',
-                'direction' => 'Use the selected image as-is. Gentle camera drift showing the product in its existing context. Do not create a new use case.',
+                'direction' => 'Use the selected image as-is. Gentle camera drift showing the product in its existing context with the whole product safely inside frame. Do not create a new use case or tighter crop.',
             ),
             array(
                 'role'      => 'detalhe_acabamento',
                 'label'     => 'Clipe 3 — Detalhe / acabamento',
-                'direction' => 'Use the selected image as-is. Subtle close-up feel, emphasizing texture and finish, but do not change crop too aggressively.',
+                'direction' => 'Use the selected image as-is. Subtle detail emphasis, but keep the full product or all important product parts visible. Avoid aggressive close-up and do not cut head, top, base, ring, support or finish details.',
             ),
             array(
                 'role'      => 'hero_fechamento',
                 'label'     => 'Clipe 4 — Hero / fechamento',
-                'direction' => 'Use the selected image as-is. Premium slow zoom out or slight parallax, elegant final product shot. Preserve the exact product presentation, support, base, hook, display stand, surface, attachment point and display position. Keep the product anchored exactly as shown. Do not detach, lift, pull, hang, place, attach, fit, remove or transform the product. Do not show any hand interaction unless a hand is already clearly present in the source image.',
+                'direction' => 'Use the selected image as-is. Premium slow zoom out or slight parallax, elegant final product shot with the entire product visible. Preserve the exact product presentation, support, base, hook, display stand, surface, attachment point and display position. Keep the product anchored exactly as shown. Do not detach, lift, pull, hang, place, attach, fit, remove or transform the product. Do not show any hand interaction unless a hand is already clearly present in the source image.',
             ),
         );
     }
@@ -975,6 +1007,73 @@ class STLAI_Video_Job_Service {
             'path'     => sanitize_text_field( $clip['path'] ?? '' ),
             'duration' => (int) ( $clip['duration'] ?? 8 ),
             'muted'    => true,
+            'prepared_frame_url' => esc_url_raw( $clip['prepared_frame_url'] ?? '' ),
+            'prepared_frame_width' => (int) ( $clip['prepared_frame_width'] ?? 0 ),
+            'prepared_frame_height' => (int) ( $clip['prepared_frame_height'] ?? 0 ),
+            'aspect_ratio' => sanitize_text_field( $clip['aspect_ratio'] ?? '' ),
+        );
+    }
+
+    private static function normalize_video_frames( $frames ) {
+        if ( ! is_array( $frames ) ) {
+            return array();
+        }
+
+        $normalized = array();
+        foreach ( $frames as $frame ) {
+            if ( ! is_array( $frame ) || empty( $frame['url'] ) ) {
+                continue;
+            }
+
+            $public_frame = self::public_video_frame_data( $frame );
+            $index = (int) ( $public_frame['index'] ?? 0 );
+            if ( $index < 1 || $index > 4 ) {
+                continue;
+            }
+            $normalized[ $index ] = $public_frame;
+        }
+
+        usort(
+            $normalized,
+            function ( $a, $b ) {
+                return (int) ( $a['index'] ?? 0 ) <=> (int) ( $b['index'] ?? 0 );
+            }
+        );
+
+        return array_values( $normalized );
+    }
+
+    private static function video_frames_from_clips( $clips ) {
+        $frames = array();
+        foreach ( self::normalize_clip_list( $clips ) as $clip ) {
+            if ( empty( $clip['prepared_frame_url'] ) ) {
+                continue;
+            }
+
+            $frames[] = self::public_video_frame_data(
+                array(
+                    'index'        => (int) ( $clip['index'] ?? 0 ),
+                    'url'          => $clip['prepared_frame_url'],
+                    'aspect_ratio' => $clip['aspect_ratio'] ?? '',
+                    'label'        => 'Imagem para vídeo ' . (int) ( $clip['index'] ?? 0 ),
+                    'width'        => (int) ( $clip['prepared_frame_width'] ?? 0 ),
+                    'height'       => (int) ( $clip['prepared_frame_height'] ?? 0 ),
+                )
+            );
+        }
+
+        return self::normalize_video_frames( $frames );
+    }
+
+    private static function public_video_frame_data( array $frame ) {
+        $index = (int) ( $frame['index'] ?? 0 );
+        return array(
+            'index'        => $index,
+            'url'          => esc_url_raw( $frame['url'] ?? '' ),
+            'aspect_ratio' => sanitize_text_field( $frame['aspect_ratio'] ?? '' ),
+            'label'        => sanitize_text_field( $frame['label'] ?? ( 'Imagem para vídeo ' . $index ) ),
+            'width'        => (int) ( $frame['width'] ?? 0 ),
+            'height'       => (int) ( $frame['height'] ?? 0 ),
         );
     }
 
@@ -999,6 +1098,7 @@ class STLAI_Video_Job_Service {
                 array(
                     'status'               => ( $is_retry ? 'retrying_clip_' : 'generating_clip_' ) . $clip_index,
                     'progress'             => self::clip_progress( $clip_index ),
+                    'progress_hint'        => self::clip_progress_hint( $clip_index ),
                     'message'              => $is_retry
                         ? 'Ajustando geração do clipe ' . $clip_index . '. Tentativa ' . $attempt . ' de ' . self::CLIP_MAX_ATTEMPTS . '.'
                         : 'Gerando clipe ' . $clip_index . ' de 4.',
@@ -1032,6 +1132,7 @@ class STLAI_Video_Job_Service {
                 array(
                     'status'               => 'retrying_clip_' . $clip_index,
                     'progress'             => self::clip_progress( $clip_index ),
+                    'progress_hint'        => self::clip_progress_hint( $clip_index ),
                     'message'              => 'Ajustando geração do clipe ' . $clip_index . '. Tentativa ' . ( $attempt + 1 ) . ' de ' . self::CLIP_MAX_ATTEMPTS . '.',
                     'clips'                => $clips,
                     'partial_clips'        => $clips,
@@ -1132,6 +1233,22 @@ class STLAI_Video_Job_Service {
         $clip_index = (int) $clip_index;
 
         return $map[ $clip_index ] ?? 30;
+    }
+
+    private static function clip_progress_hint( $clip_index, $complete = false ) {
+        $ranges = array(
+            1 => array( 25, 37 ),
+            2 => array( 38, 51 ),
+            3 => array( 52, 65 ),
+            4 => array( 66, 78 ),
+        );
+
+        $clip_index = (int) $clip_index;
+        if ( empty( $ranges[ $clip_index ] ) ) {
+            return 25;
+        }
+
+        return $complete ? $ranges[ $clip_index ][1] : $ranges[ $clip_index ][0];
     }
 
     private static function composition_progress( $remote_status, $remote_progress, $fallback = 80 ) {

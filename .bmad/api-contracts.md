@@ -886,3 +886,53 @@ Ainda não faz parte do contrato implementado:
 - integração MuAPI;
 - UGC;
 - providers alternativos públicos no frontend.
+
+## 16. Progresso granular de clipes
+
+Os endpoints de vídeo podem retornar campos auxiliares para acompanhamento visual:
+
+```json
+{
+  "status": "generating_clip_2",
+  "progress": 44,
+  "progress_hint": 38,
+  "current_clip_index": 2,
+  "current_clip_attempt": 1,
+  "clip_retry_count": 0,
+  "clips": []
+}
+```
+
+Regras:
+
+- `progress_hint` é um piso visual seguro para a fase atual.
+- `current_clip_index` indica o clipe em geração ou retry.
+- `current_clip_attempt` indica a tentativa atual, de 1 a 3.
+- Se `status` chegar atrasado como `generating_audio` ou `generating_narration`, o frontend pode inferir `generating_clip_X` quando `current_clip_index` ou `clips.length` indicar uma fase mais avançada.
+- Com 4 clipes prontos e sem `final_video_url`, a UI deve mostrar composição em fila/processamento, não narração.
+
+## 17. Frames preparados para vídeo
+
+Os endpoints de job podem retornar `video_frames`, com os frames preparados no aspect ratio usado para gerar cada clipe no Veo:
+
+```json
+{
+  "video_frames": [
+    {
+      "index": 1,
+      "url": "https://.../uploads/stlai-vision-video/frames/stlai-veo-frame-xxx.jpg",
+      "aspect_ratio": "9:16",
+      "label": "Imagem para vídeo 1",
+      "width": 1080,
+      "height": 1920
+    }
+  ]
+}
+```
+
+Regras:
+
+- `video_frames` é separado da galeria quadrada original.
+- Cada frame representa a imagem preparada e enviada ao Veo para aquele clipe.
+- Se o frame não existir, a UI não deve quebrar e deve apenas ocultar a seção.
+- Os clipes também podem carregar metadados auxiliares `prepared_frame_url`, `prepared_frame_width`, `prepared_frame_height` e `aspect_ratio`.

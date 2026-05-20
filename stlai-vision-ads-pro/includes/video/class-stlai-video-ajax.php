@@ -88,10 +88,12 @@ class STLAI_Video_Ajax {
             'job_id'          => $job['job_id'] ?? '',
             'status'          => $job['status'] ?? 'queued',
             'progress'        => (int) ( $job['progress'] ?? 0 ),
+            'progress_hint'   => (int) ( $job['progress_hint'] ?? ( $job['progress'] ?? 0 ) ),
             'message'         => $job['message'] ?? '',
             'audio_url'       => $job['audio_url'] ?? '',
             'clips'           => self::public_clips_response( $job['clips'] ?? array() ),
             'partial_clips'   => self::public_clips_response( $job['partial_clips'] ?? array() ),
+            'video_frames'    => self::public_video_frames_response( $job['video_frames'] ?? array() ),
             'final_video_url' => $job['final_video_url'] ?? '',
             'final_video_duration' => (float) ( $job['final_video_duration'] ?? 0 ),
             'transition_used' => sanitize_key( $job['transition_used'] ?? '' ),
@@ -135,6 +137,34 @@ class STLAI_Video_Ajax {
                 'url'      => esc_url_raw( $clip['url'] ?? '' ),
                 'duration' => (int) ( $clip['duration'] ?? 8 ),
                 'muted'    => true,
+                'prepared_frame_url' => esc_url_raw( $clip['prepared_frame_url'] ?? '' ),
+                'prepared_frame_width' => (int) ( $clip['prepared_frame_width'] ?? 0 ),
+                'prepared_frame_height' => (int) ( $clip['prepared_frame_height'] ?? 0 ),
+                'aspect_ratio' => sanitize_text_field( $clip['aspect_ratio'] ?? '' ),
+            );
+        }
+
+        return $response;
+    }
+
+    private static function public_video_frames_response( $frames ) {
+        if ( ! is_array( $frames ) ) {
+            return array();
+        }
+
+        $response = array();
+        foreach ( $frames as $frame ) {
+            if ( ! is_array( $frame ) || empty( $frame['url'] ) ) {
+                continue;
+            }
+
+            $response[] = array(
+                'index'        => (int) ( $frame['index'] ?? 0 ),
+                'url'          => esc_url_raw( $frame['url'] ?? '' ),
+                'aspect_ratio' => sanitize_text_field( $frame['aspect_ratio'] ?? '' ),
+                'label'        => sanitize_text_field( $frame['label'] ?? '' ),
+                'width'        => (int) ( $frame['width'] ?? 0 ),
+                'height'       => (int) ( $frame['height'] ?? 0 ),
             );
         }
 
@@ -179,6 +209,10 @@ class STLAI_Video_Ajax {
                 $response['clip_retry_count'] = (int) $data['clip_retry_count'];
             }
 
+            if ( isset( $data['progress_hint'] ) ) {
+                $response['progress_hint'] = (int) $data['progress_hint'];
+            }
+
             if ( ! empty( $data['last_clip_error'] ) ) {
                 $response['last_clip_error'] = sanitize_text_field( $data['last_clip_error'] );
             }
@@ -209,6 +243,10 @@ class STLAI_Video_Ajax {
 
             if ( ! empty( $data['partial_clips'] ) ) {
                 $response['partial_clips'] = self::public_clips_response( $data['partial_clips'] );
+            }
+
+            if ( ! empty( $data['video_frames'] ) ) {
+                $response['video_frames'] = self::public_video_frames_response( $data['video_frames'] );
             }
         }
 

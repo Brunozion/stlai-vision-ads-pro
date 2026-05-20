@@ -574,6 +574,16 @@
     <div class="video-clips-grid" id="video-clips-grid"></div>
   </div>
 
+  <div class="video-frames-box mt" id="video-frames-box" style="display:none">
+    <div class="video-panel-head">
+      <div>
+        <div class="sl" id="video-frames-title">Imagens para vídeo</div>
+        <p>Estas imagens foram preparadas no formato escolhido para gerar os clipes.</p>
+      </div>
+    </div>
+    <div class="video-frames-grid" id="video-frames-grid"></div>
+  </div>
+
   <div class="video-test-clip-box mt" id="video-test-clip-box" style="display:none">
     <div class="sl">Clipe IA de teste</div>
     <video id="video-test-clip-player" controls playsinline muted preload="metadata"></video>
@@ -694,6 +704,11 @@
       <div class="sum-video-clips-wrap" id="sum-video-clips-wrap" style="display:none">
         <span>Clipes preparados</span>
         <div class="video-clips-grid" id="sum-video-clips-grid"></div>
+      </div>
+      <div class="sum-video-frames-wrap" id="sum-video-frames-wrap" style="display:none">
+        <span id="sum-video-frames-title">Imagens para vídeo</span>
+        <p>Estas imagens foram preparadas no formato escolhido para gerar os clipes.</p>
+        <div class="video-frames-grid" id="sum-video-frames-grid"></div>
       </div>
     </div>
   </div>

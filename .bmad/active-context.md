@@ -1036,3 +1036,55 @@ O que foi feito:
 Status:
 
 - Correção concluida.
+
+## 2026-05-20 - Acompanhamento granular real dos clipes
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O job passou a salvar e retornar `progress_hint` junto com `progress`.
+- O frontend usa `current_clip_index`, `current_clip_attempt`, `progress_hint` e `clips.length` para corrigir status visual atrasado.
+- A barra de progresso mantém crescimento por fase e não volta para trás.
+- Placeholders dos clipes mostram "Pendente", "Gerando clipe X" ou "Tentando novamente".
+- Música de fundo ficou apenas documentada como decisão futura para o renderer/FFmpeg.
+
+Status:
+
+- Correção concluida.
+
+## 2026-05-20 - Frames preparados e layout por formato
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-veo-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O job passa a armazenar e retornar `video_frames`.
+- Cada clipe pode trazer `prepared_frame_url`, dimensões do frame e `aspect_ratio`.
+- O passo 5 e o Resultado final exibem "Imagens para vídeo 9:16/16:9" separadas da galeria quadrada.
+- Os clipes e frames usam layout vertical para 9:16 e horizontal para 16:9.
+- O preparo de frames para Veo passou a encaixar o produto com margem segura, sem crop agressivo.
+- O prompt do Veo foi reforçado para manter produto inteiro visível, especialmente no formato horizontal.
+
+Status:
+
+- Correção concluida.
