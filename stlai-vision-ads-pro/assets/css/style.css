@@ -281,6 +281,8 @@ body::before{content:'';position:fixed;top:-200px;left:-200px;width:700px;height
 .sum-video-motion-wrap .video-motion-inner{grid-template-columns:minmax(180px,.58fr) 1fr}
 .sum-video-motion-wrap .video-motion-preview{min-height:170px}
 .sum-video-motion-wrap .video-motion-title{font-size:18px}
+.sum-video-retry-wrap{display:flex;justify-content:flex-start;margin:0 0 12px}
+.sum-video-retry-wrap .btn{min-width:180px;justify-content:center}
 @keyframes videoPulse{0%{box-shadow:0 0 0 0 rgba(45,212,191,.5),0 0 18px rgba(45,212,191,.7)}70%{box-shadow:0 0 0 10px rgba(45,212,191,0),0 0 18px rgba(45,212,191,.5)}100%{box-shadow:0 0 0 0 rgba(45,212,191,0),0 0 18px rgba(45,212,191,.7)}}
 @keyframes videoScan{0%{transform:translateX(-120%)}55%,100%{transform:translateX(120%)}}
 @keyframes videoShimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}

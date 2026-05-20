@@ -94,6 +94,8 @@ class STLAI_Video_Ajax {
             'partial_clips'   => self::public_clips_response( $job['partial_clips'] ?? array() ),
             'final_video_url' => $job['final_video_url'] ?? '',
             'final_video_duration' => (float) ( $job['final_video_duration'] ?? 0 ),
+            'transition_used' => sanitize_key( $job['transition_used'] ?? '' ),
+            'fallback_used'   => sanitize_key( $job['fallback_used'] ?? '' ),
             'composer_mode'   => sanitize_key( $job['composer_mode'] ?? '' ),
             'composer_provider' => sanitize_key( $job['composer_provider'] ?? '' ),
             'composer_status' => sanitize_key( $job['composer_status'] ?? '' ),

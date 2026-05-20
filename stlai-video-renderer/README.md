@@ -79,6 +79,7 @@ curl -X POST http://localhost:3000/render \
       { "index": 4, "role": "hero_fechamento", "url": "https://seu-dominio.com/clip4.mp4" }
     ],
     "transition": "fade",
+    "enable_fade": true,
     "fade_duration": 0.4,
     "repeat_clips_until_audio_ends": true,
     "trim_to_audio_duration": true,
@@ -126,6 +127,8 @@ Quando pronto:
   "progress": 100,
   "final_video_url": "http://localhost:3000/renders/stlai-final-render_xxx.mp4",
   "duration": 72,
+  "transition_used": "concat",
+  "fallback_used": "",
   "message": "Vídeo final composto com sucesso."
 }
 ```
@@ -252,6 +255,6 @@ O container instala FFmpeg e FFprobe via `apt-get`, não copia `.env`, não copi
 - Em `RENDER_OUTPUT_QUALITY=preview`, a composição usa concatenação simples por padrão.
 - Em `preview`, `9:16` gera `720x1280` e `16:9` gera `1280x720`.
 - Em `RENDER_OUTPUT_QUALITY=full`, `9:16` gera `1080x1920` e `16:9` gera `1920x1080`.
-- `xfade` fica desligado por padrão. Se `ENABLE_XFADE=true` e o modo for `full`, o serviço tenta fade entre clipes; se falhar, cai automaticamente para concatenação simples.
+- `xfade` fica desligado por padrão. Para ativar fade com segurança, use `RENDER_OUTPUT_QUALITY=full`, `ENABLE_XFADE=true` e envie `enable_fade: true` no POST. Se o xfade falhar, o job continua com concatenação simples e retorna `fallback_used: "concat_without_fade"`.
 - O vídeo é escalado com `force_original_aspect_ratio=increase` e `crop`, evitando distorção.
 - O áudio nativo dos clipes é ignorado; apenas o áudio ElevenLabs é mapeado no MP4 final.

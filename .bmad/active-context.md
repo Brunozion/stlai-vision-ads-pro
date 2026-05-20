@@ -949,3 +949,35 @@ O que foi feito:
 Status:
 
 - Correção concluida.
+
+## 2026-05-20 - Fluxo final de vídeo e fade seguro
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- stlai-vision-ads-pro/includes/video/class-stlai-video-composer-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-video-renderer/server.js
+- stlai-video-renderer/README.md
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- A etapa 6 pública foi renomeada de "Resumo" para "Resultado final".
+- Ao clicar em "Gerar vídeo", o usuário é levado para a tela Resultado final assim que o job é aceito/iniciado.
+- A tela Resultado final mostra motion durante narração, clipes, fila e composição.
+- O player de narração separado foi removido da interface pública; o áudio permanece apenas como ativo interno do job.
+- A tela Resultado final mostra player principal quando `final_video_url` existe, grade com 4 clipes preparados e botão "Tentar novamente" em erro de composição.
+- A barra de progresso foi ajustada por fase: narração, clipes 1-4, clipes prontos, fila, processamento e pronto.
+- O plugin envia `enable_fade=true` para o renderer, mas o renderer só usa xfade quando `ENABLE_XFADE=true` e o modo efetivo permitir.
+- O renderer registra `transition_used` e `fallback_used`; se xfade falhar, usa concatenação simples sem falhar o job.
+
+Status:
+
+- Correção concluida.

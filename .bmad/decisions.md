@@ -544,3 +544,45 @@ O frontend passa a mapear `generating_audio`, `generating_clip_*`, `composition_
 ### Status
 
 Decidido
+
+## 2026-05-20 - Resultado final como tela pública de entrega
+
+### Decisao
+
+A etapa 6 deixa de ser apresentada publicamente como "Resumo" e passa a ser "Resultado final".
+
+Ao clicar em "Gerar vídeo", o usuário é levado para o Resultado final assim que o job é aceito/iniciado. Essa tela passa a ser o ponto principal de acompanhamento da geração, exibindo motion enquanto narração, clipes e composição avançam, e trocando para o player principal quando `final_video_url` existir.
+
+O áudio separado da narração não aparece para o usuário final. Ele continua existindo no job para composição, mas a interface pública mostra apenas o vídeo final e os 4 clipes preparados.
+
+### Motivo
+
+A página final não é apenas um resumo; ela é a entrega do anúncio criado. O usuário precisa acompanhar a geração no lugar onde receberá o resultado, sem encontrar um player de áudio separado que não faz parte da entrega final.
+
+### Impacto
+
+O frontend usa "Resultado final" na navegação e nos títulos públicos. Em erro de composição, a página mostra "Não foi possível concluir o vídeo final", informa que os clipes foram preservados e oferece "Tentar novamente" para recompor sem regenerar áudio/clipes quando eles já existem.
+
+### Status
+
+Decidido
+
+## 2026-05-20 - Fade opcional com fallback obrigatório no renderer
+
+### Decisao
+
+O plugin pode solicitar fade enviando `enable_fade=true`, mas o renderer só tenta `xfade` quando o ambiente estiver configurado para isso. No Render Free, o padrão permanece `RENDER_OUTPUT_QUALITY=preview` e `ENABLE_XFADE=false`, usando concatenação simples.
+
+Se `ENABLE_XFADE=true` e o xfade falhar, o job não deve falhar por causa da transição. O renderer deve cair automaticamente para concatenação simples e retornar `fallback_used=concat_without_fade`.
+
+### Motivo
+
+O fade melhora a estética, mas filtros `xfade` são mais pesados e podem exceder memória em planos pequenos. A composição final é mais importante que a transição.
+
+### Impacto
+
+O contrato de status passa a expor `transition_used` e `fallback_used`. O job só falha se a concatenação simples também falhar.
+
+### Status
+
+Decidido

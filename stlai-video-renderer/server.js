@@ -523,7 +523,8 @@ async function processRenderJob(renderJobId, payload) {
     const outputName = `stlai-final-${renderJobId}.mp4`;
     const outputPath = path.join(RENDERS_DIR, outputName);
     let debug = null;
-    let fallbackUsed = false;
+    let transitionUsed = "concat";
+    let fallbackUsed = "";
 
     await writeJob(renderJobId, {
       status: "processing",
@@ -541,8 +542,9 @@ async function processRenderJob(renderJobId, payload) {
           fadeDuration: payload.fadeDuration,
           format: payload.format
         });
+        transitionUsed = "xfade";
       } catch (err) {
-        fallbackUsed = true;
+        fallbackUsed = "concat_without_fade";
         logJob(renderJobId, "xfade_fallback", err.publicDebug || err.message);
         debug = await composeConcat({
           audioPath,
@@ -552,6 +554,7 @@ async function processRenderJob(renderJobId, payload) {
           workDir,
           format: payload.format
         });
+        transitionUsed = "concat";
       }
     } else {
       debug = await composeConcat({
@@ -562,13 +565,14 @@ async function processRenderJob(renderJobId, payload) {
         workDir,
         format: payload.format
       });
+      transitionUsed = "concat";
     }
 
     await assertOutput(outputPath);
     await removeDirSafe(workDir);
 
     const finalVideoUrl = `${PUBLIC_BASE_URL}/renders/${outputName}`;
-    logJob(renderJobId, "ready", `duration=${formatSeconds(audioDuration)}s; fallback=${fallbackUsed}; url=${finalVideoUrl}`);
+    logJob(renderJobId, "ready", `duration=${formatSeconds(audioDuration)}s; transition=${transitionUsed}; fallback=${fallbackUsed || "none"}; url=${finalVideoUrl}`);
 
     await writeJob(renderJobId, {
       success: true,
@@ -576,8 +580,10 @@ async function processRenderJob(renderJobId, payload) {
       progress: 100,
       final_video_url: finalVideoUrl,
       duration: Number(audioDuration.toFixed(3)),
+      transition_used: transitionUsed,
+      fallback_used: fallbackUsed,
       message: "Vídeo final composto com sucesso.",
-      debug: `clips=${debug.repeatedClips}; quality=${RENDER_OUTPUT_QUALITY}; xfade=${payload.enableFade}; fallback=${fallbackUsed}`
+      debug: `clips=${debug.repeatedClips}; quality=${RENDER_OUTPUT_QUALITY}; xfade=${payload.enableFade}; transition=${transitionUsed}; fallback=${fallbackUsed || "none"}`
     });
   } catch (err) {
     if (workDir) {
@@ -673,7 +679,10 @@ app.get("/render/:render_job_id", requireAuth, async (req, res) => {
       job.debug || "",
       {
         render_job_id: job.render_job_id,
-        status: "error"
+        status: "error",
+        progress: Number(job.progress || 100),
+        transition_used: job.transition_used || "",
+        fallback_used: job.fallback_used || ""
       }
     );
   }
@@ -685,6 +694,8 @@ app.get("/render/:render_job_id", requireAuth, async (req, res) => {
     progress: Number(job.progress || 0),
     final_video_url: job.final_video_url || "",
     duration: Number(job.duration || 0),
+    transition_used: job.transition_used || "",
+    fallback_used: job.fallback_used || "",
     message: job.message || "Composição final em andamento..."
   });
 });

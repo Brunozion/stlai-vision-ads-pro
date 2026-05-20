@@ -220,7 +220,7 @@
   <span class="sa">›</span>
   <div class="si"><button class="sb locked" id="nav-5" onclick="tryStep(5)"><span class="sn">5</span>Vídeo</button></div>
   <span class="sa">›</span>
-  <div class="si"><button class="sb locked" id="nav-6" onclick="tryStep(6)"><span class="sn">6</span>Resumo</button></div>
+  <div class="si"><button class="sb locked" id="nav-6" onclick="tryStep(6)"><span class="sn">6</span>Resultado</button></div>
 </nav>
 
 <main class="main">
@@ -569,11 +569,6 @@
     <video id="video-final-player" controls playsinline preload="metadata"></video>
   </div>
 
-  <div class="video-audio-box mt" id="video-audio-box" style="display:none">
-    <div class="sl">Narração gerada</div>
-    <audio id="video-audio-player" controls preload="metadata"></audio>
-  </div>
-
   <div class="video-clips-box mt" id="video-clips-box" style="display:none">
     <div class="sl">Clipes preparados</div>
     <div class="video-clips-grid" id="video-clips-grid"></div>
@@ -587,7 +582,7 @@
   <div class="arow" style="margin-top:24px">
     <button class="btn bs" onclick="go(4)">← Voltar para imagens</button>
     <div class="arr">
-      <button class="btn bs" onclick="go(6)">Ver resumo</button>
+      <button class="btn bs" onclick="go(6)">Ir para resultado</button>
       <button class="btn bs" id="btn-test-veo-clip" onclick="generateTestVeoClip(this)">Testar clipe IA</button>
       <button class="btn bp" id="btn-generate-video" onclick="mockGenerateVideo()">Gerar vídeo</button>
     </div>
@@ -598,8 +593,8 @@
   <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px">
     <div class="sh" style="margin-bottom:0">
       <div class="sh-tag">✦ Passo 6 de 6</div>
-      <h1>Resumo & Exportação</h1>
-      <p>Todos os ativos gerados. Copie ou baixe.</p>
+      <h1>Resultado final</h1>
+      <p>Todos os ativos criados para o anúncio ficam reunidos aqui.</p>
     </div>
     <button class="btn bp" style="background:var(--acc-h); color:#000; box-shadow:0 4px 18px rgba(155,127,255,0.3)" onclick="resetApp()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 1 0 2.13-5.88L2 12"></path></svg> GERAR NOVO ADS
@@ -675,7 +670,7 @@
       <div class="sum-video-head">
         <div>
           <div class="sum-video-status" id="sum-video-status">Vídeo ainda não gerado.</div>
-          <p id="sum-video-note">Gere o vídeo no passo 5 para ver o resultado final aqui.</p>
+          <p id="sum-video-note">Gere o vídeo no passo 5 para acompanhar o resultado final aqui.</p>
         </div>
         <span class="sum-video-badge" id="sum-video-badge">Pendente</span>
       </div>
@@ -688,13 +683,12 @@
         <video id="sum-video-final-player" controls playsinline preload="metadata"></video>
       </div>
       <div class="sum-video-motion-wrap" id="sum-video-motion-wrap" style="display:none"></div>
+      <div class="sum-video-retry-wrap" id="sum-video-retry-wrap" style="display:none">
+        <button class="btn bp" type="button" onclick="mockGenerateVideo()">Tentar novamente</button>
+      </div>
       <div class="sum-video-script-wrap">
         <span>Roteiro</span>
         <p id="sum-video-script">Roteiro ainda não preparado.</p>
-      </div>
-      <div class="sum-video-audio-wrap" id="sum-video-audio-wrap" style="display:none">
-        <span>Narração gerada</span>
-        <audio id="sum-video-audio-player" controls preload="metadata"></audio>
       </div>
       <div class="sum-video-clips-wrap" id="sum-video-clips-wrap" style="display:none">
         <span>Clipes preparados</span>

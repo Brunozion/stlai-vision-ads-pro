@@ -68,7 +68,7 @@ class STLAI_Video_Job_Service {
                 $job['job_id'],
                 array(
                     'status'   => 'generating_audio',
-                    'progress' => 20,
+                    'progress' => 18,
                     'message'  => 'Gerando narracao profissional.',
                 )
             );
@@ -95,7 +95,7 @@ class STLAI_Video_Job_Service {
                 $job['job_id'],
                 array(
                     'status'         => 'generating_audio',
-                    'progress'       => 24,
+                    'progress'       => 22,
                     'message'        => 'Narracao gerada com sucesso.',
                     'audio_url'      => $audio['audio_url'] ?? '',
                     'audio_path'     => $audio['audio_path'] ?? '',
@@ -109,7 +109,7 @@ class STLAI_Video_Job_Service {
                 $job['job_id'],
                 array(
                     'status'   => 'generating_audio',
-                    'progress' => max( 24, (int) ( $job['progress'] ?? 24 ) ),
+                    'progress' => max( 22, (int) ( $job['progress'] ?? 22 ) ),
                     'message'  => 'Narracao existente reutilizada.',
                 )
             );
@@ -129,7 +129,7 @@ class STLAI_Video_Job_Service {
                 $job['job_id'],
                 array(
                     'status'   => 'generating_clip_' . $clip_index,
-                    'progress' => 24 + ( $clip_index * 14 ),
+                    'progress' => self::clip_progress( $clip_index ),
                     'message'  => 'Gerando clipe ' . $clip_index . ' de 4.',
                     'clips'    => $clips,
                 )
@@ -158,7 +158,7 @@ class STLAI_Video_Job_Service {
                     $job['job_id'],
                     array(
                         'status'            => 'clips_partial_error',
-                        'progress'          => 24 + ( $clip_index * 14 ),
+                        'progress'          => self::clip_progress( $clip_index ),
                         'message'           => $message,
                         'clips'             => $partial_clips,
                         'partial_clips'     => $partial_clips,
@@ -193,7 +193,7 @@ class STLAI_Video_Job_Service {
                 $job['job_id'],
                 array(
                     'status'   => 'generating_clip_' . $clip_index,
-                    'progress' => 24 + ( $clip_index * 14 ),
+                    'progress' => self::clip_progress( $clip_index ),
                     'message'  => 'Clipe ' . $clip_index . ' gerado com sucesso.',
                     'clips'    => $clips,
                 )
@@ -206,7 +206,7 @@ class STLAI_Video_Job_Service {
                 $job['job_id'],
                 array(
                     'status'             => 'ready_for_composition',
-                    'progress'           => 82,
+                    'progress'           => 79,
                     'message'            => 'Aguardando todos os clipes para compor o vídeo final.',
                     'clips'              => $clips,
                     'partial_clips'      => $clips,
@@ -219,7 +219,7 @@ class STLAI_Video_Job_Service {
             $job['job_id'],
             array(
                 'status'             => 'clips_ready',
-                'progress'           => 86,
+                'progress'           => 79,
                 'message'            => '4 clipes gerados. Preparando composição final.',
                 'clips'              => $clips,
                 'partial_clips'      => array(),
@@ -233,7 +233,7 @@ class STLAI_Video_Job_Service {
             $job['job_id'],
             array(
                 'status'             => 'composing_final_video',
-                'progress'           => 88,
+                'progress'           => 80,
                 'message'            => 'Compondo vídeo final...',
                 'composition_status' => 'processing',
             )
@@ -258,7 +258,7 @@ class STLAI_Video_Job_Service {
                 $job['job_id'],
                 array(
                     'status'             => $fallback_status,
-                    'progress'           => 88,
+                    'progress'           => 80,
                     'message'            => $fallback_message,
                     'clips'              => $clips,
                     'partial_clips'      => array(),
@@ -295,7 +295,7 @@ class STLAI_Video_Job_Service {
             $job['job_id'],
             array(
                 'status'               => 'composition_queued',
-                'progress'             => 90,
+                'progress'             => max( 80, min( 82, (int) ( $composer['progress'] ?? 80 ) ) ),
                 'message'              => 'Composição final em andamento...',
                 'clips'                => $clips,
                 'composition_status'   => 'queued',
@@ -361,7 +361,7 @@ class STLAI_Video_Job_Service {
                 $job['job_id'],
                 array(
                     'status'             => 'composition_error',
-                    'progress'           => max( 90, (int) ( $job['progress'] ?? 90 ) ),
+                    'progress'           => max( 80, (int) ( $job['progress'] ?? 80 ) ),
                     'message'            => $remote->get_error_message(),
                     'composition_status' => 'error',
                     'composer_status'    => 'error',
@@ -385,6 +385,8 @@ class STLAI_Video_Job_Service {
                     'final_video_url'      => $remote['final_video_url'] ?? '',
                     'final_video_duration' => $remote['final_video_duration'] ?? 0,
                     'final_video_debug'    => $remote['debug'] ?? '',
+                    'transition_used'      => $remote['transition_used'] ?? '',
+                    'fallback_used'        => $remote['fallback_used'] ?? '',
                     'composer_mode'        => $remote['composer_mode'] ?? ( $job['composer_mode'] ?? '' ),
                     'composer_provider'    => $remote['composer_provider'] ?? ( $job['composer_provider'] ?? '' ),
                     'composed_at'          => $remote['composed_at'] ?? current_time( 'mysql' ),
@@ -399,7 +401,7 @@ class STLAI_Video_Job_Service {
             $job['job_id'],
             array(
                 'status'             => 'queued' === $remote_status ? 'composition_queued' : 'composition_processing',
-                'progress'           => max( 90, (int) ( $remote['progress'] ?? ( $job['progress'] ?? 90 ) ) ),
+                'progress'           => self::composition_progress( $remote_status, $remote['progress'] ?? 0, $job['progress'] ?? 80 ),
                 'message'            => $remote['message'] ?? 'Composição final em andamento...',
                 'composition_status' => 'queued' === $remote_status ? 'queued' : 'processing',
                 'composer_status'    => $remote_status,
@@ -956,6 +958,38 @@ class STLAI_Video_Job_Service {
             'duration' => (int) ( $clip['duration'] ?? 8 ),
             'muted'    => true,
         );
+    }
+
+    private static function clip_progress( $clip_index ) {
+        $map = array(
+            1 => 30,
+            2 => 45,
+            3 => 60,
+            4 => 74,
+        );
+
+        $clip_index = (int) $clip_index;
+
+        return $map[ $clip_index ] ?? 30;
+    }
+
+    private static function composition_progress( $remote_status, $remote_progress, $fallback = 80 ) {
+        $remote_status = sanitize_key( $remote_status );
+
+        if ( 'queued' === $remote_status ) {
+            return 80;
+        }
+
+        if ( 'ready' === $remote_status ) {
+            return 100;
+        }
+
+        $remote_progress = max( 0, min( 100, (int) $remote_progress ) );
+        if ( $remote_progress <= 0 ) {
+            return max( 82, min( 96, (int) $fallback ) );
+        }
+
+        return max( 82, min( 96, 82 + (int) floor( $remote_progress * 0.14 ) ) );
     }
 
     private static function validate_test_clip_payload( array $payload ) {

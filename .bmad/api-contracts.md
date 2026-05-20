@@ -667,7 +667,109 @@ Restrições comuns dos prompts:
 - Sem narração, fala, música ou efeitos sonoros.
 - Sem logos, texto, legendas, marcas d'água ou pessoas, salvo se já presentes na imagem de referência.
 
-## 11. Erros conhecidos
+## 12. Serviço externo de composição assíncrona
+
+O WordPress envia os 4 clipes e a narração ElevenLabs para um serviço externo com FFmpeg. O serviço é assíncrono para evitar timeout e reduzir risco de estouro de memória em hospedagens pequenas.
+
+### POST `/render`
+
+Headers:
+
+```http
+Content-Type: application/json
+Authorization: Bearer {RENDER_API_KEY}
+```
+
+Body:
+
+```json
+{
+  "job_id": "stlai_video_xxx",
+  "format": "9:16",
+  "audio_url": "https://...",
+  "clips": [
+    {"index": 1, "role": "apresentacao_geral", "url": "https://..."},
+    {"index": 2, "role": "uso_contexto", "url": "https://..."},
+    {"index": 3, "role": "detalhe_acabamento", "url": "https://..."},
+    {"index": 4, "role": "hero_fechamento", "url": "https://..."}
+  ],
+  "transition": "fade",
+  "enable_fade": true,
+  "fade_duration": 0.4,
+  "repeat_clips_until_audio_ends": true,
+  "trim_to_audio_duration": true,
+  "remove_clip_audio": true
+}
+```
+
+Resposta inicial:
+
+```json
+{
+  "success": true,
+  "render_job_id": "render_xxx",
+  "status": "queued",
+  "message": "Composição recebida e iniciada."
+}
+```
+
+### GET `/render/{render_job_id}`
+
+Enquanto processando:
+
+```json
+{
+  "success": true,
+  "render_job_id": "render_xxx",
+  "status": "processing",
+  "progress": 82,
+  "final_video_url": "",
+  "duration": 0,
+  "transition_used": "",
+  "fallback_used": "",
+  "message": "Compondo vídeo final..."
+}
+```
+
+Quando pronto:
+
+```json
+{
+  "success": true,
+  "render_job_id": "render_xxx",
+  "status": "ready",
+  "progress": 100,
+  "final_video_url": "https://video-render.seudominio.com/renders/arquivo.mp4",
+  "duration": 72,
+  "transition_used": "concat",
+  "fallback_used": "",
+  "message": "Vídeo final composto com sucesso."
+}
+```
+
+Quando o xfade estiver ativo e funcionar, `transition_used` deve ser `xfade`. Se o xfade falhar, o serviço deve tentar concatenação simples automaticamente e retornar `transition_used: "concat"` e `fallback_used: "concat_without_fade"`.
+
+Erro:
+
+```json
+{
+  "success": false,
+  "render_job_id": "render_xxx",
+  "status": "error",
+  "code": "COMPOSER_RENDER_ERROR",
+  "message": "Não foi possível compor o vídeo final.",
+  "debug": "Resumo seguro"
+}
+```
+
+Estados consumidos pelo plugin:
+
+- `composition_queued`
+- `composition_processing`
+- `composition_error`
+- `ready`
+
+## 13. Erros conhecidos
 
 ElevenLabs:
 
@@ -717,19 +819,28 @@ Job:
 - `INVALID_VIDEO_FORMAT`
 - `EMPTY_SCRIPT`
 
+Composição externa:
+
+- `COMPOSER_JOB_START_ERROR`
+- `COMPOSER_STATUS_ERROR`
+- `COMPOSER_RENDER_ERROR`
+- `COMPOSER_TIMEOUT`
+- `COMPOSER_ENDPOINT_MISSING`
+- `COMPOSER_API_KEY_MISSING`
+- `COMPOSER_REQUEST_ERROR`
+- `COMPOSER_HTTP_ERROR`
+- `COMPOSER_INVALID_RESPONSE`
+- `FINAL_VIDEO_URL_MISSING`
+- `LOCAL_FFMPEG_UNAVAILABLE`
+
 Observação:
 
 - Alguns códigos são reservados para contrato e podem não ser emitidos por todos os caminhos atuais.
 
-## 12. Fora do escopo atual
+## 14. Fora do escopo atual
 
 Ainda não faz parte do contrato implementado:
 
-- composição final com áudio;
-- concatenação dos 4 clipes;
-- fade entre clipes;
-- mixagem de ElevenLabs no vídeo final;
-- download do vídeo final composto;
 - thumbnail final real;
 - integração Seedance;
 - integração MuAPI;

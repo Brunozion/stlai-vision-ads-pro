@@ -34,6 +34,8 @@ class STLAI_Video_Storage {
                 'final_video_path' => '',
                 'final_video_duration' => 0,
                 'final_video_debug' => '',
+                'transition_used' => '',
+                'fallback_used'   => '',
                 'composer_mode'   => '',
                 'composer_provider' => '',
                 'composer_status' => '',
