@@ -938,3 +938,137 @@ Regras:
 - O vídeo não deve começar com uma imagem quadrada quando o usuário escolheu 9:16 ou 16:9.
 - A imagem formatada não pode ser square foreground sobre blurred background, padding, barras ou moldura. Deve preencher o aspect ratio escolhido como asset comercial final.
 - Os clipes também podem carregar metadados auxiliares `prepared_frame_url`, `prepared_frame_width`, `prepared_frame_height` e `aspect_ratio`.
+
+## 18. Clip jobs incrementais e scripts de narração
+
+Os endpoints de vídeo podem retornar estado granular por clipe. `script_public` é a copy limpa exibida ao usuário. `script_narration` é interno do job e não deve ser exposto no frontend.
+
+```json
+{
+  "job_id": "stlai_video_xxx",
+  "status": "generating_clips",
+  "script_public": "Texto limpo exibido na UI.",
+  "clip_jobs": [
+    {
+      "index": 1,
+      "status": "ready",
+      "attempt": 1,
+      "url": "https://.../clip-1.mp4",
+      "error": null
+    },
+    {
+      "index": 2,
+      "status": "generating",
+      "attempt": 1,
+      "url": "",
+      "error": null
+    },
+    {
+      "index": 3,
+      "status": "pending",
+      "attempt": 0,
+      "url": "",
+      "error": null
+    },
+    {
+      "index": 4,
+      "status": "pending",
+      "attempt": 0,
+      "url": "",
+      "error": null
+    }
+  ],
+  "clip_statuses": {
+    "1": "ready",
+    "2": "generating",
+    "3": "pending",
+    "4": "pending"
+  },
+  "clip_attempts": {
+    "1": 1,
+    "2": 1,
+    "3": 0,
+    "4": 0
+  },
+  "missing_clips": [2, 3, 4],
+  "progress": 35,
+  "progress_hint": 35
+}
+```
+
+Status por clipe:
+
+- `pending`
+- `generating`
+- `retrying`
+- `ready`
+- `error`
+
+Status do job relacionados:
+
+- `generating_clips`
+- `generating_clip_1`
+- `generating_clip_2`
+- `generating_clip_3`
+- `generating_clip_4`
+- `retrying_clip_1`
+- `retrying_clip_2`
+- `retrying_clip_3`
+- `retrying_clip_4`
+- `clip_generation_error`
+
+Regras:
+
+- Cada clipe tem até 3 tentativas antes de virar `error`.
+- Falhas temporárias incluem HTTP 408, 409, 429, 500, 502, 503, 504, timeout, resposta vazia e indisponibilidade temporária.
+- O frontend deve exibir clipes `ready` imediatamente e placeholders para `pending`, `generating`, `retrying` e `error`.
+- O progresso visual deve usar clipes prontos: base 25%, clipe 1 35%, clipe 2 50%, clipe 3 65%, clipe 4 78%, composição 82-96%, pronto 100%.
+- `script_narration` pode conter marcações internas como `[thoughtful]`, `[short pause]`, `[warmly]`, `[excited]`, mas nunca deve aparecer na interface pública.
+
+## 19. Renderer fast compose
+
+O serviço externo de composição pode retornar campos de performance e transição:
+
+```json
+{
+  "success": true,
+  "render_job_id": "render_xxx",
+  "status": "ready",
+  "progress": 100,
+  "final_video_url": "https://video-render.seudominio.com/renders/stlai-final-render_xxx.mp4",
+  "duration": 72,
+  "render_time_seconds": 38.5,
+  "transition_used": "cut",
+  "fallback_used": "",
+  "fast_compose": true,
+  "message": "Vídeo final composto com sucesso."
+}
+```
+
+Campos:
+
+- `render_time_seconds`: tempo total da composição no renderer.
+- `transition_used`: `cut` no modo rápido/preview; `xfade` apenas quando explicitamente habilitado e suportado.
+- `fallback_used`: vazio quando não houve fallback; `cut_without_fade` quando o xfade falhou; `normalized_cut` quando o concat rápido precisou voltar para normalização.
+- `fast_compose`: booleano indicando que o renderer usou o caminho rápido.
+
+Health check:
+
+```json
+{
+  "ok": true,
+  "ffmpeg": true,
+  "quality": "preview",
+  "xfade": false,
+  "fast_compose": true
+}
+```
+
+Regras:
+
+- No Render Free, o padrão recomendado é `RENDER_OUTPUT_QUALITY=preview`, `FAST_COMPOSE=true`, `ENABLE_XFADE=false`.
+- Preview 9:16 usa `406x720` por padrão.
+- Preview 16:9 usa `1280x720` por padrão.
+- O áudio original dos clipes deve ser ignorado; apenas a narração ElevenLabs é mapeada para o MP4 final.
+- O vídeo final deve repetir os 4 clipes até cobrir a duração da narração e cortar exatamente na duração do áudio.
+- Clipes Veo devem ser comerciais e limpos: sem REC, HUD, viewfinder, watermark, timestamp, texto, ícones, badges ou overlays.

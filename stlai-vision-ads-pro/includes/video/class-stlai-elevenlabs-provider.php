@@ -47,12 +47,7 @@ class STLAI_ElevenLabs_Provider {
                     array(
                         'text'           => $script,
                         'model_id'       => $model,
-                        'voice_settings' => array(
-                            'stability'          => 0.45,
-                            'similarity_boost'   => 0.85,
-                            'style'              => 0.35,
-                            'use_speaker_boost'  => true,
-                        ),
+                        'voice_settings' => self::voice_settings_for_type( $narration_type ),
                     )
                 ),
             )
@@ -121,6 +116,24 @@ class STLAI_ElevenLabs_Provider {
         }
 
         return sanitize_text_field( $voice_id );
+    }
+
+    private static function voice_settings_for_type( $narration_type ) {
+        if ( 'emocional' === sanitize_key( $narration_type ) ) {
+            return array(
+                'stability'         => 0.34,
+                'similarity_boost'  => 0.86,
+                'style'             => 0.68,
+                'use_speaker_boost' => true,
+            );
+        }
+
+        return array(
+            'stability'         => 0.40,
+            'similarity_boost'  => 0.85,
+            'style'             => 0.55,
+            'use_speaker_boost' => true,
+        );
     }
 
     private static function save_audio_file( $audio_binary ) {

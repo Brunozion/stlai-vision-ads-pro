@@ -851,6 +851,55 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-20 - Clipes incrementais e narração performática
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-elevenlabs-provider.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O job de vídeo passou a registrar `clip_jobs` para os 4 clipes.
+- O processamento de clipes foi movido para execução incremental por polling, um clipe pendente por consulta de status.
+- Cada clipe mantém status, tentativa, erro seguro, timestamps e URL final.
+- Retries automáticos por clipe foram mantidos em até 3 tentativas, com backoff 2s e 5s para falhas temporárias.
+- O frontend passou a exibir clipes prontos, placeholders e progresso por quantidade real de clipes prontos.
+- O roteiro foi separado em `script_public` limpo e `script_narration` interno com marcações de performance para ElevenLabs.
+
+Status:
+
+- Correção concluida.
+
+## 2026-05-20 - Composer rápido e restrições anti-overlay
+
+Arquivos alterados:
+
+- stlai-video-renderer/server.js
+- stlai-video-renderer/README.md
+- stlai-vision-ads-pro/includes/video/class-stlai-veo-provider.php
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O renderer ganhou `FAST_COMPOSE=true` por padrão para composição em uma única passagem do FFmpeg quando possível.
+- O preview 9:16 passou a usar `406x720` por padrão e o preview 16:9 permanece em `1280x720`.
+- O modo preview usa corte simples (`transition_used = cut`) e deixa `xfade` desligado por padrão.
+- O status do render passa a registrar `render_time_seconds`, `transition_used`, `fallback_used` e `fast_compose`.
+- O prompt do Veo foi reforçado contra REC, HUD, viewfinder, timestamp, watermark, textos, ícones, badges e UI de câmera/celular.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-19 - Correção de infraestrutura FFmpeg
 
 Problema corrigido:

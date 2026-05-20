@@ -90,10 +90,16 @@ class STLAI_Video_Ajax {
             'progress'        => (int) ( $job['progress'] ?? 0 ),
             'progress_hint'   => (int) ( $job['progress_hint'] ?? ( $job['progress'] ?? 0 ) ),
             'message'         => $job['message'] ?? '',
+            'script_public'   => wp_strip_all_tags( $job['script_public'] ?? ( $job['script'] ?? '' ) ),
             'audio_url'       => $job['audio_url'] ?? '',
             'clips'           => self::public_clips_response( $job['clips'] ?? array() ),
             'partial_clips'   => self::public_clips_response( $job['partial_clips'] ?? array() ),
             'video_frames'    => self::public_video_frames_response( $job['video_frames'] ?? array() ),
+            'clip_jobs'       => self::public_clip_jobs_response( $job['clip_jobs'] ?? array() ),
+            'clip_statuses'   => self::public_assoc_response( $job['clip_statuses'] ?? array() ),
+            'clip_attempts'   => self::public_int_assoc_response( $job['clip_attempts'] ?? array() ),
+            'clip_errors'     => self::public_assoc_response( $job['clip_errors'] ?? array() ),
+            'missing_clips'   => array_values( array_map( 'intval', $job['missing_clips'] ?? array() ) ),
             'final_video_url' => $job['final_video_url'] ?? '',
             'final_video_duration' => (float) ( $job['final_video_duration'] ?? 0 ),
             'transition_used' => sanitize_key( $job['transition_used'] ?? '' ),
@@ -166,6 +172,57 @@ class STLAI_Video_Ajax {
                 'width'        => (int) ( $frame['width'] ?? 0 ),
                 'height'       => (int) ( $frame['height'] ?? 0 ),
             );
+        }
+
+        return $response;
+    }
+
+    private static function public_clip_jobs_response( $jobs ) {
+        if ( ! is_array( $jobs ) ) {
+            return array();
+        }
+
+        $response = array();
+        foreach ( $jobs as $job ) {
+            if ( ! is_array( $job ) ) {
+                continue;
+            }
+
+            $response[] = array(
+                'index'       => (int) ( $job['index'] ?? 0 ),
+                'status'      => sanitize_key( $job['status'] ?? 'pending' ),
+                'attempt'     => (int) ( $job['attempt'] ?? 0 ),
+                'url'         => esc_url_raw( $job['url'] ?? '' ),
+                'error'       => sanitize_text_field( $job['error'] ?? '' ),
+                'started_at'  => sanitize_text_field( $job['started_at'] ?? '' ),
+                'finished_at' => sanitize_text_field( $job['finished_at'] ?? '' ),
+            );
+        }
+
+        return $response;
+    }
+
+    private static function public_assoc_response( $items ) {
+        if ( ! is_array( $items ) ) {
+            return array();
+        }
+
+        $response = array();
+        foreach ( $items as $key => $value ) {
+            $response[ sanitize_key( (string) $key ) ] = sanitize_text_field( (string) $value );
+        }
+
+        return $response;
+    }
+
+    private static function public_int_assoc_response( $items ) {
+        if ( ! is_array( $items ) ) {
+            return array();
+        }
+
+        $response = array();
+        foreach ( $items as $key => $value ) {
+            $response[ sanitize_key( (string) $key ) ] = (int) $value;
         }
 
         return $response;
@@ -247,6 +304,14 @@ class STLAI_Video_Ajax {
 
             if ( ! empty( $data['video_frames'] ) ) {
                 $response['video_frames'] = self::public_video_frames_response( $data['video_frames'] );
+            }
+
+            if ( ! empty( $data['clip_jobs'] ) ) {
+                $response['clip_jobs'] = self::public_clip_jobs_response( $data['clip_jobs'] );
+            }
+
+            if ( ! empty( $data['missing_clips'] ) && is_array( $data['missing_clips'] ) ) {
+                $response['missing_clips'] = array_values( array_map( 'intval', $data['missing_clips'] ) );
             }
         }
 

@@ -42,6 +42,11 @@ const S = {
     finalVideoDuration: 0,
     thumbnailUrl: "",
     clips: [],
+    clipJobs: [],
+    clipStatuses: {},
+    clipAttempts: {},
+    clipErrors: {},
+    missingClips: [],
     videoFrames: [],
     currentClipIndex: 0,
     currentClipAttempt: 0,
@@ -1086,9 +1091,9 @@ function buildVideoScript(){
   const feat=cleanScriptPiece(S.feat, "acabamento cuidadoso, visual marcante e uso funcional");
   const title=cleanScriptPiece((S.titles || []).find(t=>String(t || "").trim()), name);
   if(S.voiceStyle==="emocional"){
-    return `Às vezes, são os pequenos detalhes que tornam o dia mais especial. ${name} traz charme, cuidado e personalidade em uma peça feita para acompanhar momentos simples com mais alegria. ${desc} Com ${feat}, é uma escolha cheia de presença para quem valoriza significado, criatividade e um toque especial no cotidiano.`;
+    return `Eu estava procurando um detalhe especial, daqueles que fazem a pessoa sorrir antes mesmo de usar. Foi isso que chamou atenção em ${name}: uma peça com presença, carinho e personalidade. ${desc} O acabamento, os detalhes e ${feat} dão aquela sensação de presente pensado com cuidado. É o tipo de produto que transforma um momento simples em uma lembrança bonita.`;
   }
-  return `Conheça ${name}, uma peça criada para unir praticidade, estilo e personalidade no seu dia a dia. ${desc} Com ${feat}, ela valoriza sua rotina e transforma um item simples em uma escolha inteligente. ${title} é ideal para quem busca um produto funcional, bonito e pronto para se destacar.`;
+  return `Sabe quando um produto parece simples, mas no detalhe ele conquista? ${name} foi feito para entregar visual, utilidade e personalidade sem complicar. ${desc} Com ${feat}, ele se destaca no uso, no presente e na apresentação. ${title} é uma escolha prática, bonita e com aquele toque que faz diferença na hora de comprar.`;
 }
 
 function renderVideoScript(){
@@ -1163,9 +1168,72 @@ function isVideoBusyStatus(status){
     || status==="composition_processing";
 }
 
+function normalizeClipJobs(jobs, clips=S.video.clips){
+  const byIndex={};
+  if(Array.isArray(jobs)){
+    jobs.forEach(job=>{
+      const index=Number(job?.index || 0);
+      if(index>=1 && index<=4){
+        byIndex[index]={
+          index,
+          status:String(job.status || "pending"),
+          attempt:Number(job.attempt || 0),
+          url:String(job.url || ""),
+          error:String(job.error || ""),
+          started_at:String(job.started_at || ""),
+          finished_at:String(job.finished_at || "")
+        };
+      }
+    });
+  }
+  (Array.isArray(clips) ? clips : []).forEach((clip,idx)=>{
+    const index=Number(clip?.index || idx + 1);
+    if(index>=1 && index<=4 && clip?.url){
+      byIndex[index]={...(byIndex[index] || {index}), index, status:"ready", attempt:Math.max(1, Number(byIndex[index]?.attempt || 1)), url:String(clip.url || ""), error:""};
+    }
+  });
+  for(let index=1; index<=4; index++){
+    if(!byIndex[index]) byIndex[index]={index,status:"pending",attempt:0,url:"",error:""};
+  }
+  return Object.keys(byIndex).sort((a,b)=>Number(a)-Number(b)).map(key=>byIndex[key]);
+}
+
+function applyVideoClipJobData(data={}){
+  if(Array.isArray(data.clip_jobs)){
+    S.video.clipJobs=normalizeClipJobs(data.clip_jobs, Array.isArray(data.clips) ? data.clips : S.video.clips);
+  }else{
+    S.video.clipJobs=normalizeClipJobs(S.video.clipJobs, S.video.clips);
+  }
+  S.video.clipStatuses=data.clip_statuses && typeof data.clip_statuses==="object" ? data.clip_statuses : S.video.clipStatuses;
+  S.video.clipAttempts=data.clip_attempts && typeof data.clip_attempts==="object" ? data.clip_attempts : S.video.clipAttempts;
+  S.video.clipErrors=data.clip_errors && typeof data.clip_errors==="object" ? data.clip_errors : S.video.clipErrors;
+  S.video.missingClips=Array.isArray(data.missing_clips) ? data.missing_clips.map(Number).filter(Boolean) : S.video.clipJobs.filter(job=>job.status!=="ready").map(job=>job.index);
+}
+
 function readyVideoClipCount(){
+  const jobs=normalizeClipJobs(S.video.clipJobs, S.video.clips);
+  const readyJobs=jobs.filter(job=>job.status==="ready" || job.url).length;
+  if(readyJobs) return readyJobs;
   const clips=Array.isArray(S.video.clips) ? S.video.clips : [];
   return clips.filter(clip=>clip && clip.url).length;
+}
+
+function currentClipJob(){
+  const jobs=normalizeClipJobs(S.video.clipJobs, S.video.clips);
+  if(S.video.status==="clip_generation_error" || S.video.status==="clips_partial_error"){
+    const failed=jobs.find(job=>job.status==="error");
+    if(failed) return failed;
+  }
+  return jobs.find(job=>job.status==="generating" || job.status==="retrying")
+    || jobs.find(job=>job.status==="pending")
+    || jobs.find(job=>job.status==="error")
+    || null;
+}
+
+function clipReadyProgress(){
+  const ready=readyVideoClipCount();
+  const map={0:25,1:35,2:50,3:65,4:78};
+  return map[Math.max(0,Math.min(4,ready))] || 25;
 }
 
 function videoPhaseRank(status){
@@ -1185,6 +1253,7 @@ function videoPhaseRank(status){
 function deriveVideoStatusFromJob(status){
   const base=String(status || "idle");
   const clipsReady=readyVideoClipCount();
+  const activeJob=currentClipJob();
   const currentClip=Number(S.video.currentClipIndex || 0);
   const currentAttempt=Number(S.video.currentClipAttempt || 0);
   const compositionStatus=String(S.video.compositionStatus || "");
@@ -1201,10 +1270,22 @@ function deriveVideoStatusFromJob(status){
     return "composition_queued";
   }
 
+  if(activeJob && activeJob.status==="retrying"){
+    return `retrying_clip_${activeJob.index}`;
+  }
+
+  if(activeJob && activeJob.status==="generating"){
+    return `generating_clip_${activeJob.index}`;
+  }
+
   if(currentClip>=1 && currentClip<=4){
     return currentAttempt>1 || base.startsWith("retrying_clip_")
       ? `retrying_clip_${currentClip}`
       : `generating_clip_${currentClip}`;
+  }
+
+  if(activeJob && activeJob.status==="pending" && S.video.audioUrl && isVideoBusyStatus(base)){
+    return `generating_clip_${activeJob.index}`;
   }
 
   if(clipsReady>0 && clipsReady<4 && isVideoBusyStatus(base)){
@@ -1281,7 +1362,10 @@ function updateVideoVisualProgress(){
   const span=Math.max(0, range[1] - range[0]);
   const growth=Math.min(span, elapsed / 2600);
   const realProgress=Math.max(Number(S.video.progress || 0), Number(S.video.progressHint || 0));
-  const next=Math.min(range[1], Math.max(range[0], realProgress, S.video.visualProgress || 0, range[0] + growth));
+  const clipProgress=/^(?:generating|retrying)_clip_[1-4]$/.test(displayStatus) || displayStatus==="generating_clips"
+    ? clipReadyProgress()
+    : 0;
+  const next=Math.min(range[1], Math.max(range[0], realProgress, clipProgress, S.video.visualProgress || 0, range[0] + growth));
   S.video.visualStatus=displayStatus;
   S.video.visualProgress=next;
 }
@@ -1374,6 +1458,11 @@ async function mockGenerateVideo(){
   S.video.finalVideoDuration=0;
   S.video.thumbnailUrl="";
   S.video.clips=retryingReusable ? existingClips : [];
+  S.video.clipJobs=retryingReusable ? normalizeClipJobs(S.video.clipJobs, existingClips) : [];
+  S.video.clipStatuses={};
+  S.video.clipAttempts={};
+  S.video.clipErrors={};
+  S.video.missingClips=[];
   S.video.videoFrames=retryingReusable ? S.video.videoFrames : [];
   S.video.currentClipIndex=0;
   S.video.currentClipAttempt=0;
@@ -1412,7 +1501,9 @@ async function mockGenerateVideo(){
     S.video.finalVideoDuration=Number(data.final_video_duration || 0);
     S.video.thumbnailUrl=data.thumbnail_url || "";
     S.video.clips=Array.isArray(data.clips) ? data.clips : [];
+    applyVideoClipJobData(data);
     S.video.videoFrames=Array.isArray(data.video_frames) ? data.video_frames : videoFramesFromClips(S.video.clips);
+    if(data.script_public) S.video.script=String(data.script_public || S.video.script);
     S.video.currentClipIndex=Number(data.current_clip_index || 0);
     S.video.currentClipAttempt=Number(data.current_clip_attempt || 0);
     S.video.clipRetryCount=Number(data.clip_retry_count || 0);
@@ -1429,7 +1520,7 @@ async function mockGenerateVideo(){
     toast(S.video.finalVideoUrl ? "Vídeo final preparado com sucesso." : (S.video.renderJobId ? "Composição final iniciada." : (S.video.clips.length===4 ? "4 clipes gerados com sucesso." : (S.video.audioUrl ? "Narração gerada com sucesso." : "Job de vídeo criado com sucesso."))),"success");
     if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
       S.video.mockReady=true;
-      if(S.video.status==="ready" || S.video.status==="composition_error" || S.video.status==="clip_generation_error") stopVideoProgressLoop();
+      if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error") stopVideoProgressLoop();
       renderSummaryVideo();
       return;
     }
@@ -1441,6 +1532,7 @@ async function mockGenerateVideo(){
     if(data.audio_url) S.video.audioUrl=data.audio_url;
     if(Array.isArray(data.partial_clips)) S.video.clips=data.partial_clips;
     else if(Array.isArray(data.clips)) S.video.clips=data.clips;
+    applyVideoClipJobData(data);
     if(Array.isArray(data.video_frames)) S.video.videoFrames=data.video_frames;
     else S.video.videoFrames=videoFramesFromClips(S.video.clips);
     S.video.progressHint=Number(data.progress_hint || S.video.progressHint || S.video.progress || 0);
@@ -1525,8 +1617,11 @@ function renderVideoStatus(){
     return;
   }
   if(displayStatus==="generating_clips"){
+    const ready=readyVideoClipCount();
     title.textContent="Gerando clipes IA";
-    copy.textContent="Criando os clipes comerciais a partir das imagens selecionadas.";
+    copy.textContent=ready>0
+      ? `${ready} de 4 clipes prontos. Continuando a geração dos demais.`
+      : "Criando os clipes comerciais a partir das imagens no formato escolhido.";
     renderVideoAudio();
     return;
   }
@@ -1630,10 +1725,13 @@ function videoMotionState(){
       ? `Refazendo o clipe ${clipNumber} automaticamente. Tentativa ${Math.max(2, Number(S.video.currentClipAttempt || 2))} de 3.`
       : `Criando clipe ${clipNumber} de 4 a partir das imagens selecionadas.`;
   }else if(status==="generating_clips"){
+    const ready=readyVideoClipCount();
     stage=1;
-    progress=clamp(rawProgress || 38,25,78);
+    progress=clamp(Math.max(rawProgress || 0, clipReadyProgress()),25,78);
     title="Gerando clipes IA";
-    subtitle="Criando os clipes comerciais a partir das imagens selecionadas.";
+    subtitle=ready>0
+      ? `${ready} de 4 clipes prontos. Continuando a geração dos demais.`
+      : "Criando os clipes comerciais a partir das imagens no formato escolhido.";
   }else if(status==="clips_ready" || status==="ready_for_composition"){
     stage=1;
     progress=79;
@@ -1804,6 +1902,9 @@ function renderFinalVideo(){
 }
 
 function activeVideoClipIndex(){
+  const activeJob=currentClipJob();
+  if(activeJob && (activeJob.status==="generating" || activeJob.status==="retrying")) return Number(activeJob.index || 0);
+  if(activeJob && activeJob.status==="pending" && (isVideoBusyStatus(S.video.status) || (S.video.jobId && S.video.audioUrl))) return Number(activeJob.index || 0);
   const status=videoStatusForDisplay();
   const match=String(status || "").match(/^(?:generating|retrying)_clip_([1-4])$/);
   if(match) return Number(match[1]);
@@ -1818,6 +1919,8 @@ function renderVideoClipsGridMarkup(clips){
     if(index>=1 && index<=4) byIndex[index]=clip;
   });
 
+  const jobsByIndex={};
+  normalizeClipJobs(S.video.clipJobs, normalized).forEach(job=>{ jobsByIndex[job.index]=job; });
   const activeIndex=activeVideoClipIndex();
   const shouldShowPlaceholders=isVideoBusyStatus(S.video.status) || isVideoBusyStatus(videoStatusForDisplay()) || recoverableVideoErrorStatus(S.video.status) || activeIndex > 0;
   const maxIndex=shouldShowPlaceholders ? 4 : Math.max(0, ...Object.keys(byIndex).map(Number));
@@ -1825,6 +1928,7 @@ function renderVideoClipsGridMarkup(clips){
 
   for(let index=1; index<=maxIndex; index++){
     const clip=byIndex[index];
+    const clipJob=jobsByIndex[index] || {status:clip && clip.url ? "ready" : "pending",attempt:0,error:""};
     if(clip && clip.url){
       cards.push(`<div class="video-clip-card">
         <div class="video-clip-title">Clipe ${index}</div>
@@ -1835,9 +1939,10 @@ function renderVideoClipsGridMarkup(clips){
 
     if(shouldShowPlaceholders){
       const isActive=index===activeIndex;
-      const retrying=String(videoStatusForDisplay()).startsWith("retrying_clip_") && isActive;
-      const failed=recoverableVideoErrorStatus(S.video.status) && index===Number(S.video.failedClipIndex || activeIndex || 0);
-      const label=failed ? "Aguardando nova tentativa" : (retrying ? "Tentando novamente" : (isActive ? `Gerando clipe ${index}` : "Pendente"));
+      const retrying=clipJob.status==="retrying" || (String(videoStatusForDisplay()).startsWith("retrying_clip_") && isActive);
+      const generating=clipJob.status==="generating" || isActive;
+      const failed=clipJob.status==="error" || (recoverableVideoErrorStatus(S.video.status) && index===Number(S.video.failedClipIndex || 0));
+      const label=failed ? "Erro após tentativas" : (retrying ? "Tentando novamente" : (generating ? `Gerando clipe ${index}` : "Pendente"));
       cards.push(`<div class="video-clip-card video-clip-card-placeholder ${isActive ? "active" : ""} ${failed ? "error" : ""}">
         <div class="video-clip-title">Clipe ${index}</div>
         <div class="video-clip-placeholder">
@@ -1857,10 +1962,11 @@ function videoClipsGridSignature(clips){
     .map((clip,idx)=>`${clip.index || idx + 1}:${clip.url || ""}`)
     .join("|");
   const status=videoStatusForDisplay();
+  const jobsSig=normalizeClipJobs(S.video.clipJobs, normalized).map(job=>`${job.index}:${job.status}:${job.attempt}:${job.url || ""}`).join("|");
   const placeholderSig=isVideoBusyStatus(S.video.status) || isVideoBusyStatus(status) || recoverableVideoErrorStatus(S.video.status)
     ? `${status}:${activeVideoClipIndex()}:${S.video.failedClipIndex || 0}`
     : "";
-  return `${clipSig}::${placeholderSig}`;
+  return `${clipSig}::${jobsSig}::${placeholderSig}`;
 }
 
 function renderVideoClips(){
@@ -2278,6 +2384,7 @@ async function pollVideoStatus(){
     S.video.audioUrl=data.audio_url || S.video.audioUrl || "";
     S.video.clips=Array.isArray(data.clips) ? data.clips : (S.video.clips || []);
     if(Array.isArray(data.partial_clips) && data.partial_clips.length) S.video.clips=data.partial_clips;
+    applyVideoClipJobData(data);
     if(Array.isArray(data.video_frames)) S.video.videoFrames=data.video_frames;
     else S.video.videoFrames=videoFramesFromClips(S.video.clips);
     S.video.currentClipIndex=Number(data.current_clip_index || S.video.currentClipIndex || 0);
@@ -2295,7 +2402,7 @@ async function pollVideoStatus(){
     S.video.thumbnailUrl=data.thumbnail_url || "";
     if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
       S.video.mockReady=true;
-      if(S.video.status==="ready" || S.video.status==="composition_error" || S.video.status==="clip_generation_error") stopVideoProgressLoop();
+      if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error") stopVideoProgressLoop();
       renderVideoStatus();
       if(S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
         toast(S.video.status==="composition_error" ? "Não foi possível concluir o vídeo final." : "Não foi possível gerar todos os clipes.","error");
@@ -2316,6 +2423,7 @@ async function pollVideoStatus(){
     console.warn("Video generation error", data || err);
     if(Array.isArray(data.partial_clips)) S.video.clips=data.partial_clips;
     else if(Array.isArray(data.clips)) S.video.clips=data.clips;
+    applyVideoClipJobData(data);
     if(Array.isArray(data.video_frames)) S.video.videoFrames=data.video_frames;
     else S.video.videoFrames=videoFramesFromClips(S.video.clips);
     S.video.progressHint=Number(data.progress_hint || S.video.progressHint || S.video.progress || 0);

@@ -761,3 +761,47 @@ O frame enviado ao Veo passa a preencher integralmente o formato escolhido. O v�
 ### Status
 
 Decidido
+
+## 2026-05-20 - Clipes incrementais, retry automático e narração performática
+
+### Decisao
+
+A geração dos 4 clipes Veo não deve depender de uma única requisição PHP longa. No WordPress atual, o caminho adotado é incremental por polling: o job registra 4 `clip_jobs`, cada consulta de status processa o próximo clipe pendente, salva o resultado assim que ficar pronto e só inicia a composição quando os 4 clipes estiverem `ready`.
+
+Cada clipe deve tentar até 3 vezes antes de pedir ação do usuário. Falhas temporárias como HTTP 408, 409, 429, 500, 502, 503, 504, timeout, resposta vazia ou indisponibilidade temporária entram em retry automático com backoff. O botão "Tentar novamente" retoma do ponto de falha: preserva narração, frames e clipes prontos, tentando apenas clipes faltantes/erro ou, se os 4 já existirem, apenas composição.
+
+O roteiro público permanece limpo em `script_public`. A voz pode receber `script_narration`, uma versão interna com marcações discretas de performance, pausas e emoção. Essas marcações não aparecem no textarea nem na interface pública.
+
+### Motivo
+
+Gerar 4 clipes em sequência prende o usuário em uma etapa longa, aumenta risco de timeout e impede a UI de mostrar avanço real. A narração também precisava soar mais UGC/storytelling sem poluir a copy que o usuário revisa.
+
+### Impacto
+
+O frontend passa a acompanhar `clip_jobs`, `missing_clips` e quantidade de clipes prontos para mostrar placeholders, retries e progresso por clipe. A geração fica semi-paralela do ponto de vista da experiência: cada clipe aparece assim que termina, sem esperar todos. A narração fica mais expressiva no áudio, mantendo a copy pública limpa.
+
+### Status
+
+Decidido
+
+## 2026-05-20 - Composer rápido e vídeo limpo sem overlays
+
+### Decisao
+
+No Render Free, a composição final usa modo rápido por padrão: `RENDER_OUTPUT_QUALITY=preview`, `FAST_COMPOSE=true` e `ENABLE_XFADE=false`.
+
+A transição padrão do MVP é corte simples (`transition_used = "cut"`). O `xfade` fica opcional para instâncias maiores, com fallback obrigatório para corte simples (`fallback_used = "cut_without_fade"`) caso falhe.
+
+Vídeos comerciais gerados pelo Veo não podem conter overlays: REC, camera HUD, viewfinder, timestamp, watermark, legendas, textos, ícones, badges, interface de celular/câmera ou qualquer UI artificial.
+
+### Motivo
+
+A composição com filtros/fades pesados estava demorando mais de 5 minutos e podia falhar em instância pequena. Para o MVP, estabilidade e velocidade importam mais que transição sofisticada. Além disso, overlay de câmera/REC quebra a estética comercial limpa do anúncio.
+
+### Impacto
+
+O renderer passa a tentar concatenação rápida em uma única passagem de FFmpeg, com preview 9:16 em `406x720` por padrão e 16:9 em `1280x720`. O prompt do Veo ganhou restrições anti-REC/HUD em todos os clipes.
+
+### Status
+
+Decidido

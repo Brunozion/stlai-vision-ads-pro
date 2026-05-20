@@ -26,7 +26,12 @@ RENDER_API_KEY=uma-chave-forte-aqui
 PUBLIC_BASE_URL=http://localhost:3000
 MAX_RENDER_SECONDS=300
 RENDER_OUTPUT_QUALITY=preview
+FAST_COMPOSE=true
 ENABLE_XFADE=false
+RENDER_PREVIEW_WIDTH_9_16=406
+RENDER_PREVIEW_HEIGHT_9_16=720
+RENDER_PREVIEW_WIDTH_16_9=1280
+RENDER_PREVIEW_HEIGHT_16_9=720
 ```
 
 ## Rodar localmente
@@ -54,7 +59,8 @@ Resposta esperada:
   "ok": true,
   "ffmpeg": true,
   "quality": "preview",
-  "xfade": false
+  "xfade": false,
+  "fast_compose": true
 }
 ```
 
@@ -127,8 +133,10 @@ Quando pronto:
   "progress": 100,
   "final_video_url": "http://localhost:3000/renders/stlai-final-render_xxx.mp4",
   "duration": 72,
-  "transition_used": "concat",
+  "render_time_seconds": 38.5,
+  "transition_used": "cut",
   "fallback_used": "",
+  "fast_compose": true,
   "message": "Vídeo final composto com sucesso."
 }
 ```
@@ -170,7 +178,12 @@ RENDER_API_KEY=uma-chave-longa-e-secreta
 PUBLIC_BASE_URL=https://video-render.seudominio.com
 MAX_RENDER_SECONDS=300
 RENDER_OUTPUT_QUALITY=preview
+FAST_COMPOSE=true
 ENABLE_XFADE=false
+RENDER_PREVIEW_WIDTH_9_16=406
+RENDER_PREVIEW_HEIGHT_9_16=720
+RENDER_PREVIEW_WIDTH_16_9=1280
+RENDER_PREVIEW_HEIGHT_16_9=720
 ```
 
 4. Rode com PM2:
@@ -224,7 +237,12 @@ docker run --rm -p 3000:3000 \
   -e PUBLIC_BASE_URL=http://localhost:3000 \
   -e MAX_RENDER_SECONDS=300 \
   -e RENDER_OUTPUT_QUALITY=preview \
+  -e FAST_COMPOSE=true \
   -e ENABLE_XFADE=false \
+  -e RENDER_PREVIEW_WIDTH_9_16=406 \
+  -e RENDER_PREVIEW_HEIGHT_9_16=720 \
+  -e RENDER_PREVIEW_WIDTH_16_9=1280 \
+  -e RENDER_PREVIEW_HEIGHT_16_9=720 \
   stlai-video-renderer
 ```
 
@@ -235,7 +253,10 @@ Variáveis necessárias no serviço online:
 - `PUBLIC_BASE_URL`: URL pública do serviço, por exemplo `https://video-render.seudominio.com`.
 - `MAX_RENDER_SECONDS`: tempo máximo de renderização antes de abortar, por exemplo `300`.
 - `RENDER_OUTPUT_QUALITY`: `preview` para Render Free ou `full` para renderização maior.
-- `ENABLE_XFADE`: `false` por padrão. Use `true` apenas no modo `full` se houver memória suficiente.
+- `FAST_COMPOSE`: `true` por padrão. Usa concatenação rápida em uma passagem de FFmpeg, recomendado para Render Free.
+- `ENABLE_XFADE`: `false` por padrão. Use `true` apenas em instância maior e com `FAST_COMPOSE=false`.
+- `RENDER_PREVIEW_WIDTH_9_16` / `RENDER_PREVIEW_HEIGHT_9_16`: resolução do preview vertical. Padrão `406x720`.
+- `RENDER_PREVIEW_WIDTH_16_9` / `RENDER_PREVIEW_HEIGHT_16_9`: resolução do preview horizontal. Padrão `1280x720`.
 
 O container instala FFmpeg e FFprobe via `apt-get`, não copia `.env`, não copia `node_modules` e ignora arquivos gerados em `temp/` e `renders/` durante o build.
 
@@ -253,8 +274,26 @@ O container instala FFmpeg e FFprobe via `apt-get`, não copia `.env`, não copi
 ## Observações técnicas
 
 - Em `RENDER_OUTPUT_QUALITY=preview`, a composição usa concatenação simples por padrão.
-- Em `preview`, `9:16` gera `720x1280` e `16:9` gera `1280x720`.
+- Em `FAST_COMPOSE=true`, o renderer concatena os clipes originais e aplica escala/corte, corte na duração da narração e áudio final em uma única passagem do FFmpeg. Se o concat direto falhar, faz fallback para normalização dos clipes e concatenação simples.
+- Em `preview`, `9:16` gera `406x720` por padrão e `16:9` gera `1280x720`.
 - Em `RENDER_OUTPUT_QUALITY=full`, `9:16` gera `1080x1920` e `16:9` gera `1920x1080`.
-- `xfade` fica desligado por padrão. Para ativar fade com segurança, use `RENDER_OUTPUT_QUALITY=full`, `ENABLE_XFADE=true` e envie `enable_fade: true` no POST. Se o xfade falhar, o job continua com concatenação simples e retorna `fallback_used: "concat_without_fade"`.
+- `transition_used` é `"cut"` por padrão no MVP preview.
+- `xfade` fica desligado por padrão. Para ativar fade com segurança, use `RENDER_OUTPUT_QUALITY=full`, `FAST_COMPOSE=false`, `ENABLE_XFADE=true` e envie `enable_fade: true` no POST. Se o xfade falhar, o job continua com corte simples e retorna `fallback_used: "cut_without_fade"`.
 - O vídeo é escalado com `force_original_aspect_ratio=increase` e `crop`, evitando distorção.
-- O áudio nativo dos clipes é ignorado; apenas o áudio ElevenLabs é mapeado no MP4 final.
+- O áudio nativo dos clipes é ignorado; apenas o áudio ElevenLabs é mapeado no MP4 final, em AAC 128k no preview.
+
+## Render Free recomendado
+
+Para reduzir risco de timeout e memória no Render Free:
+
+```env
+RENDER_OUTPUT_QUALITY=preview
+FAST_COMPOSE=true
+ENABLE_XFADE=false
+RENDER_PREVIEW_WIDTH_9_16=406
+RENDER_PREVIEW_HEIGHT_9_16=720
+RENDER_PREVIEW_WIDTH_16_9=1280
+RENDER_PREVIEW_HEIGHT_16_9=720
+```
+
+Esse modo prioriza estabilidade: transição em corte simples, H.264 baseline no preview, `preset ultrafast`, `crf 28`, 30fps e áudio AAC 128k. O fade/xfade fica para instâncias maiores ou produção.
