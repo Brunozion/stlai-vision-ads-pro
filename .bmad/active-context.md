@@ -981,3 +981,32 @@ O que foi feito:
 Status:
 
 - Correção concluida.
+
+## 2026-05-20 - Retry automático de clipes e progresso contínuo
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- Cada clipe Veo agora tem até 3 tentativas antes de retornar erro ao frontend.
+- Retries automáticos aguardam 2 segundos antes da tentativa 2 e 4 segundos antes da tentativa 3.
+- Erros temporários como 429, 5xx, timeout, operation timeout, resposta vazia/inválida e falhas transitórias de transporte são retryable.
+- Erros permanentes de configuração, validação, imagem e formato inválido não são repetidos.
+- O job salva `current_clip_index`, `current_clip_attempt`, `clip_retry_count` e `last_clip_error`.
+- Adicionados estados `retrying_clip_1` a `retrying_clip_4` e `clip_generation_error`.
+- O botão "Tentar novamente" retoma do ponto de falha e preserva roteiro, narração, clipes já gerados e formato.
+- A barra de progresso visual agora cresce localmente por tempo e fase, sem voltar para trás e sem chegar a 100 antes de `ready`.
+- Cards de clipes mostram placeholders de geração/retry para clipes ainda ausentes.
+
+Status:
+
+- Correção concluida.

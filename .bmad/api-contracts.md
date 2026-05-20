@@ -769,7 +769,47 @@ Estados consumidos pelo plugin:
 - `composition_error`
 - `ready`
 
-## 13. Erros conhecidos
+## 13. Estados de retry automático dos clipes
+
+Cada clipe Veo deve ter até 3 tentativas antes de pedir ação do usuário:
+
+- tentativa 1 normal;
+- retry 1 após 2 segundos;
+- retry 2 após 4 segundos.
+
+Estados novos:
+
+- `retrying_clip_1`
+- `retrying_clip_2`
+- `retrying_clip_3`
+- `retrying_clip_4`
+- `clip_generation_error`
+
+Campos públicos do job relacionados ao retry:
+
+```json
+{
+  "current_clip_index": 4,
+  "current_clip_attempt": 2,
+  "clip_retry_count": 1,
+  "last_clip_error": "Resumo seguro do erro anterior",
+  "failed_clip_index": 4,
+  "failed_clip_role": "hero_fechamento"
+}
+```
+
+Debug seguro de falha final:
+
+- `failed_clip_index`
+- `clip_attempt`
+- `max_attempts`
+- `retryable`
+- `last_error_code`
+- `last_error_summary`
+
+O botão "Tentar novamente" deve retomar do ponto de falha: reutiliza narração existente, pula clipes já prontos e tenta apenas os clipes faltantes. Se os 4 clipes existirem, tenta apenas composição.
+
+## 14. Erros conhecidos
 
 ElevenLabs:
 
@@ -837,7 +877,7 @@ Observação:
 
 - Alguns códigos são reservados para contrato e podem não ser emitidos por todos os caminhos atuais.
 
-## 14. Fora do escopo atual
+## 15. Fora do escopo atual
 
 Ainda não faz parte do contrato implementado:
 

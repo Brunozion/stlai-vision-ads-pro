@@ -41,6 +41,10 @@ const S = {
     finalVideoDuration: 0,
     thumbnailUrl: "",
     clips: [],
+    currentClipIndex: 0,
+    currentClipAttempt: 0,
+    clipRetryCount: 0,
+    lastClipError: "",
     failedClipIndex: 0,
     failedClipRole: "",
     errorCode: "",
@@ -50,7 +54,12 @@ const S = {
     testClipOperationId: "",
     testClipStatus: "idle",
     testClipMessage: "",
-    pollTimer: null
+    pollTimer: null,
+    progressTimer: null,
+    visualStatus: "",
+    visualProgress: 0,
+    visualPhaseKey: "",
+    visualPhaseStartedAt: 0
   },
   cfg: window.stlaiConfig || {}
 };
@@ -1106,6 +1115,108 @@ function normalizeVideoFormat(format){
   return format==="16:9" ? "16:9" : "9:16";
 }
 
+function recoverableVideoErrorStatus(status){
+  return ["clips_partial_error","clip_generation_error","composition_error","composition_pending","ready_for_composition"].includes(String(status || ""));
+}
+
+function isVideoBusyStatus(status){
+  return status==="submitting"
+    || status==="queued"
+    || status==="generating_audio"
+    || status==="generating_narration"
+    || status==="generating_clips"
+    || /^generating_clip_[1-4]$/.test(status)
+    || /^retrying_clip_[1-4]$/.test(status)
+    || status==="composing"
+    || status==="composing_final_video"
+    || status==="composition_queued"
+    || status==="composition_processing";
+}
+
+function videoStatusForDisplay(){
+  return S.video.visualStatus || S.video.status || "idle";
+}
+
+function videoPhaseRange(status){
+  const retryMatch=String(status || "").match(/^retrying_clip_([1-4])$/);
+  const genMatch=String(status || "").match(/^generating_clip_([1-4])$/);
+  const clipNumber=retryMatch ? Number(retryMatch[1]) : (genMatch ? Number(genMatch[1]) : 0);
+  const clipRanges={1:[25,37],2:[38,51],3:[52,65],4:[66,78]};
+  if(status==="submitting" || status==="queued" || status==="generating_audio" || status==="generating_narration") return [8,24];
+  if(clipNumber) return clipRanges[clipNumber] || [25,78];
+  if(status==="generating_clips") return [25,78];
+  if(status==="clips_ready" || status==="ready_for_composition") return [79,79];
+  if(status==="composition_pending" || status==="composition_queued" || status==="composing" || status==="composing_final_video") return [80,84];
+  if(status==="composition_processing") return [85,96];
+  if(status==="ready") return [100,100];
+  return [0,0];
+}
+
+function estimatedSubmittingStatus(elapsedMs){
+  if(elapsedMs < 14000) return "generating_narration";
+  if(elapsedMs < 52000) return "generating_clip_1";
+  if(elapsedMs < 90000) return "generating_clip_2";
+  if(elapsedMs < 128000) return "generating_clip_3";
+  return "generating_clip_4";
+}
+
+function updateVideoVisualProgress(){
+  const realStatus=S.video.status || "idle";
+  if(!isVideoBusyStatus(realStatus)){
+    if(realStatus==="ready") S.video.visualProgress=100;
+    S.video.visualStatus="";
+    return;
+  }
+
+  const now=Date.now();
+  let displayStatus=realStatus;
+  if(realStatus==="submitting"){
+    const started=S.video.visualPhaseStartedAt || now;
+    displayStatus=estimatedSubmittingStatus(now - started);
+  }
+
+  const phaseKey=displayStatus;
+  if(S.video.visualPhaseKey!==phaseKey){
+    S.video.visualPhaseKey=phaseKey;
+    S.video.visualPhaseStartedAt=now;
+  }
+
+  const range=videoPhaseRange(displayStatus);
+  const elapsed=Math.max(0, now - (S.video.visualPhaseStartedAt || now));
+  const span=Math.max(0, range[1] - range[0]);
+  const growth=Math.min(span, elapsed / 2600);
+  const realProgress=Number(S.video.progress || 0);
+  const next=Math.min(range[1], Math.max(range[0], realProgress, S.video.visualProgress || 0, range[0] + growth));
+  S.video.visualStatus=displayStatus;
+  S.video.visualProgress=next;
+}
+
+function startVideoProgressLoop(){
+  stopVideoProgressLoop(false);
+  S.video.visualStatus="";
+  S.video.visualProgress=Math.max(0, Number(S.video.progress || 0));
+  S.video.visualPhaseKey="";
+  S.video.visualPhaseStartedAt=Date.now();
+  updateVideoVisualProgress();
+  S.video.progressTimer=setInterval(()=>{
+    updateVideoVisualProgress();
+    renderVideoStatus();
+    if(S.step>=6) renderSummaryVideo();
+  }, 650);
+}
+
+function stopVideoProgressLoop(clearVisual=true){
+  if(S.video.progressTimer){
+    clearInterval(S.video.progressTimer);
+    S.video.progressTimer=null;
+  }
+  if(clearVisual){
+    S.video.visualStatus="";
+    S.video.visualPhaseKey="";
+    S.video.visualPhaseStartedAt=0;
+  }
+}
+
 async function mockGenerateVideo(){
   const ajaxurl=S.cfg.ajaxurl || window.stlaiConfig?.ajaxurl;
   if(!ajaxurl){
@@ -1125,9 +1236,10 @@ async function mockGenerateVideo(){
   }
 
   clearVideoPolling();
-  const retryingPartial=S.video.status==="clips_partial_error" && Boolean(S.video.jobId);
+  const retryingPartial=(S.video.status==="clips_partial_error" || S.video.status==="clip_generation_error") && Boolean(S.video.jobId);
   const retryingComposition=(S.video.status==="ready_for_composition" || S.video.status==="composition_pending" || S.video.status==="composition_queued" || S.video.status==="composition_processing" || S.video.status==="composition_error") && Boolean(S.video.jobId) && S.video.clips.length>=4 && Boolean(S.video.audioUrl) && !S.video.finalVideoUrl;
-  const retryingReusable=retryingPartial || retryingComposition;
+  const retryingRecoverable=S.video.status==="error" && Boolean(S.video.jobId) && (S.video.clips.length || S.video.audioUrl);
+  const retryingReusable=retryingPartial || retryingComposition || retryingRecoverable;
   const existingJobId=S.video.jobId || "";
   const existingAudioUrl=S.video.audioUrl || "";
   const existingClips=Array.isArray(S.video.clips) ? S.video.clips : [];
@@ -1140,6 +1252,10 @@ async function mockGenerateVideo(){
   S.video.finalVideoDuration=0;
   S.video.thumbnailUrl="";
   S.video.clips=retryingReusable ? existingClips : [];
+  S.video.currentClipIndex=0;
+  S.video.currentClipAttempt=0;
+  S.video.clipRetryCount=0;
+  S.video.lastClipError="";
   S.video.failedClipIndex=0;
   S.video.failedClipRole="";
   S.video.errorCode="";
@@ -1149,6 +1265,7 @@ async function mockGenerateVideo(){
   S.video.message=retryingComposition
     ? "Tentando compor o vídeo final novamente..."
     : (retryingPartial ? "Tentando novamente a partir do clipe pendente..." : "Gerando narração e preparando pipeline...");
+  startVideoProgressLoop();
   renderVideoStatus();
 
   try{
@@ -1171,6 +1288,10 @@ async function mockGenerateVideo(){
     S.video.finalVideoDuration=Number(data.final_video_duration || 0);
     S.video.thumbnailUrl=data.thumbnail_url || "";
     S.video.clips=Array.isArray(data.clips) ? data.clips : [];
+    S.video.currentClipIndex=Number(data.current_clip_index || 0);
+    S.video.currentClipAttempt=Number(data.current_clip_attempt || 0);
+    S.video.clipRetryCount=Number(data.clip_retry_count || 0);
+    S.video.lastClipError=data.last_clip_error || "";
     S.video.failedClipIndex=Number(data.failed_clip_index || 0);
     S.video.failedClipRole=data.failed_clip_role || "";
     S.video.errorCode=data.error_code || "";
@@ -1181,8 +1302,9 @@ async function mockGenerateVideo(){
     unlock(6);
     go(6);
     toast(S.video.finalVideoUrl ? "Vídeo final preparado com sucesso." : (S.video.renderJobId ? "Composição final iniciada." : (S.video.clips.length===4 ? "4 clipes gerados com sucesso." : (S.video.audioUrl ? "Narração gerada com sucesso." : "Job de vídeo criado com sucesso."))),"success");
-    if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error"){
+    if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
       S.video.mockReady=true;
+      if(S.video.status==="ready" || S.video.status==="composition_error" || S.video.status==="clip_generation_error") stopVideoProgressLoop();
       renderSummaryVideo();
       return;
     }
@@ -1194,20 +1316,25 @@ async function mockGenerateVideo(){
     if(data.audio_url) S.video.audioUrl=data.audio_url;
     if(Array.isArray(data.partial_clips)) S.video.clips=data.partial_clips;
     else if(Array.isArray(data.clips)) S.video.clips=data.clips;
+    S.video.currentClipIndex=Number(data.current_clip_index || 0);
+    S.video.currentClipAttempt=Number(data.current_clip_attempt || 0);
+    S.video.clipRetryCount=Number(data.clip_retry_count || 0);
+    S.video.lastClipError=data.last_clip_error || "";
     S.video.failedClipIndex=Number(data.failed_clip_index || data.failed_clip || 0);
     S.video.failedClipRole=data.failed_clip_role || "";
     S.video.errorCode=data.code || data.error_code || "";
-    S.video.status=data.status || (S.video.failedClipIndex ? "clips_partial_error" : "error");
+    S.video.status=data.status || (S.video.failedClipIndex ? "clip_generation_error" : "error");
     S.video.compositionStatus=data.composition_status || "pending";
     S.video.composerStatus=data.composer_status || "";
     S.video.renderJobId=data.render_job_id || "";
     S.video.message=isComposerPendingCode(S.video.errorCode) || S.video.status==="composition_pending"
       ? "Narração e clipes preparados. A composição final está pendente."
-      : (S.video.status==="clips_partial_error"
+      : (S.video.status==="clips_partial_error" || S.video.status==="clip_generation_error"
       ? partialClipFailureMessage(S.video.failedClipIndex, S.video.clips.length)
       : (S.video.status==="composition_error"
       ? "Não foi possível concluir o vídeo final. Os clipes foram preservados. Você pode tentar novamente."
       : (err.message || "Falha ao criar job de vídeo.")));
+    stopVideoProgressLoop();
     renderVideoStatus();
     if(S.video.jobId && (S.video.clips.length || S.video.status==="composition_error" || S.video.status==="composition_pending")){
       unlock(6);
@@ -1223,6 +1350,7 @@ function renderVideoStatus(){
   const copy=document.getElementById("video-status-copy");
   if(!box || !title || !copy) return;
   const voice=voiceStyleLabel();
+  const displayStatus=videoStatusForDisplay();
   box.classList.toggle("ready", S.video.status==="ready" || S.video.status==="prepared" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_queued" || S.video.status==="composition_processing" || S.video.status==="composition_error");
   renderVideoActionButton();
   renderVideoTestClip();
@@ -1247,44 +1375,52 @@ function renderVideoStatus(){
     renderVideoAudio();
     return;
   }
-  if(S.video.status==="submitting"){
+  if(displayStatus==="submitting"){
     title.textContent="Gerando narração";
     copy.textContent="Preparando roteiro e voz para o pipeline.";
     renderVideoAudio();
     return;
   }
-  if(S.video.status==="queued"){
+  if(displayStatus==="queued"){
     title.textContent=`Pipeline iniciado (${S.video.progress || 10}%).`;
     copy.textContent=S.video.message || "Aguardando processamento do vídeo.";
     renderVideoAudio();
     return;
   }
-  if(S.video.status==="generating_audio" || S.video.status==="generating_narration"){
+  if(displayStatus==="generating_audio" || displayStatus==="generating_narration"){
     title.textContent=S.video.audioUrl ? "Narração gerada com sucesso." : "Gerando narração";
     copy.textContent=S.video.audioUrl ? (S.video.message || "Preparando os clipes IA.") : "Preparando roteiro e voz para o pipeline.";
     renderVideoAudio();
     return;
   }
-  if(S.video.status==="generating_clips"){
+  if(displayStatus==="generating_clips"){
     title.textContent="Gerando clipes IA";
     copy.textContent="Criando os clipes comerciais a partir das imagens selecionadas.";
     renderVideoAudio();
     return;
   }
-  if(/^generating_clip_[1-4]$/.test(S.video.status)){
-    const clipNumber=Number(S.video.status.replace("generating_clip_","")) || 1;
+  if(/^generating_clip_[1-4]$/.test(displayStatus)){
+    const clipNumber=Number(displayStatus.replace("generating_clip_","")) || 1;
     title.textContent="Gerando clipes IA";
     copy.textContent=`Criando clipe ${clipNumber} de 4 a partir das imagens selecionadas.`;
     renderVideoAudio();
     return;
   }
-  if(S.video.status==="composition_queued"){
+  if(/^retrying_clip_[1-4]$/.test(displayStatus)){
+    const clipNumber=Number(displayStatus.replace("retrying_clip_","")) || S.video.currentClipIndex || 1;
+    const attempt=Math.max(2, Number(S.video.currentClipAttempt || 2));
+    title.textContent="Ajustando clipe IA";
+    copy.textContent=`Refazendo o clipe ${clipNumber} automaticamente. Tentativa ${attempt} de 3.`;
+    renderVideoAudio();
+    return;
+  }
+  if(displayStatus==="composition_queued"){
     title.textContent="Vídeo na fila de composição";
     copy.textContent="Narração e clipes prontos. Seu vídeo entrará em processamento em instantes.";
     renderVideoAudio();
     return;
   }
-  if(S.video.status==="composing" || S.video.status==="composing_final_video" || S.video.status==="composition_processing"){
+  if(displayStatus==="composing" || displayStatus==="composing_final_video" || displayStatus==="composition_processing"){
     title.textContent="Compondo vídeo final";
     copy.textContent="Montando o vídeo completo com os clipes e a narração.";
     renderVideoAudio();
@@ -1306,7 +1442,7 @@ function renderVideoStatus(){
     renderVideoAudio();
     return;
   }
-  if(S.video.status==="clips_partial_error"){
+  if(S.video.status==="clips_partial_error" || S.video.status==="clip_generation_error"){
     title.textContent="Geração parcial salva.";
     copy.textContent=S.video.message || partialClipFailureMessage(S.video.failedClipIndex, S.video.clips.length);
     renderVideoAudio();
@@ -1332,9 +1468,11 @@ function renderVideoStatus(){
 }
 
 function videoMotionState(){
-  const status=String(S.video.status || "");
+  updateVideoVisualProgress();
+  const status=String(videoStatusForDisplay() || "");
   const clipMatch=status.match(/^generating_clip_([1-4])$/);
-  const rawProgress=Number(S.video.progress || 0);
+  const retryMatch=status.match(/^retrying_clip_([1-4])$/);
+  const rawProgress=Math.max(Number(S.video.progress || 0), Number(S.video.visualProgress || 0));
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number(value || 0)));
   let stage=0;
   let progress=0;
@@ -1347,17 +1485,19 @@ function videoMotionState(){
     visible=false;
   }else if(status==="submitting" || status==="queued" || status==="generating_audio" || status==="generating_narration"){
     stage=0;
-    progress=clamp(rawProgress || 12,8,22);
+    progress=clamp(rawProgress || 12,8,24);
     title="Gerando narração";
     subtitle="Preparando roteiro e voz para o pipeline.";
-  }else if(clipMatch){
-    const clipNumber=Number(clipMatch[1]);
-    const ranges={1:[25,35],2:[40,50],3:[55,65],4:[70,78]};
+  }else if(clipMatch || retryMatch){
+    const clipNumber=Number((clipMatch || retryMatch)[1]);
+    const ranges={1:[25,37],2:[38,51],3:[52,65],4:[66,78]};
     const range=ranges[clipNumber] || [30,65];
     stage=1;
     progress=clamp(rawProgress || range[0] + 4, range[0], range[1]);
-    title="Gerando clipes IA";
-    subtitle=`Criando clipe ${clipNumber} de 4 a partir das imagens selecionadas.`;
+    title=retryMatch ? "Ajustando clipe IA" : "Gerando clipes IA";
+    subtitle=retryMatch
+      ? `Refazendo o clipe ${clipNumber} automaticamente. Tentativa ${Math.max(2, Number(S.video.currentClipAttempt || 2))} de 3.`
+      : `Criando clipe ${clipNumber} de 4 a partir das imagens selecionadas.`;
   }else if(status==="generating_clips"){
     stage=1;
     progress=clamp(rawProgress || 38,25,78);
@@ -1370,12 +1510,12 @@ function videoMotionState(){
     subtitle="Narração e 4 clipes foram preparados. Iniciando composição final.";
   }else if(status==="composition_pending" || status==="composition_queued" || status==="composing" || status==="composing_final_video"){
     stage=2;
-    progress=status==="composition_pending" ? 80 : clamp(rawProgress || 80,80,88);
+    progress=status==="composition_pending" ? 80 : clamp(rawProgress || 80,80,84);
     title="Vídeo na fila de composição";
     subtitle="Narração e clipes prontos. Seu vídeo entrará em processamento em instantes.";
   }else if(status==="composition_processing"){
     stage=rawProgress >= 92 ? 3 : 2;
-    progress=clamp(rawProgress || 88,82,96);
+    progress=clamp(rawProgress || 88,85,96);
     title="Compondo vídeo final";
     subtitle="Montando o vídeo completo com os clipes e a narração.";
   }else if(status==="composition_error"){
@@ -1384,9 +1524,12 @@ function videoMotionState(){
     title="Não foi possível concluir o vídeo final";
     subtitle="Os clipes foram preservados. Você pode tentar novamente.";
     mode="error";
-  }else if(status==="clips_partial_error"){
+  }else if(status==="clips_partial_error" || status==="clip_generation_error"){
     stage=1;
-    progress=clamp(rawProgress || 55,30,65);
+    const failed=Number(S.video.failedClipIndex || S.video.currentClipIndex || 3);
+    const ranges={1:[25,37],2:[38,51],3:[52,65],4:[66,78]};
+    const range=ranges[failed] || [52,78];
+    progress=clamp(rawProgress || range[0], range[0], range[1]);
     title="Clipes parcialmente preparados";
     subtitle=S.video.message || partialClipFailureMessage(S.video.failedClipIndex, S.video.clips.length);
     mode="error";
@@ -1451,7 +1594,7 @@ function renderSummaryVideoMotion(hasFinal=false){
 function renderVideoActionButton(){
   const btn=document.getElementById("btn-generate-video");
   if(!btn) return;
-  if(S.video.status==="submitting" || /^generating_clip_[1-4]$/.test(S.video.status) || S.video.status==="generating_audio" || S.video.status==="generating_narration" || S.video.status==="composing_final_video"){
+  if(isVideoBusyStatus(S.video.status)){
     btn.disabled=true;
     btn.textContent="Gerando...";
     return;
@@ -1466,7 +1609,7 @@ function renderVideoActionButton(){
     btn.textContent="Compondo...";
     return;
   }
-  btn.textContent=S.video.status==="clips_partial_error" ? "Tentar novamente" : "Gerar vídeo";
+  btn.textContent=(S.video.status==="clips_partial_error" || S.video.status==="clip_generation_error" || (S.video.status==="error" && S.video.jobId)) ? "Tentar novamente" : "Gerar vídeo";
 }
 
 function partialClipFailureMessage(failedIndex, savedCount){
@@ -1474,10 +1617,10 @@ function partialClipFailureMessage(failedIndex, savedCount){
   const saved=Number(savedCount || 0);
   if(saved>0 && failed>0){
     const savedLabel=saved===1 ? "O clipe 1 foi salvo" : `Os clipes 1 a ${saved} foram salvos`;
-    return `${savedLabel}, mas o clipe ${failed} falhou. Você pode tentar novamente.`;
+    return `${savedLabel}, mas o clipe ${failed} falhou após as tentativas automáticas. Você pode tentar novamente.`;
   }
   if(failed>0){
-    return `O clipe ${failed} falhou. Você pode tentar novamente.`;
+    return `O clipe ${failed} falhou após as tentativas automáticas. Você pode tentar novamente.`;
   }
   return "A geração dos clipes foi interrompida. Você pode tentar novamente.";
 }
@@ -1511,26 +1654,68 @@ function renderFinalVideo(){
   }
 }
 
+function activeVideoClipIndex(){
+  const status=videoStatusForDisplay();
+  const match=String(status || "").match(/^(?:generating|retrying)_clip_([1-4])$/);
+  if(match) return Number(match[1]);
+  return Number(S.video.currentClipIndex || S.video.failedClipIndex || 0);
+}
+
+function renderVideoClipsGridMarkup(clips){
+  const normalized=Array.isArray(clips) ? clips : [];
+  const byIndex={};
+  normalized.forEach((clip,idx)=>{
+    const index=Number(clip.index || idx + 1);
+    if(index>=1 && index<=4) byIndex[index]=clip;
+  });
+
+  const activeIndex=activeVideoClipIndex();
+  const shouldShowPlaceholders=isVideoBusyStatus(S.video.status) || recoverableVideoErrorStatus(S.video.status) || activeIndex > 0;
+  const maxIndex=shouldShowPlaceholders ? 4 : Math.max(0, ...Object.keys(byIndex).map(Number));
+  const cards=[];
+
+  for(let index=1; index<=maxIndex; index++){
+    const clip=byIndex[index];
+    if(clip && clip.url){
+      cards.push(`<div class="video-clip-card">
+        <div class="video-clip-title">Clipe ${index}</div>
+        <video controls playsinline muted preload="metadata" src="${esc(clip.url || "")}"></video>
+      </div>`);
+      continue;
+    }
+
+    if(shouldShowPlaceholders){
+      const isActive=index===activeIndex;
+      const retrying=String(videoStatusForDisplay()).startsWith("retrying_clip_") && isActive;
+      const failed=recoverableVideoErrorStatus(S.video.status) && index===Number(S.video.failedClipIndex || activeIndex || 0);
+      const label=failed ? "Aguardando nova tentativa" : (retrying ? `Refazendo clipe ${index}` : (isActive ? `Gerando clipe ${index}` : "Pendente"));
+      cards.push(`<div class="video-clip-card video-clip-card-placeholder ${isActive ? "active" : ""} ${failed ? "error" : ""}">
+        <div class="video-clip-title">Clipe ${index}</div>
+        <div class="video-clip-placeholder">
+          <span></span>
+          <strong>${esc(label)}</strong>
+        </div>
+      </div>`);
+    }
+  }
+
+  return cards.join("");
+}
+
 function renderVideoClips(){
   const box=document.getElementById("video-clips-box");
   const grid=document.getElementById("video-clips-grid");
   if(!box || !grid) return;
   const clips=Array.isArray(S.video.clips) ? S.video.clips : [];
-  if(!clips.length){
+  const html=renderVideoClipsGridMarkup(clips);
+  if(!html){
     grid.innerHTML="";
     box.style.display="none";
     return;
   }
 
   box.style.display="block";
-  grid.innerHTML=clips.map((clip,idx)=>{
-    const label=`Clipe ${clip.index || idx + 1}`;
-    const url=clip.url || "";
-    return `<div class="video-clip-card">
-      <div class="video-clip-title">${esc(label)}</div>
-      <video controls playsinline muted preload="metadata" src="${esc(url)}"></video>
-    </div>`;
-  }).join("");
+  grid.innerHTML=html;
 
   grid.querySelectorAll("video").forEach(video=>{
     video.muted=true;
@@ -1640,18 +1825,20 @@ function renderSummaryVideo(){
 
   const ready=S.video.status==="ready";
   const clipsReady=S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error";
-  const partialError=S.video.status==="clips_partial_error";
+  const partialError=S.video.status==="clips_partial_error" || S.video.status==="clip_generation_error";
   const composing=S.video.status==="composing" || S.video.status==="composing_final_video" || S.video.status==="composition_queued" || S.video.status==="composition_processing" || S.video.compositionStatus==="processing";
   const generatingNarration=S.video.status==="generating_audio" || S.video.status==="generating_narration";
-  const generatingClip=/^generating_clip_[1-4]$/.test(S.video.status) || S.video.status==="generating_clips";
+  const generatingClip=/^(generating|retrying)_clip_[1-4]$/.test(videoStatusForDisplay()) || S.video.status==="generating_clips";
   const inProgress=S.video.status==="submitting" || S.video.status==="queued" || generatingNarration || generatingClip || composing;
   const hasAudio=Boolean(S.video.audioUrl);
   const hasFinal=Boolean(S.video.finalVideoUrl);
   const clips=Array.isArray(S.video.clips) ? S.video.clips : [];
   const hasAssetsForComposition=hasAudio && clips.length>=4 && !hasFinal;
   const compositionError=S.video.status==="composition_error";
+  const recoverableError=compositionError || partialError || (S.video.status==="error" && Boolean(S.video.jobId));
   const compositionPending=isComposerPendingCode(S.video.errorCode) || (hasAssetsForComposition && (S.video.status==="ready_for_composition" || S.video.status==="composition_pending"));
-  const clipMatch=String(S.video.status || "").match(/^generating_clip_([1-4])$/);
+  const clipMatch=String(videoStatusForDisplay() || "").match(/^generating_clip_([1-4])$/);
+  const retryMatch=String(videoStatusForDisplay() || "").match(/^retrying_clip_([1-4])$/);
   let statusText="Vídeo ainda não gerado.";
   let noteText="Você pode preparar o vídeo no passo 5 quando quiser.";
   let badgeText="Pendente";
@@ -1673,8 +1860,10 @@ function renderSummaryVideo(){
     noteText="Montando o vídeo completo com clipes e narração.";
     badgeText="Gerando";
   }else if(generatingClip){
-    statusText=clipMatch ? `Gerando clipe ${clipMatch[1]} de 4...` : "Gerando clipes...";
-    noteText=hasAudio ? "Narração gerada. Os clipes visuais estão sendo preparados em sequência." : "Os clipes visuais estão sendo preparados.";
+    statusText=retryMatch ? "Ajustando clipe IA" : (clipMatch ? `Gerando clipe ${clipMatch[1]} de 4...` : "Gerando clipes...");
+    noteText=retryMatch
+      ? `Refazendo o clipe ${retryMatch[1]} automaticamente. Tentativa ${Math.max(2, Number(S.video.currentClipAttempt || 2))} de 3.`
+      : (hasAudio ? "Narração gerada. Os clipes visuais estão sendo preparados em sequência." : "Os clipes visuais estão sendo preparados.");
     badgeText="Gerando";
   }else if(generatingNarration){
     statusText="Gerando narração...";
@@ -1724,19 +1913,13 @@ function renderSummaryVideo(){
     audioWrap.style.display="none";
   }
   if(retryWrap){
-    retryWrap.style.display=compositionError ? "flex" : "none";
+    retryWrap.style.display=recoverableError ? "flex" : "none";
   }
   if(clipsWrap && clipsGrid){
-    if(clips.length){
+    const clipsHtml=renderVideoClipsGridMarkup(clips);
+    if(clipsHtml){
       clipsWrap.style.display="block";
-      clipsGrid.innerHTML=clips.map((clip,idx)=>{
-        const label=`Clipe ${clip.index || idx + 1}`;
-        const url=clip.url || "";
-        return `<div class="video-clip-card">
-          <div class="video-clip-title">${esc(label)}</div>
-          <video controls playsinline muted preload="metadata" src="${esc(url)}"></video>
-        </div>`;
-      }).join("");
+      clipsGrid.innerHTML=clipsHtml;
       clipsGrid.querySelectorAll("video").forEach(video=>{
         video.muted=true;
         video.defaultMuted=true;
@@ -1799,6 +1982,10 @@ async function pollVideoStatus(){
     S.video.audioUrl=data.audio_url || S.video.audioUrl || "";
     S.video.clips=Array.isArray(data.clips) ? data.clips : (S.video.clips || []);
     if(Array.isArray(data.partial_clips) && data.partial_clips.length) S.video.clips=data.partial_clips;
+    S.video.currentClipIndex=Number(data.current_clip_index || S.video.currentClipIndex || 0);
+    S.video.currentClipAttempt=Number(data.current_clip_attempt || S.video.currentClipAttempt || 0);
+    S.video.clipRetryCount=Number(data.clip_retry_count || S.video.clipRetryCount || 0);
+    S.video.lastClipError=data.last_clip_error || S.video.lastClipError || "";
     S.video.failedClipIndex=Number(data.failed_clip_index || S.video.failedClipIndex || 0);
     S.video.failedClipRole=data.failed_clip_role || S.video.failedClipRole || "";
     S.video.errorCode=data.error_code || S.video.errorCode || "";
@@ -1808,11 +1995,12 @@ async function pollVideoStatus(){
     S.video.finalVideoUrl=data.final_video_url || "";
     S.video.finalVideoDuration=Number(data.final_video_duration || S.video.finalVideoDuration || 0);
     S.video.thumbnailUrl=data.thumbnail_url || "";
-    if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error"){
+    if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
       S.video.mockReady=true;
+      if(S.video.status==="ready" || S.video.status==="composition_error" || S.video.status==="clip_generation_error") stopVideoProgressLoop();
       renderVideoStatus();
-      if(S.video.status==="composition_error"){
-        toast("Não foi possível concluir o vídeo final.","error");
+      if(S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
+        toast(S.video.status==="composition_error" ? "Não foi possível concluir o vídeo final." : "Não foi possível gerar todos os clipes.","error");
       }else{
         toast(S.video.status==="ready" ? "Vídeo final preparado." : "Narração e clipes preparados.","success");
       }
@@ -1830,20 +2018,25 @@ async function pollVideoStatus(){
     console.warn("Video generation error", data || err);
     if(Array.isArray(data.partial_clips)) S.video.clips=data.partial_clips;
     else if(Array.isArray(data.clips)) S.video.clips=data.clips;
+    S.video.currentClipIndex=Number(data.current_clip_index || S.video.currentClipIndex || 0);
+    S.video.currentClipAttempt=Number(data.current_clip_attempt || S.video.currentClipAttempt || 0);
+    S.video.clipRetryCount=Number(data.clip_retry_count || S.video.clipRetryCount || 0);
+    S.video.lastClipError=data.last_clip_error || S.video.lastClipError || "";
     S.video.failedClipIndex=Number(data.failed_clip_index || data.failed_clip || 0);
     S.video.failedClipRole=data.failed_clip_role || "";
     S.video.errorCode=data.code || data.error_code || "";
-    S.video.status=data.status || (S.video.failedClipIndex ? "clips_partial_error" : "error");
+    S.video.status=data.status || (S.video.failedClipIndex ? "clip_generation_error" : "error");
     S.video.compositionStatus=data.composition_status || S.video.compositionStatus || "pending";
     S.video.composerStatus=data.composer_status || S.video.composerStatus || "";
     S.video.renderJobId=data.render_job_id || S.video.renderJobId || "";
     S.video.message=isComposerPendingCode(S.video.errorCode) || S.video.status==="composition_pending"
       ? "Narração e clipes preparados. A composição final está pendente."
-      : (S.video.status==="clips_partial_error"
+      : (S.video.status==="clips_partial_error" || S.video.status==="clip_generation_error"
       ? partialClipFailureMessage(S.video.failedClipIndex, S.video.clips.length)
       : (S.video.status==="composition_error"
       ? "Não foi possível concluir o vídeo final. Os clipes foram preservados. Você pode tentar novamente."
       : (err.message || "Falha ao consultar status do vídeo.")));
+    stopVideoProgressLoop();
     renderVideoStatus();
     toast(S.video.message,"error");
   }
@@ -1874,7 +2067,7 @@ function calcScore() {
 
   if (S.video.status === "ready" || S.video.status === "ready_for_composition" || S.video.status === "clips_ready" || S.video.status === "composition_pending" || S.video.status === "composition_error" || S.video.finalVideoUrl) {
      score += 15; checks.push(`<div style="display:flex;gap:8px;align-items:center">${isComposerPendingCode(S.video.errorCode) || S.video.status === "composition_pending" || S.video.status === "composition_error" ? svgWarn : svgCheck} ${S.video.finalVideoUrl ? "Vídeo final preparado" : (isComposerPendingCode(S.video.errorCode) || S.video.status === "composition_pending" || S.video.status === "composition_error" ? "Composição final pendente" : "Vídeo preparado para composição")}</div>`);
-  } else if (S.video.status === "clips_partial_error") {
+  } else if (S.video.status === "clips_partial_error" || S.video.status === "clip_generation_error") {
      score += 15; checks.push(`<div style="display:flex;gap:8px;align-items:center">${svgWarn} Clipes parcialmente preparados</div>`);
   } else if (S.video.status === "composing_final_video" || S.video.compositionStatus === "processing") {
      score += 15; checks.push(`<div style="display:flex;gap:8px;align-items:center">${svgWarn} Compondo vídeo final</div>`);

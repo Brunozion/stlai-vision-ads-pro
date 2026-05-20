@@ -103,6 +103,10 @@ class STLAI_Video_Ajax {
             'composed_at'      => sanitize_text_field( $job['composed_at'] ?? '' ),
             'thumbnail_url'   => $job['thumbnail_url'] ?? '',
             'composition_status' => $job['composition_status'] ?? 'pending',
+            'current_clip_index' => (int) ( $job['current_clip_index'] ?? 0 ),
+            'current_clip_attempt' => (int) ( $job['current_clip_attempt'] ?? 0 ),
+            'clip_retry_count' => (int) ( $job['clip_retry_count'] ?? 0 ),
+            'last_clip_error' => sanitize_text_field( $job['last_clip_error'] ?? '' ),
             'format'          => $job['format'] ?? '',
             'narration_type'  => $job['narration_type'] ?? '',
             'failed_clip_index' => (int) ( $job['failed_clip_index'] ?? 0 ),
@@ -161,6 +165,22 @@ class STLAI_Video_Ajax {
 
             if ( ! empty( $data['failed_clip_role'] ) ) {
                 $response['failed_clip_role'] = sanitize_key( $data['failed_clip_role'] );
+            }
+
+            if ( ! empty( $data['current_clip_index'] ) ) {
+                $response['current_clip_index'] = (int) $data['current_clip_index'];
+            }
+
+            if ( ! empty( $data['current_clip_attempt'] ) ) {
+                $response['current_clip_attempt'] = (int) $data['current_clip_attempt'];
+            }
+
+            if ( isset( $data['clip_retry_count'] ) ) {
+                $response['clip_retry_count'] = (int) $data['clip_retry_count'];
+            }
+
+            if ( ! empty( $data['last_clip_error'] ) ) {
+                $response['last_clip_error'] = sanitize_text_field( $data['last_clip_error'] );
             }
 
             if ( ! empty( $data['status'] ) ) {

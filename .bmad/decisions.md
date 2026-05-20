@@ -586,3 +586,54 @@ O contrato de status passa a expor `transition_used` e `fallback_used`. O job s�
 ### Status
 
 Decidido
+
+## 2026-05-20 - Retry automático obrigatório por clipe Veo
+
+### Decisao
+
+Cada clipe Veo deve ter até 3 tentativas dentro do mesmo fluxo antes de retornar erro ao frontend.
+
+O backend deve tentar novamente automaticamente para falhas temporárias como HTTP 429, 500, 502, 503, 504, timeouts, operation timeout, resposta vazia/inválida e erros transitórios de transporte. Erros permanentes de configuração, validação, imagem inválida ou formato inválido não devem ser repetidos.
+
+Durante retry, o job deve expor `retrying_clip_1`, `retrying_clip_2`, `retrying_clip_3` ou `retrying_clip_4`, além de `current_clip_index`, `current_clip_attempt`, `clip_retry_count` e `last_clip_error`.
+
+### Motivo
+
+Falhas intermitentes do Veo podem se resolver em uma nova tentativa imediata. O usuário não deve precisar clicar duas vezes para resolver uma instabilidade temporária do provider.
+
+### Impacto
+
+O erro público de clipe só aparece depois que todas as tentativas daquele clipe falham. O estado final recuperável passa a ser `clip_generation_error`. O botão "Tentar novamente" retoma do ponto de falha: não regenera narração existente, não regenera clipes já prontos e tenta apenas o que falta; se os 4 clipes já existem, tenta apenas a composição.
+
+### Status
+
+Decidido
+
+## 2026-05-20 - Progresso visual contínuo por fase
+
+### Decisao
+
+O frontend deve manter uma barra de progresso visual estimada enquanto o backend está ocupado, mesmo sem nova resposta AJAX.
+
+A barra cresce lentamente dentro do teto da fase atual, não volta para trás, não chega a 100 antes de `ready` e mantém shimmer/motion para não parecer travada.
+
+### Motivo
+
+Geração de narração e clipes pode demorar em uma request longa do WordPress. Sem uma animação temporal local, a interface parece parada mesmo com o backend trabalhando.
+
+### Impacto
+
+O frontend usa progresso visual por fase:
+
+- narração: 8-24;
+- clipe 1: 25-37;
+- clipe 2: 38-51;
+- clipe 3: 52-65;
+- clipe 4: 66-78;
+- fila de composição: 80-84;
+- composição: 85-96;
+- pronto: 100.
+
+### Status
+
+Decidido

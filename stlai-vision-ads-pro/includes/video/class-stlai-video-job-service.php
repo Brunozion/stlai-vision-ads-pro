@@ -10,6 +10,7 @@ if ( ! class_exists( 'STLAI_Video_Composer_Provider' ) ) {
 class STLAI_Video_Job_Service {
     const CLIP_DURATION = 8.0;
     const FADE_DURATION = 0.4;
+    const CLIP_MAX_ATTEMPTS = 3;
 
     public static function create_job( array $payload ) {
         $validated = self::validate_payload( $payload );
@@ -39,6 +40,10 @@ class STLAI_Video_Job_Service {
                         'clips'                => self::normalize_clip_list( $existing_job['clips'] ?? array() ),
                         'partial_clips'        => self::normalize_clip_list( $existing_job['partial_clips'] ?? ( $existing_job['clips'] ?? array() ) ),
                         'composition_status'   => 'pending',
+                        'current_clip_index'   => 0,
+                        'current_clip_attempt' => 0,
+                        'clip_retry_count'     => 0,
+                        'last_clip_error'      => '',
                         'final_video_url'      => '',
                         'final_video_path'     => '',
                         'final_video_duration' => 0,
@@ -125,17 +130,9 @@ class STLAI_Video_Job_Service {
                 continue;
             }
 
-            STLAI_Video_Storage::update_job(
-                $job['job_id'],
-                array(
-                    'status'   => 'generating_clip_' . $clip_index,
-                    'progress' => self::clip_progress( $clip_index ),
-                    'message'  => 'Gerando clipe ' . $clip_index . ' de 4.',
-                    'clips'    => $clips,
-                )
-            );
-
-            $clip = STLAI_Veo_Provider::generate_clip(
+            $clip = self::generate_clip_with_retries(
+                $job,
+                $clips,
                 array(
                     'image_url'            => $selected_images[ $offset ]['url'] ?? '',
                     'format'               => $validated['format'],
@@ -151,18 +148,22 @@ class STLAI_Video_Job_Service {
 
             if ( is_wp_error( $clip ) ) {
                 $error_data = $clip->get_error_data();
-                $safe_debug = self::clip_error_debug( $error_data, $role, $validated['format'] );
+                $safe_debug = is_array( $error_data ) ? ( $error_data['debug'] ?? self::clip_error_debug( $error_data, $role, $validated['format'] ) ) : '';
                 $message = 'Não foi possível gerar o clipe ' . $clip_index . '.';
                 $partial_clips = self::normalize_clip_list( $clips );
                 STLAI_Video_Storage::update_job(
                     $job['job_id'],
                     array(
-                        'status'            => 'clips_partial_error',
+                        'status'            => 'clip_generation_error',
                         'progress'          => self::clip_progress( $clip_index ),
                         'message'           => $message,
                         'clips'             => $partial_clips,
                         'partial_clips'     => $partial_clips,
                         'composition_status' => 'pending',
+                        'current_clip_index' => $clip_index,
+                        'current_clip_attempt' => self::CLIP_MAX_ATTEMPTS,
+                        'clip_retry_count'  => self::CLIP_MAX_ATTEMPTS - 1,
+                        'last_clip_error'   => is_array( $error_data ) ? ( $error_data['last_error_summary'] ?? $clip->get_error_message() ) : $clip->get_error_message(),
                         'failed_clip_index' => $clip_index,
                         'failed_clip_role'  => $role['role'],
                         'error_code'        => 'VEO_CLIP_' . $clip_index . '_ERROR',
@@ -177,13 +178,17 @@ class STLAI_Video_Job_Service {
                     array(
                         'debug'             => $safe_debug,
                         'job_id'            => $job['job_id'],
-                        'status'            => 'clips_partial_error',
+                        'status'            => 'clip_generation_error',
                         'audio_url'         => $job['audio_url'] ?? '',
                         'clips'             => $partial_clips,
                         'partial_clips'     => $partial_clips,
                         'failed_clip'       => $clip_index,
                         'failed_clip_index' => $clip_index,
                         'failed_clip_role'  => $role['role'],
+                        'current_clip_index' => $clip_index,
+                        'current_clip_attempt' => self::CLIP_MAX_ATTEMPTS,
+                        'clip_retry_count'  => self::CLIP_MAX_ATTEMPTS - 1,
+                        'last_clip_error'   => is_array( $error_data ) ? ( $error_data['last_error_summary'] ?? $clip->get_error_message() ) : $clip->get_error_message(),
                     )
                 );
             }
@@ -196,6 +201,15 @@ class STLAI_Video_Job_Service {
                     'progress' => self::clip_progress( $clip_index ),
                     'message'  => 'Clipe ' . $clip_index . ' gerado com sucesso.',
                     'clips'    => $clips,
+                    'current_clip_index' => 0,
+                    'current_clip_attempt' => 0,
+                    'clip_retry_count' => 0,
+                    'last_clip_error' => '',
+                    'failed_clip_index' => 0,
+                    'failed_clip_role' => '',
+                    'error_code' => '',
+                    'error_message' => '',
+                    'error_debug' => '',
                 )
             );
         }
@@ -224,6 +238,10 @@ class STLAI_Video_Job_Service {
                 'clips'              => $clips,
                 'partial_clips'      => array(),
                 'composition_status' => 'pending',
+                'current_clip_index' => 0,
+                'current_clip_attempt' => 0,
+                'clip_retry_count'   => 0,
+                'last_clip_error'    => '',
                 'final_video_url'    => '',
                 'thumbnail_url'      => '',
             )
@@ -960,12 +978,155 @@ class STLAI_Video_Job_Service {
         );
     }
 
+    private static function generate_clip_with_retries( array $job, array $clips, array $payload ) {
+        $clip_index = (int) ( $payload['index'] ?? 0 );
+        $role = array(
+            'role'  => sanitize_key( $payload['role'] ?? '' ),
+            'label' => sanitize_text_field( $payload['role_label'] ?? '' ),
+        );
+        $last_error = null;
+
+        for ( $attempt = 1; $attempt <= self::CLIP_MAX_ATTEMPTS; $attempt++ ) {
+            $retry_count = max( 0, $attempt - 1 );
+            $is_retry = $attempt > 1;
+
+            if ( $is_retry ) {
+                sleep( 2 === $attempt ? 2 : 4 );
+            }
+
+            STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array(
+                    'status'               => ( $is_retry ? 'retrying_clip_' : 'generating_clip_' ) . $clip_index,
+                    'progress'             => self::clip_progress( $clip_index ),
+                    'message'              => $is_retry
+                        ? 'Ajustando geração do clipe ' . $clip_index . '. Tentativa ' . $attempt . ' de ' . self::CLIP_MAX_ATTEMPTS . '.'
+                        : 'Gerando clipe ' . $clip_index . ' de 4.',
+                    'clips'                => $clips,
+                    'partial_clips'        => $clips,
+                    'current_clip_index'   => $clip_index,
+                    'current_clip_attempt' => $attempt,
+                    'clip_retry_count'     => $retry_count,
+                    'last_clip_error'      => $last_error ? self::safe_error_summary( $last_error ) : '',
+                    'failed_clip_index'    => 0,
+                    'failed_clip_role'     => '',
+                    'error_code'           => '',
+                    'error_message'        => '',
+                    'error_debug'          => '',
+                )
+            );
+
+            $clip = STLAI_Veo_Provider::generate_clip( $payload );
+            if ( ! is_wp_error( $clip ) ) {
+                return $clip;
+            }
+
+            $last_error = $clip;
+            $retryable = self::is_retryable_clip_error( $clip );
+            if ( ! $retryable || $attempt >= self::CLIP_MAX_ATTEMPTS ) {
+                return self::clip_generation_error( $clip, $clip_index, $role, $attempt, $retryable );
+            }
+
+            STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array(
+                    'status'               => 'retrying_clip_' . $clip_index,
+                    'progress'             => self::clip_progress( $clip_index ),
+                    'message'              => 'Ajustando geração do clipe ' . $clip_index . '. Tentativa ' . ( $attempt + 1 ) . ' de ' . self::CLIP_MAX_ATTEMPTS . '.',
+                    'clips'                => $clips,
+                    'partial_clips'        => $clips,
+                    'current_clip_index'   => $clip_index,
+                    'current_clip_attempt' => $attempt + 1,
+                    'clip_retry_count'     => $attempt,
+                    'last_clip_error'      => self::safe_error_summary( $clip ),
+                    'error_debug'          => self::clip_retry_debug( $clip, $clip_index, $attempt, true ),
+                )
+            );
+        }
+
+        return self::clip_generation_error( $last_error, $clip_index, $role, self::CLIP_MAX_ATTEMPTS, true );
+    }
+
+    private static function clip_generation_error( $error, $clip_index, array $role, $attempt, $retryable ) {
+        if ( ! is_wp_error( $error ) ) {
+            return self::composition_error( 'VEO_CLIP_' . (int) $clip_index . '_ERROR', 'Não foi possível gerar o clipe ' . (int) $clip_index . '.', '' );
+        }
+
+        $data = $error->get_error_data();
+        $base_debug = self::clip_error_debug( is_array( $data ) ? $data : array(), $role, '' );
+        $retry_debug = self::clip_retry_debug( $error, $clip_index, $attempt, $retryable );
+
+        return new WP_Error(
+            'VEO_CLIP_' . (int) $clip_index . '_ERROR',
+            'Não foi possível gerar o clipe ' . (int) $clip_index . '.',
+            array(
+                'debug'              => trim( $base_debug . '; ' . $retry_debug, '; ' ),
+                'failed_clip_index'  => (int) $clip_index,
+                'failed_clip_role'   => sanitize_key( $role['role'] ?? '' ),
+                'current_clip_index' => (int) $clip_index,
+                'current_clip_attempt' => (int) $attempt,
+                'clip_retry_count'   => max( 0, (int) $attempt - 1 ),
+                'retryable'          => (bool) $retryable,
+                'last_error_code'    => $error->get_error_code(),
+                'last_error_summary' => self::safe_error_summary( $error ),
+            )
+        );
+    }
+
+    private static function is_retryable_clip_error( WP_Error $error ) {
+        $code = $error->get_error_code();
+        $summary = strtolower( self::safe_error_summary( $error ) );
+
+        if ( in_array( $code, array( 'MISSING_VIDEO_API_KEY', 'MISSING_VIDEO_MODEL', 'MISSING_VIDEO_BASE_URL', 'MISSING_SELECTED_IMAGE', 'IMAGE_FETCH_ERROR', 'INVALID_IMAGE_MIME_TYPE', 'INVALID_VIDEO_FORMAT', 'IMAGE_PREPROCESSOR_UNAVAILABLE', 'VIDEO_SAVE_ERROR' ), true ) ) {
+            return false;
+        }
+
+        if ( 'VEO_OPERATION_TIMEOUT' === $code ) {
+            return true;
+        }
+
+        if ( 'VEO_HTTP_ERROR' === $code ) {
+            return (bool) preg_match( '/http\s+(429|500|502|503|504)\b/i', $summary );
+        }
+
+        if ( in_array( $code, array( 'VEO_REQUEST_ERROR', 'VEO_INVALID_RESPONSE' ), true ) ) {
+            return (bool) preg_match( '/timeout|timed out|cURL|curl|tempor[aá]ri|temporary|reset|empty|vazia|inv[aá]lida|json|429|500|502|503|504/i', $summary );
+        }
+
+        return false;
+    }
+
+    private static function safe_error_summary( WP_Error $error ) {
+        $data = $error->get_error_data();
+        $debug = is_array( $data ) ? (string) ( $data['debug'] ?? '' ) : '';
+        $summary = trim( $error->get_error_code() . ': ' . $error->get_error_message() . ( $debug ? ' - ' . $debug : '' ) );
+        $summary = preg_replace( '/Bearer\s+[A-Za-z0-9._~+\/=-]+/i', 'Bearer [redacted]', $summary );
+        $summary = preg_replace( '/(api[_-]?key|token|authorization)\s*[:=]\s*[^;\s]+/i', '$1=[redacted]', $summary );
+        $summary = preg_replace( '/\s+/', ' ', $summary );
+
+        return sanitize_text_field( substr( $summary, 0, 500 ) );
+    }
+
+    private static function clip_retry_debug( WP_Error $error, $clip_index, $attempt, $retryable ) {
+        return implode(
+            '; ',
+            array(
+                'failed_clip_index=' . (int) $clip_index,
+                'clip_attempt=' . (int) $attempt,
+                'max_attempts=' . self::CLIP_MAX_ATTEMPTS,
+                'retryable=' . ( $retryable ? 'true' : 'false' ),
+                'last_error_code=' . sanitize_key( $error->get_error_code() ),
+                'last_error_summary=' . self::safe_error_summary( $error ),
+            )
+        );
+    }
+
     private static function clip_progress( $clip_index ) {
         $map = array(
-            1 => 30,
-            2 => 45,
-            3 => 60,
-            4 => 74,
+            1 => 31,
+            2 => 44,
+            3 => 58,
+            4 => 72,
         );
 
         $clip_index = (int) $clip_index;
