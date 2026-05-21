@@ -66,6 +66,11 @@ const S = {
     composerPollCount: 0,
     compositionStartBlocker: "",
     nextClipAction: "",
+    nextClipIndex: 0,
+    nextClipReason: "",
+    autoClipGenerationTriggered: false,
+    autoClipGenerationResult: "",
+    skippedReason: "",
     diagnostics: {},
     testClipUrl: "",
     testClipOperationId: "",
@@ -1445,6 +1450,11 @@ function applyVideoState(payload={}, options={}){
   S.video.composerPollCount=Number((!stale && incoming.composer_poll_count) || S.video.composerPollCount || 0);
   S.video.compositionStartBlocker=(!stale && incoming.composition_start_blocker) || S.video.compositionStartBlocker || "";
   S.video.nextClipAction=(!stale && incoming.next_clip_action) || incoming.diagnostics?.next_clip_action || S.video.nextClipAction || "";
+  S.video.nextClipIndex=Number((!stale && incoming.next_clip_index) || incoming.diagnostics?.next_clip_index || S.video.nextClipIndex || 0);
+  S.video.nextClipReason=(!stale && incoming.next_clip_reason) || incoming.diagnostics?.next_clip_reason || S.video.nextClipReason || "";
+  S.video.autoClipGenerationTriggered=Boolean((!stale && incoming.auto_clip_generation_triggered) || incoming.diagnostics?.auto_clip_generation_triggered || false);
+  S.video.autoClipGenerationResult=(!stale && incoming.auto_clip_generation_result) || incoming.diagnostics?.auto_clip_generation_result || S.video.autoClipGenerationResult || "";
+  S.video.skippedReason=(!stale && incoming.skipped_reason) || incoming.diagnostics?.skipped_reason || S.video.skippedReason || "";
   S.video.diagnostics=(!stale && incoming.diagnostics && typeof incoming.diagnostics==="object") ? incoming.diagnostics : (S.video.diagnostics || {});
   if(!S.video.errorCode && incoming.last_composer_error_code) S.video.errorCode=incoming.last_composer_error_code;
   S.video.jobVersion=Math.max(previousVersion, incomingVersion);
@@ -2697,7 +2707,6 @@ async function startVideoClip(index){
     const data=await videoAjaxRequest("stlai_check_video_status", {job_id:S.video.jobId});
     applyVideoState(data, {debug:true});
     warnVideoCompositionDiagnostic("poll");
-    maybeScheduleMissingVideoClips();
     const activeClipJobs=hasActiveClipJobs();
     const terminalClipError=S.video.status==="clip_generation_error" && !activeClipJobs;
     if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){

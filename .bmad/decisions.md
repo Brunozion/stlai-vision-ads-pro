@@ -177,6 +177,26 @@ Um clipe com URL não some mais do storage por resposta parcial. Jobs presos em 
 
 Decidido
 
+## 2026-05-21 - Polling de status executa próximo clipe pendente
+
+### Decisao
+
+Quando o job está em `generating_clips`, possui `audio_url`, tem menos de 4 clipes prontos e existe clipe `pending`, `queued` ou `retrying`, o endpoint de polling deve executar automaticamente o próximo clipe necessário.
+
+A ordem é sempre o menor index faltante/processável. Antes de gerar, o backend relê o job, confirma que o clipe não ficou `ready` em outra chamada e respeita lock simples por status: `generating/retrying` com menos de 120s não é duplicado. `generating/retrying` stale volta ao fluxo de retry. `error_final` bloqueia novas tentativas automáticas até o usuário clicar em "Tentar novamente".
+
+### Motivo
+
+O diagnóstico mostrou `next_clip_action=generate_missing_clip`, mas o polling apenas retornava estado. Isso mantinha `missing_clips` indefinidamente mesmo quando o backend sabia qual ação tomar.
+
+### Impacto
+
+O pipeline volta a andar sozinho: polling gera clipe 2, depois 3, depois 4, salva cada URL e inicia composição ao completar 4 clipes.
+
+### Status
+
+Decidido
+
 ## 2026-05-21 - Clipes semi-paralelos, URLs limpas, narração sem tags e música opcional
 
 ### Decisao

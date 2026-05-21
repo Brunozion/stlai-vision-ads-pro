@@ -105,6 +105,11 @@ class STLAI_Video_Ajax {
         $next_clip_action = self::next_clip_action( $job, $composition_start, $clip_summary );
         $normalized_ready_count = self::normalized_ready_count( $job );
         $normalized_missing_clips = self::normalized_missing_clips( $job );
+        $next_clip_index = (int) ( $job['next_clip_index'] ?? self::next_clip_index( $clip_summary ) );
+        $next_clip_reason = sanitize_key( $job['next_clip_reason'] ?? ( $next_clip_index ? $next_clip_action : '' ) );
+        $auto_clip_generation_triggered = ! empty( $job['auto_clip_generation_triggered'] );
+        $auto_clip_generation_result = sanitize_key( $job['auto_clip_generation_result'] ?? '' );
+        $skipped_reason = sanitize_key( $job['skipped_reason'] ?? '' );
         $safe_diagnostics = array(
             'job_id'                       => sanitize_text_field( $job['job_id'] ?? '' ),
             'status'                       => sanitize_key( $job['status'] ?? 'queued' ),
@@ -129,6 +134,11 @@ class STLAI_Video_Ajax {
             'composition_start_blocker'    => sanitize_key( $composition_start['composition_start_blocker'] ?? '' ),
             'clip_jobs_summary'            => $clip_summary,
             'next_clip_action'             => $next_clip_action,
+            'next_clip_index'              => $next_clip_index,
+            'next_clip_reason'             => $next_clip_reason,
+            'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
+            'auto_clip_generation_result'  => $auto_clip_generation_result,
+            'skipped_reason'               => $skipped_reason,
         );
         return array(
             'job_id'          => $job['job_id'] ?? '',
@@ -176,6 +186,11 @@ class STLAI_Video_Ajax {
             'can_start_composition' => ! empty( $composition_start['can_start_composition'] ),
             'composition_start_blocker' => sanitize_key( $composition_start['composition_start_blocker'] ?? '' ),
             'next_clip_action' => $next_clip_action,
+            'next_clip_index' => $next_clip_index,
+            'next_clip_reason' => $next_clip_reason,
+            'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
+            'auto_clip_generation_result' => $auto_clip_generation_result,
+            'skipped_reason' => $skipped_reason,
             'normalized_clips_ready_count' => $normalized_ready_count,
             'normalized_missing_clips' => $normalized_missing_clips,
             'diagnostics'      => $safe_diagnostics,
@@ -460,6 +475,20 @@ class STLAI_Video_Ajax {
             }
         }
         return 'none';
+    }
+
+    private static function next_clip_index( array $clip_summary ) {
+        foreach ( $clip_summary as $item ) {
+            if ( empty( $item['has_url'] ) && in_array( sanitize_key( $item['status'] ?? '' ), array( 'pending', 'queued', 'retrying' ), true ) ) {
+                return (int) ( $item['index'] ?? 0 );
+            }
+        }
+        foreach ( $clip_summary as $item ) {
+            if ( ! empty( $item['is_stale'] ) ) {
+                return (int) ( $item['index'] ?? 0 );
+            }
+        }
+        return 0;
     }
 
     private static function clip_job_age_seconds( $started_at ) {

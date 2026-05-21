@@ -901,6 +901,29 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - Polling executa clipes faltantes automaticamente
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- `get_status()` agora chama o pipeline incremental quando há áudio, menos de 4 clipes e clipes `pending/queued/retrying`.
+- O polling processa automaticamente o menor clipe faltante e salva o resultado na própria resposta de status.
+- Se um clipe está `generating/retrying` e ainda não está stale, o polling não duplica a geração.
+- Se existe `error_final`, o polling não continua tentando; o usuário precisa clicar em "Tentar novamente".
+- O diagnóstico passa a expor `next_clip_index`, `next_clip_reason`, `auto_clip_generation_triggered`, `auto_clip_generation_result` e `skipped_reason`.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Estado monotônico dos clipes de vídeo
 
 Arquivos alterados:

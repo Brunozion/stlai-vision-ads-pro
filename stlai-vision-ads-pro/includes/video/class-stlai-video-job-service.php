@@ -204,7 +204,7 @@ class STLAI_Video_Job_Service {
 
         $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $job['clips'] ?? array(), false );
         if ( self::has_processable_clip_jobs( $clip_jobs ) && ! self::has_final_clip_errors( $clip_jobs ) && in_array( sanitize_key( $job['status'] ?? '' ), array( 'clip_generation_error', 'clips_partial_error' ), true ) ) {
-            return STLAI_Video_Storage::update_job(
+            $updated_job = STLAI_Video_Storage::update_job(
                 $job['job_id'],
                 array_merge(
                     self::clip_job_state_fields( $clip_jobs ),
@@ -217,9 +217,10 @@ class STLAI_Video_Job_Service {
                     )
                 )
             );
+            $job = $updated_job ?: $job;
         }
 
-        return $job;
+        return self::maybe_process_clip_pipeline( $job );
     }
 
     public static function get_result( $job_id ) {
@@ -315,13 +316,34 @@ class STLAI_Video_Job_Service {
         }
 
         $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $job['clips'] ?? array(), false );
+        if ( self::has_final_clip_errors( $clip_jobs ) ) {
+            return STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array_merge(
+                    self::clip_job_state_fields( $clip_jobs ),
+                    array(
+                        'status'        => 'clip_generation_error',
+                        'message'       => 'Um dos clipes falhou após as tentativas automáticas.',
+                        'next_clip_index' => 0,
+                        'next_clip_reason' => '',
+                        'auto_clip_generation_triggered' => false,
+                        'auto_clip_generation_result' => 'skipped',
+                        'skipped_reason' => 'clip_error_final',
+                    )
+                )
+            );
+        }
+
         $next = self::next_processable_clip_job( $clip_jobs );
         if ( ! $next ) {
             $has_error = false;
+            $has_active = false;
             foreach ( $clip_jobs as $clip_job ) {
                 if ( in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'error', 'error_final' ), true ) ) {
                     $has_error = true;
-                    break;
+                }
+                if ( in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'generating', 'retrying' ), true ) ) {
+                    $has_active = true;
                 }
             }
 
@@ -334,12 +356,53 @@ class STLAI_Video_Job_Service {
                         'progress'      => self::clip_jobs_progress( $clip_jobs ),
                         'progress_hint' => self::clip_jobs_progress( $clip_jobs ),
                         'message'       => $has_error ? 'Um dos clipes falhou após as tentativas automáticas.' : 'Aguardando a próxima etapa de geração dos clipes.',
+                        'next_clip_index' => 0,
+                        'next_clip_reason' => '',
+                        'auto_clip_generation_triggered' => false,
+                        'auto_clip_generation_result' => 'skipped',
+                        'skipped_reason' => $has_error ? 'clip_error_final' : ( $has_active ? 'clip_already_generating_not_stale' : 'no_processable_clip' ),
                     )
                 )
             );
         }
 
-        return self::process_single_clip_job( $job, (int) ( $next['index'] ?? 0 ) );
+        $next_index = (int) ( $next['index'] ?? 0 );
+        $job = STLAI_Video_Storage::update_job(
+            $job['job_id'],
+            array(
+                'next_clip_index' => $next_index,
+                'next_clip_reason' => 'generate_missing_clip',
+                'auto_clip_generation_triggered' => true,
+                'auto_clip_generation_result' => 'processing',
+                'skipped_reason' => '',
+            )
+        ) ?: $job;
+
+        $result = self::process_single_clip_job( $job, $next_index );
+        if ( is_wp_error( $result ) ) {
+            return $result;
+        }
+
+        $result_clips = self::normalize_clip_list( $result['clips'] ?? array() );
+        $result_jobs = self::normalize_clip_jobs( $result['clip_jobs'] ?? array(), $result_clips, false );
+        $result_status = self::has_ready_clip( $result_clips, $next_index ) ? 'ready' : 'skipped';
+        foreach ( $result_jobs as $result_job ) {
+            if ( (int) ( $result_job['index'] ?? 0 ) === $next_index && in_array( sanitize_key( $result_job['status'] ?? '' ), array( 'error', 'error_final' ), true ) ) {
+                $result_status = 'error';
+                break;
+            }
+        }
+
+        return STLAI_Video_Storage::update_job(
+            $result['job_id'],
+            array(
+                'next_clip_index' => $next_index,
+                'next_clip_reason' => 'generate_missing_clip',
+                'auto_clip_generation_triggered' => true,
+                'auto_clip_generation_result' => $result_status,
+                'skipped_reason' => '',
+            )
+        ) ?: $result;
     }
 
     private static function prepare_clip_jobs_for_job( array $job, array $validated = array(), $reset_failed = false ) {

@@ -1310,6 +1310,11 @@ Campos adicionais de diagnóstico de clipes:
       }
     ],
     "next_clip_action": "generate_missing_clip",
+    "next_clip_index": 2,
+    "next_clip_reason": "generate_missing_clip",
+    "auto_clip_generation_triggered": true,
+    "auto_clip_generation_result": "ready",
+    "skipped_reason": "",
     "normalized_clips_ready_count": 1,
     "normalized_missing_clips": [1, 2, 3]
   }
@@ -1332,6 +1337,10 @@ Regra de normalização:
 - Stale com tentativa menor que 3 volta para `pending`.
 - Stale com tentativa 3 vira `error_final`.
 - `composer_mode` vazio deve ser exibido como `external_service` quando o composer externo está configurado.
+- Quando `next_clip_action=generate_missing_clip`, o polling pode executar o próximo clipe na própria chamada e retornar `auto_clip_generation_triggered=true`.
+- `auto_clip_generation_result` pode ser `processing`, `ready`, `error` ou `skipped`.
+- `skipped_reason=clip_already_generating_not_stale` significa que o lock simples impediu duplicação.
+- `skipped_reason=clip_error_final` significa que as tentativas acabaram e o usuário precisa clicar em "Tentar novamente".
 
 Logs seguros:
 
