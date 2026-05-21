@@ -65,6 +65,7 @@ const S = {
     composerElapsedSeconds: 0,
     composerPollCount: 0,
     compositionStartBlocker: "",
+    nextClipAction: "",
     diagnostics: {},
     testClipUrl: "",
     testClipOperationId: "",
@@ -1443,6 +1444,7 @@ function applyVideoState(payload={}, options={}){
   S.video.composerElapsedSeconds=Number((!stale && incoming.composer_elapsed_seconds) || S.video.composerElapsedSeconds || 0);
   S.video.composerPollCount=Number((!stale && incoming.composer_poll_count) || S.video.composerPollCount || 0);
   S.video.compositionStartBlocker=(!stale && incoming.composition_start_blocker) || S.video.compositionStartBlocker || "";
+  S.video.nextClipAction=(!stale && incoming.next_clip_action) || incoming.diagnostics?.next_clip_action || S.video.nextClipAction || "";
   S.video.diagnostics=(!stale && incoming.diagnostics && typeof incoming.diagnostics==="object") ? incoming.diagnostics : (S.video.diagnostics || {});
   if(!S.video.errorCode && incoming.last_composer_error_code) S.video.errorCode=incoming.last_composer_error_code;
   S.video.jobVersion=Math.max(previousVersion, incomingVersion);
@@ -2660,6 +2662,15 @@ function scheduleVideoClipStarts(){
   });
 }
 
+function maybeScheduleMissingVideoClips(){
+  if(!S.video.jobId || !S.video.audioUrl || S.video.finalVideoUrl) return;
+  if(readyVideoClipCount()>=4) return;
+  if(recoverableVideoErrorStatus(S.video.status)) return;
+  if(hasActiveClipJobs()) return;
+  if(S.video.nextClipAction && !["generate_missing_clip","retry_stale_clip"].includes(S.video.nextClipAction)) return;
+  scheduleVideoClipStarts();
+}
+
 async function startVideoClip(index){
   if(!S.video.jobId || S.video.finalVideoUrl) return;
   try{
@@ -2686,6 +2697,7 @@ async function startVideoClip(index){
     const data=await videoAjaxRequest("stlai_check_video_status", {job_id:S.video.jobId});
     applyVideoState(data, {debug:true});
     warnVideoCompositionDiagnostic("poll");
+    maybeScheduleMissingVideoClips();
     const activeClipJobs=hasActiveClipJobs();
     const terminalClipError=S.video.status==="clip_generation_error" && !activeClipJobs;
     if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){

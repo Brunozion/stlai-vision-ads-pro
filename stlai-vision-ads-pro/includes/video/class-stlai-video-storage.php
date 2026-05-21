@@ -6,6 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class STLAI_Video_Storage {
     const TRANSIENT_PREFIX = 'stlai_video_job_';
     const TTL = DAY_IN_SECONDS;
+    const CLIP_STALE_SECONDS = 120;
 
     public static function create_job( array $data ) {
         $now = current_time( 'mysql' );
@@ -112,10 +113,17 @@ class STLAI_Video_Storage {
 	    private static function merge_job_data( array $existing, array $incoming ) {
 	        $data = $incoming;
 	        $reset_composition = ! empty( $incoming['reset_composition'] );
-	        unset( $data['reset_composition'] );
+	        $reset_clip_failures = ! empty( $incoming['reset_clip_failures'] );
+	        unset( $data['reset_composition'], $data['reset_clip_failures'] );
 
-	        $existing_clips = self::normalize_clips( $existing['clips'] ?? array() );
-	        $incoming_clips = self::normalize_clips( $incoming['clips'] ?? array() );
+	        $existing_clips = self::merge_clips(
+	            self::normalize_clips( $existing['clips'] ?? array() ),
+	            self::normalize_clips( $existing['partial_clips'] ?? array() )
+	        );
+	        $incoming_clips = self::merge_clips(
+	            self::normalize_clips( $incoming['clips'] ?? array() ),
+	            self::normalize_clips( $incoming['partial_clips'] ?? array() )
+	        );
 	        $merged_clips = self::merge_clips( $existing_clips, $incoming_clips );
 
 	        if ( isset( $incoming['partial_clips'] ) ) {
@@ -123,8 +131,13 @@ class STLAI_Video_Storage {
 	        }
 
 	        $existing_jobs = self::normalize_clip_jobs( $existing['clip_jobs'] ?? array(), $existing_clips );
+	        if ( $reset_clip_failures ) {
+	            $existing_jobs = self::reset_clip_failures( $existing_jobs );
+	        }
 	        $incoming_jobs = self::normalize_clip_jobs( $incoming['clip_jobs'] ?? array(), $incoming_clips );
 	        $merged_jobs = self::merge_clip_jobs( $existing_jobs, $incoming_jobs, $merged_clips );
+	        $merged_clips = self::merge_clips( $merged_clips, self::clips_from_clip_jobs( $merged_jobs ) );
+	        $merged_jobs = self::normalize_clip_jobs( $merged_jobs, $merged_clips );
 
 	        unset( $data['clips'], $data['partial_clips'], $data['clip_jobs'], $data['clip_statuses'], $data['clip_attempts'], $data['clip_errors'], $data['clip_started_at'], $data['clip_finished_at'], $data['missing_clips'] );
 
@@ -156,8 +169,13 @@ class STLAI_Video_Storage {
 	    }
 
 	    private static function refresh_derived_state( array $job ) {
-	        $clips = self::normalize_clips( $job['clips'] ?? array() );
+	        $clips = self::merge_clips(
+	            self::normalize_clips( $job['clips'] ?? array() ),
+	            self::normalize_clips( $job['partial_clips'] ?? array() )
+	        );
 	        $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $clips );
+	        $clips = self::merge_clips( $clips, self::clips_from_clip_jobs( $clip_jobs ) );
+	        $clip_jobs = self::normalize_clip_jobs( $clip_jobs, $clips );
 	        $statuses = array();
 	        $attempts = array();
 	        $errors = array();
@@ -278,6 +296,7 @@ class STLAI_Video_Storage {
 	                    'started_at'  => sanitize_text_field( $clip_job['started_at'] ?? '' ),
 	                    'finished_at' => sanitize_text_field( $clip_job['finished_at'] ?? '' ),
 	                );
+	                $by_index[ $index ] = self::recover_stale_clip_job( $by_index[ $index ] );
 	            }
 	        }
 
@@ -307,6 +326,62 @@ class STLAI_Video_Storage {
 	        return array_values( $by_index );
 	    }
 
+	    private static function clips_from_clip_jobs( array $clip_jobs ) {
+	        $clips = array();
+	        foreach ( $clip_jobs as $clip_job ) {
+	            if ( ! is_array( $clip_job ) || empty( $clip_job['url'] ) ) {
+	                continue;
+	            }
+	            $index = (int) ( $clip_job['index'] ?? 0 );
+	            if ( $index < 1 || $index > 4 ) {
+	                continue;
+	            }
+	            $clips[] = array(
+	                'index'    => $index,
+	                'role'     => sanitize_key( $clip_job['role'] ?? '' ),
+	                'label'    => sanitize_text_field( $clip_job['label'] ?? ( 'Clipe ' . $index ) ),
+	                'url'      => esc_url_raw( $clip_job['url'] ),
+	                'duration' => 8,
+	                'muted'    => true,
+	            );
+	        }
+	        return $clips;
+	    }
+
+	    private static function recover_stale_clip_job( array $clip_job ) {
+	        $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+	        if ( ! in_array( $status, array( 'generating', 'retrying' ), true ) || ! empty( $clip_job['url'] ) ) {
+	            return $clip_job;
+	        }
+
+	        $age = self::clip_job_age_seconds( $clip_job['started_at'] ?? '' );
+	        if ( $age < self::CLIP_STALE_SECONDS ) {
+	            return $clip_job;
+	        }
+
+	        $attempt = max( 1, (int) ( $clip_job['attempt'] ?? 1 ) );
+	        if ( $attempt >= 3 ) {
+	            $clip_job['status'] = 'error_final';
+	            $clip_job['attempt'] = 3;
+	            $clip_job['error'] = $clip_job['error'] ?: 'A geração do clipe demorou mais que o esperado.';
+	            $clip_job['finished_at'] = current_time( 'mysql' );
+	            return $clip_job;
+	        }
+
+	        $clip_job['status'] = 'pending';
+	        $clip_job['attempt'] = $attempt;
+	        $clip_job['error'] = $clip_job['error'] ?: 'Tentativa anterior ficou sem resposta.';
+	        return $clip_job;
+	    }
+
+	    private static function clip_job_age_seconds( $started_at ) {
+	        $timestamp = strtotime( (string) $started_at );
+	        if ( ! $timestamp ) {
+	            return 0;
+	        }
+	        return max( 0, current_time( 'timestamp' ) - $timestamp );
+	    }
+
 	    private static function merge_clip_jobs( array $existing, array $incoming, array $clips ) {
 	        $by_index = array();
 	        foreach ( $existing as $job ) {
@@ -320,6 +395,23 @@ class STLAI_Video_Storage {
 	            $by_index[ $index ] = self::stronger_clip_job( $by_index[ $index ] ?? array(), $job );
 	        }
 	        return self::normalize_clip_jobs( array_values( $by_index ), $clips );
+	    }
+
+	    private static function reset_clip_failures( array $clip_jobs ) {
+	        foreach ( $clip_jobs as &$clip_job ) {
+	            if ( ! is_array( $clip_job ) || ! empty( $clip_job['url'] ) || 'ready' === sanitize_key( $clip_job['status'] ?? '' ) ) {
+	                continue;
+	            }
+	            if ( in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'error', 'error_final', 'generating', 'retrying', 'queued' ), true ) ) {
+	                $clip_job['status'] = 'pending';
+	                $clip_job['attempt'] = 0;
+	                $clip_job['error'] = '';
+	                $clip_job['started_at'] = '';
+	                $clip_job['finished_at'] = '';
+	            }
+	        }
+	        unset( $clip_job );
+	        return $clip_jobs;
 	    }
 
 	    private static function stronger_clip_job( array $existing, array $incoming ) {

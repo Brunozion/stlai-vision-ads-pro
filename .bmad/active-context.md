@@ -876,6 +876,31 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - Persistência real de clipes e recuperação de generating stale
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-composer-provider.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O storage passa a reconstruir `clips` a partir de `clips`, `partial_clips` e `clip_jobs` com URL.
+- `clips_ready_count` e `missing_clips` passam a refletir URLs reais por index, mesmo quando os clipes chegam fora de ordem.
+- `clip_jobs` em `generating/retrying` sem URL por mais de 120s são recuperados: voltam para `pending` se ainda há tentativas ou viram `error_final` se já chegaram ao limite.
+- O frontend agenda novamente clipes pendentes/stale quando o polling indicar que não há jobs ativos.
+- `composer_mode` agora cai para `external_service` quando o endpoint externo está configurado e a setting antiga está vazia.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Estado monotônico dos clipes de vídeo
 
 Arquivos alterados:

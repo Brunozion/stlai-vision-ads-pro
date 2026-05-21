@@ -1293,6 +1293,46 @@ Estados de `clip_jobs.status`:
 
 `error_final` significa que as 3 tentativas automáticas foram esgotadas. O frontend deve mostrar "Erro após tentativas" e só reiniciar esse clipe depois de "Tentar novamente".
 
+Campos adicionais de diagnóstico de clipes:
+
+```json
+{
+  "diagnostics": {
+    "clip_jobs_summary": [
+      {
+        "index": 1,
+        "status": "pending",
+        "attempt": 1,
+        "has_url": false,
+        "started_at": "2026-05-21 18:30:00",
+        "age_seconds": 130,
+        "is_stale": false
+      }
+    ],
+    "next_clip_action": "generate_missing_clip",
+    "normalized_clips_ready_count": 1,
+    "normalized_missing_clips": [1, 2, 3]
+  }
+}
+```
+
+`next_clip_action` pode ser:
+
+- `none`
+- `retry_stale_clip`
+- `generate_missing_clip`
+- `start_composition`
+- `poll_composition`
+
+Regra de normalização:
+
+- `clips`, `partial_clips` e `clip_jobs` são mesclados por `index`.
+- Se qualquer fonte tiver URL válida, o clipe vira `ready`.
+- `generating/retrying` sem URL por mais de 120s é stale.
+- Stale com tentativa menor que 3 volta para `pending`.
+- Stale com tentativa 3 vira `error_final`.
+- `composer_mode` vazio deve ser exibido como `external_service` quando o composer externo está configurado.
+
 Logs seguros:
 
 - WordPress registra `job_id`, `clips_count`, presença de áudio, endpoint configurado, modo, HTTP status, `render_job_id`, status e presença de `final_video_url`.

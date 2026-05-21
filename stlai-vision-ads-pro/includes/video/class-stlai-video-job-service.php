@@ -11,6 +11,7 @@ class STLAI_Video_Job_Service {
     const CLIP_DURATION = 8.0;
     const FADE_DURATION = 0.4;
     const CLIP_MAX_ATTEMPTS = 3;
+    const CLIP_STALE_SECONDS = 120;
 
     public static function create_job( array $payload ) {
         $validated = self::validate_payload( $payload );
@@ -51,6 +52,7 @@ class STLAI_Video_Job_Service {
                         'clip_finished_at'     => $existing_job['clip_finished_at'] ?? array(),
                         'missing_clips'        => $existing_job['missing_clips'] ?? array( 1, 2, 3, 4 ),
                         'reset_composition'    => true,
+                        'reset_clip_failures'  => true,
                         'composition_status'   => 'pending',
                         'current_clip_index'   => 0,
                         'current_clip_attempt' => 0,
@@ -200,6 +202,23 @@ class STLAI_Video_Job_Service {
             return self::start_composition_if_ready( $job );
         }
 
+        $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $job['clips'] ?? array(), false );
+        if ( self::has_processable_clip_jobs( $clip_jobs ) && ! self::has_final_clip_errors( $clip_jobs ) && in_array( sanitize_key( $job['status'] ?? '' ), array( 'clip_generation_error', 'clips_partial_error' ), true ) ) {
+            return STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array_merge(
+                    self::clip_job_state_fields( $clip_jobs ),
+                    array(
+                        'status'        => 'generating_clips',
+                        'message'       => 'Retomando geração dos clipes pendentes.',
+                        'error_code'    => '',
+                        'error_message' => '',
+                        'error_debug'   => '',
+                    )
+                )
+            );
+        }
+
         return $job;
     }
 
@@ -209,6 +228,7 @@ class STLAI_Video_Job_Service {
             return new WP_Error( 'stlai_video_job_not_found', 'Job de video nao encontrado.' );
         }
 
+        $job = self::prepare_clip_jobs_for_job( $job, array(), false );
         return self::maybe_start_or_poll_composition( $job );
     }
 
@@ -323,8 +343,13 @@ class STLAI_Video_Job_Service {
     }
 
     private static function prepare_clip_jobs_for_job( array $job, array $validated = array(), $reset_failed = false ) {
-        $clips = self::normalize_clip_list( $job['clips'] ?? array() );
+        $clips = self::merge_clip_lists(
+            self::normalize_clip_list( $job['clips'] ?? array() ),
+            self::normalize_clip_list( $job['partial_clips'] ?? array() )
+        );
         $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $clips, $reset_failed );
+        $clips = self::merge_clip_lists( $clips, self::clips_from_clip_jobs( $clip_jobs ) );
+        $clip_jobs = self::normalize_clip_jobs( $clip_jobs, $clips, $reset_failed );
         $video_frames = self::normalize_video_frames( $job['video_frames'] ?? self::video_frames_from_clips( $clips ) );
 
         return STLAI_Video_Storage::update_job(
@@ -373,6 +398,7 @@ class STLAI_Video_Job_Service {
                     'started_at'  => sanitize_text_field( $clip_job['started_at'] ?? '' ),
                     'finished_at' => sanitize_text_field( $clip_job['finished_at'] ?? '' ),
                 );
+                $by_index[ $index ] = self::recover_stale_clip_job( $by_index[ $index ] );
             }
         }
 
@@ -447,6 +473,64 @@ class STLAI_Video_Job_Service {
         );
     }
 
+    private static function recover_stale_clip_job( array $clip_job ) {
+        $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+        if ( ! in_array( $status, array( 'generating', 'retrying' ), true ) || ! empty( $clip_job['url'] ) ) {
+            return $clip_job;
+        }
+
+        $age = self::clip_job_age_seconds( $clip_job['started_at'] ?? '' );
+        if ( $age < self::CLIP_STALE_SECONDS ) {
+            return $clip_job;
+        }
+
+        $attempt = max( 1, (int) ( $clip_job['attempt'] ?? 1 ) );
+        if ( $attempt >= self::CLIP_MAX_ATTEMPTS ) {
+            $clip_job['status'] = 'error_final';
+            $clip_job['attempt'] = self::CLIP_MAX_ATTEMPTS;
+            $clip_job['error'] = $clip_job['error'] ?: 'A geração do clipe demorou mais que o esperado.';
+            $clip_job['finished_at'] = current_time( 'mysql' );
+            return $clip_job;
+        }
+
+        $clip_job['status'] = 'pending';
+        $clip_job['attempt'] = $attempt;
+        $clip_job['error'] = $clip_job['error'] ?: 'Tentativa anterior ficou sem resposta.';
+        return $clip_job;
+    }
+
+    private static function clip_job_age_seconds( $started_at ) {
+        $timestamp = strtotime( (string) $started_at );
+        if ( ! $timestamp ) {
+            return 0;
+        }
+
+        return max( 0, current_time( 'timestamp' ) - $timestamp );
+    }
+
+    private static function clips_from_clip_jobs( array $clip_jobs ) {
+        $clips = array();
+        foreach ( $clip_jobs as $clip_job ) {
+            if ( ! is_array( $clip_job ) || empty( $clip_job['url'] ) ) {
+                continue;
+            }
+            $index = (int) ( $clip_job['index'] ?? 0 );
+            if ( $index < 1 || $index > 4 ) {
+                continue;
+            }
+            $clips[] = array(
+                'index'    => $index,
+                'role'     => sanitize_key( $clip_job['role'] ?? '' ),
+                'label'    => sanitize_text_field( $clip_job['label'] ?? ( 'Clipe ' . $index ) ),
+                'url'      => esc_url_raw( $clip_job['url'] ),
+                'duration' => 8,
+                'muted'    => true,
+            );
+        }
+
+        return $clips;
+    }
+
     private static function next_processable_clip_job( array $clip_jobs ) {
         foreach ( $clip_jobs as $clip_job ) {
             $status = sanitize_key( $clip_job['status'] ?? 'pending' );
@@ -456,6 +540,26 @@ class STLAI_Video_Job_Service {
         }
 
         return null;
+    }
+
+    private static function has_processable_clip_jobs( array $clip_jobs ) {
+        foreach ( $clip_jobs as $clip_job ) {
+            if ( in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'pending', 'queued', 'retrying' ), true ) ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function has_final_clip_errors( array $clip_jobs ) {
+        foreach ( $clip_jobs as $clip_job ) {
+            if ( 'error_final' === sanitize_key( $clip_job['status'] ?? '' ) ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static function process_single_clip_job( array $job, $clip_index ) {
@@ -474,8 +578,13 @@ class STLAI_Video_Job_Service {
         $role = $clip_roles[ $clip_index - 1 ] ?? array();
         $selected_images = array_slice( self::sanitize_images( $latest_for_start['selected_images'] ?? array() ), 0, 4 );
         $clip_jobs = self::normalize_clip_jobs( $latest_for_start['clip_jobs'] ?? array(), $clips, false );
+        $previous_attempt = 0;
         foreach ( $clip_jobs as $clip_job ) {
-            if ( (int) ( $clip_job['index'] ?? 0 ) === $clip_index && 'error_final' === sanitize_key( $clip_job['status'] ?? '' ) ) {
+            if ( (int) ( $clip_job['index'] ?? 0 ) !== $clip_index ) {
+                continue;
+            }
+            $previous_attempt = max( 0, (int) ( $clip_job['attempt'] ?? 0 ) );
+            if ( 'error_final' === sanitize_key( $clip_job['status'] ?? '' ) ) {
                 return STLAI_Video_Storage::update_job(
                     $job['job_id'],
                     array_merge(
@@ -495,12 +604,13 @@ class STLAI_Video_Job_Service {
                 );
             }
         }
+        $start_attempt = max( 1, min( self::CLIP_MAX_ATTEMPTS, $previous_attempt > 0 ? $previous_attempt + 1 : 1 ) );
         $clip_jobs = self::replace_clip_job(
             $clip_jobs,
             $clip_index,
             array(
                 'status'     => 'generating',
-                'attempt'    => 1,
+                'attempt'    => $start_attempt,
                 'error'      => '',
                 'started_at' => current_time( 'mysql' ),
             )
@@ -516,8 +626,8 @@ class STLAI_Video_Job_Service {
                     'progress_hint'        => self::clip_progress_hint( $clip_index ),
                     'message'              => 'Gerando clipe ' . $clip_index . ' de 4.',
                     'current_clip_index'   => $clip_index,
-                    'current_clip_attempt' => 1,
-                    'clip_retry_count'     => 0,
+                    'current_clip_attempt' => $start_attempt,
+                    'clip_retry_count'     => max( 0, $start_attempt - 1 ),
                     'last_clip_error'      => '',
                     'failed_clip_index'    => 0,
                     'failed_clip_role'     => '',
@@ -541,6 +651,7 @@ class STLAI_Video_Job_Service {
                 'role'                 => $role['role'] ?? '',
                 'role_label'           => $role['label'] ?? '',
                 'role_direction'       => $role['direction'] ?? '',
+                'start_attempt'        => $start_attempt,
             )
         );
 
@@ -1126,12 +1237,12 @@ class STLAI_Video_Job_Service {
 
     private static function composer_endpoint_configured() {
         $settings = get_option( 'stlai_vision_ads_pro_settings', array() );
-        return is_array( $settings ) && ! empty( $settings['videoComposerEndpoint'] );
+        return is_array( $settings ) && ( ! empty( $settings['videoComposerEndpoint'] ) || ! empty( $settings['video_composer_endpoint'] ) );
     }
 
     private static function composer_mode_setting() {
         $settings = get_option( 'stlai_vision_ads_pro_settings', array() );
-        $mode = is_array( $settings ) ? sanitize_key( $settings['videoComposerMode'] ?? '' ) : '';
+        $mode = is_array( $settings ) ? sanitize_key( $settings['videoComposerMode'] ?? ( $settings['video_composer_mode'] ?? '' ) ) : '';
         return in_array( $mode, array( 'external_service', 'local_ffmpeg' ), true ) ? $mode : 'external_service';
     }
 
@@ -1598,6 +1709,23 @@ class STLAI_Video_Job_Service {
         return array_values( $normalized );
     }
 
+    private static function merge_clip_lists( array $existing, array $incoming ) {
+        $by_index = array();
+        foreach ( array_merge( self::normalize_clip_list( $existing ), self::normalize_clip_list( $incoming ) ) as $clip ) {
+            $index = (int) ( $clip['index'] ?? 0 );
+            if ( $index < 1 || $index > 4 || empty( $clip['url'] ) ) {
+                continue;
+            }
+            if ( ! empty( $by_index[ $index ]['url'] ) ) {
+                $by_index[ $index ] = array_merge( $clip, $by_index[ $index ] );
+                continue;
+            }
+            $by_index[ $index ] = $clip;
+        }
+        ksort( $by_index );
+        return array_values( $by_index );
+    }
+
     private static function has_ready_clip( array $clips, $clip_index ) {
         foreach ( $clips as $clip ) {
             if ( (int) ( $clip['index'] ?? 0 ) === (int) $clip_index && ! empty( $clip['url'] ) ) {
@@ -1858,10 +1986,11 @@ class STLAI_Video_Job_Service {
             'label' => sanitize_text_field( $payload['role_label'] ?? '' ),
         );
         $last_error = null;
+        $start_attempt = max( 1, min( self::CLIP_MAX_ATTEMPTS, (int) ( $payload['start_attempt'] ?? 1 ) ) );
 
-        for ( $attempt = 1; $attempt <= self::CLIP_MAX_ATTEMPTS; $attempt++ ) {
+        for ( $attempt = $start_attempt; $attempt <= self::CLIP_MAX_ATTEMPTS; $attempt++ ) {
             $retry_count = max( 0, $attempt - 1 );
-            $is_retry = $attempt > 1;
+            $is_retry = $attempt > $start_attempt || $attempt > 1;
 
             if ( $is_retry ) {
                 sleep( 2 === $attempt ? 2 : 5 );

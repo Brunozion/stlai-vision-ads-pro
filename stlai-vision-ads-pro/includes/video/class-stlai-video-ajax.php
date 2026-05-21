@@ -100,16 +100,23 @@ class STLAI_Video_Ajax {
     private static function public_job_response( array $job ) {
         $diagnostics = self::composer_diagnostics( $job );
         $composition_start = self::composition_start_diagnostics( $job, $diagnostics );
+        $composer_mode = self::composer_mode_for_response( $job, $diagnostics );
+        $clip_summary = self::clip_jobs_summary( $job['clip_jobs'] ?? array() );
+        $next_clip_action = self::next_clip_action( $job, $composition_start, $clip_summary );
+        $normalized_ready_count = self::normalized_ready_count( $job );
+        $normalized_missing_clips = self::normalized_missing_clips( $job );
         $safe_diagnostics = array(
             'job_id'                       => sanitize_text_field( $job['job_id'] ?? '' ),
             'status'                       => sanitize_key( $job['status'] ?? 'queued' ),
             'audio_url_exists'             => ! empty( $job['audio_url'] ),
-            'clips_ready_count'            => (int) ( $job['clips_ready_count'] ?? self::count_ready_clips( $job['clips'] ?? array() ) ),
-            'missing_clips'                => array_values( array_map( 'intval', $job['missing_clips'] ?? array() ) ),
+            'clips_ready_count'            => $normalized_ready_count,
+            'missing_clips'                => $normalized_missing_clips,
+            'normalized_clips_ready_count' => $normalized_ready_count,
+            'normalized_missing_clips'     => $normalized_missing_clips,
             'composition_status'           => sanitize_key( $job['composition_status'] ?? 'pending' ),
             'render_job_id'                => ! empty( $job['render_job_id'] ) ? sanitize_text_field( $job['render_job_id'] ) : null,
             'final_video_url_exists'       => ! empty( $job['final_video_url'] ),
-            'composer_mode'                => sanitize_key( $job['composer_mode'] ?? ( $diagnostics['composer_mode'] ?? '' ) ),
+            'composer_mode'                => $composer_mode,
             'composer_endpoint_configured' => ! empty( $diagnostics['composer_endpoint_configured'] ),
             'composer_endpoint_host'       => sanitize_text_field( $diagnostics['composer_endpoint_host'] ?? '' ),
             'composer_endpoint_path'       => sanitize_text_field( $diagnostics['composer_endpoint_path'] ?? '' ),
@@ -120,6 +127,8 @@ class STLAI_Video_Ajax {
             'last_composer_error_message'  => sanitize_text_field( $job['last_composer_error_message'] ?? ( $job['error_message'] ?? '' ) ),
             'can_start_composition'        => ! empty( $composition_start['can_start_composition'] ),
             'composition_start_blocker'    => sanitize_key( $composition_start['composition_start_blocker'] ?? '' ),
+            'clip_jobs_summary'            => $clip_summary,
+            'next_clip_action'             => $next_clip_action,
         );
         return array(
             'job_id'          => $job['job_id'] ?? '',
@@ -136,8 +145,8 @@ class STLAI_Video_Ajax {
             'clip_statuses'   => self::public_assoc_response( $job['clip_statuses'] ?? array() ),
             'clip_attempts'   => self::public_int_assoc_response( $job['clip_attempts'] ?? array() ),
             'clip_errors'     => self::public_assoc_response( $job['clip_errors'] ?? array() ),
-	            'missing_clips'   => array_values( array_map( 'intval', $job['missing_clips'] ?? array() ) ),
-	            'clips_ready_count' => (int) ( $job['clips_ready_count'] ?? 0 ),
+	            'missing_clips'   => $normalized_missing_clips,
+	            'clips_ready_count' => $normalized_ready_count,
 	            'job_version'     => (int) ( $job['job_version'] ?? 0 ),
 	            'updated_at'      => sanitize_text_field( $job['updated_at'] ?? '' ),
 	            'final_video_url' => ! empty( $job['final_video_url'] ) ? $job['final_video_url'] : null,
@@ -148,7 +157,7 @@ class STLAI_Video_Ajax {
             'background_music_used' => ! empty( $job['background_music_used'] ),
             'background_music_volume' => (float) ( $job['background_music_volume'] ?? 0 ),
             'fast_compose'    => ! empty( $job['fast_compose'] ),
-            'composer_mode'   => sanitize_key( $job['composer_mode'] ?? ( $diagnostics['composer_mode'] ?? '' ) ),
+            'composer_mode'   => $composer_mode,
             'composer_provider' => sanitize_key( $job['composer_provider'] ?? '' ),
             'composer_status' => sanitize_key( $job['composer_status'] ?? '' ),
             'render_job_id'   => ! empty( $job['render_job_id'] ) ? sanitize_text_field( $job['render_job_id'] ) : null,
@@ -166,6 +175,9 @@ class STLAI_Video_Ajax {
             'final_video_url_exists' => ! empty( $job['final_video_url'] ),
             'can_start_composition' => ! empty( $composition_start['can_start_composition'] ),
             'composition_start_blocker' => sanitize_key( $composition_start['composition_start_blocker'] ?? '' ),
+            'next_clip_action' => $next_clip_action,
+            'normalized_clips_ready_count' => $normalized_ready_count,
+            'normalized_missing_clips' => $normalized_missing_clips,
             'diagnostics'      => $safe_diagnostics,
             'has_audio'       => ! empty( $job['audio_url'] ),
             'current_clip_index' => (int) ( $job['current_clip_index'] ?? 0 ),
@@ -300,8 +312,18 @@ class STLAI_Video_Ajax {
         );
     }
 
+    private static function composer_mode_for_response( array $job, array $diagnostics ) {
+        $mode = sanitize_key( $job['composer_mode'] ?? '' );
+        if ( ! empty( $mode ) ) {
+            return $mode;
+        }
+
+        $mode = sanitize_key( $diagnostics['composer_mode'] ?? '' );
+        return $mode ?: 'external_service';
+    }
+
     private static function composition_start_diagnostics( array $job, array $diagnostics ) {
-        $clips_ready = (int) ( $job['clips_ready_count'] ?? self::count_ready_clips( $job['clips'] ?? array() ) );
+        $clips_ready = self::normalized_ready_count( $job );
         if ( ! empty( $job['final_video_url'] ) || 'ready' === sanitize_key( $job['status'] ?? '' ) ) {
             return array( 'can_start_composition' => false, 'composition_start_blocker' => 'already_ready' );
         }
@@ -341,6 +363,111 @@ class STLAI_Video_Ajax {
         }
 
         return count( $ready );
+    }
+
+    private static function normalized_ready_count( array $job ) {
+        return 4 - count( self::normalized_missing_clips( $job ) );
+    }
+
+    private static function normalized_missing_clips( array $job ) {
+        $ready = array();
+        foreach ( array( 'clips', 'partial_clips' ) as $field ) {
+            if ( empty( $job[ $field ] ) || ! is_array( $job[ $field ] ) ) {
+                continue;
+            }
+            foreach ( $job[ $field ] as $clip ) {
+                if ( ! is_array( $clip ) || empty( $clip['url'] ) ) {
+                    continue;
+                }
+                $index = (int) ( $clip['index'] ?? 0 );
+                if ( $index >= 1 && $index <= 4 ) {
+                    $ready[ $index ] = true;
+                }
+            }
+        }
+
+        if ( ! empty( $job['clip_jobs'] ) && is_array( $job['clip_jobs'] ) ) {
+            foreach ( $job['clip_jobs'] as $clip_job ) {
+                if ( ! is_array( $clip_job ) || empty( $clip_job['url'] ) ) {
+                    continue;
+                }
+                $index = (int) ( $clip_job['index'] ?? 0 );
+                if ( $index >= 1 && $index <= 4 ) {
+                    $ready[ $index ] = true;
+                }
+            }
+        }
+
+        $missing = array();
+        for ( $index = 1; $index <= 4; $index++ ) {
+            if ( empty( $ready[ $index ] ) ) {
+                $missing[] = $index;
+            }
+        }
+        return $missing;
+    }
+
+    private static function clip_jobs_summary( $clip_jobs ) {
+        $summary = array();
+        if ( ! is_array( $clip_jobs ) ) {
+            $clip_jobs = array();
+        }
+
+        $by_index = array();
+        foreach ( $clip_jobs as $clip_job ) {
+            if ( ! is_array( $clip_job ) ) {
+                continue;
+            }
+            $index = (int) ( $clip_job['index'] ?? 0 );
+            if ( $index >= 1 && $index <= 4 ) {
+                $by_index[ $index ] = $clip_job;
+            }
+        }
+
+        for ( $index = 1; $index <= 4; $index++ ) {
+            $clip_job = $by_index[ $index ] ?? array();
+            $started_at = sanitize_text_field( $clip_job['started_at'] ?? '' );
+            $age = self::clip_job_age_seconds( $started_at );
+            $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+            $summary[] = array(
+                'index'       => $index,
+                'status'      => $status ?: 'pending',
+                'attempt'     => (int) ( $clip_job['attempt'] ?? 0 ),
+                'has_url'     => ! empty( $clip_job['url'] ),
+                'started_at'  => $started_at,
+                'age_seconds' => $age,
+                'is_stale'    => in_array( $status, array( 'generating', 'retrying' ), true ) && empty( $clip_job['url'] ) && $age >= 120,
+            );
+        }
+        return $summary;
+    }
+
+    private static function next_clip_action( array $job, array $composition_start, array $clip_summary ) {
+        if ( ! empty( $job['render_job_id'] ) && empty( $job['final_video_url'] ) ) {
+            return 'poll_composition';
+        }
+        if ( ! empty( $composition_start['can_start_composition'] ) ) {
+            return 'start_composition';
+        }
+        foreach ( $clip_summary as $item ) {
+            if ( ! empty( $item['is_stale'] ) ) {
+                return 'retry_stale_clip';
+            }
+        }
+        foreach ( $clip_summary as $item ) {
+            if ( empty( $item['has_url'] ) && in_array( sanitize_key( $item['status'] ?? '' ), array( 'pending', 'queued' ), true ) ) {
+                return 'generate_missing_clip';
+            }
+        }
+        return 'none';
+    }
+
+    private static function clip_job_age_seconds( $started_at ) {
+        $timestamp = strtotime( (string) $started_at );
+        if ( ! $timestamp ) {
+            return 0;
+        }
+        return max( 0, current_time( 'timestamp' ) - $timestamp );
     }
 
     private static function composer_elapsed_seconds( array $job ) {

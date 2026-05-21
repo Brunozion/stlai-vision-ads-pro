@@ -153,6 +153,30 @@ O frontend consegue exibir "Erro após tentativas" sem motion infinito, e o DevT
 
 Decidido
 
+## 2026-05-21 - Clipes prontos são reconstruídos por URL em qualquer fonte do job
+
+### Decisao
+
+O estado real de clipes deve ser derivado por index a partir de `clips`, `partial_clips` e `clip_jobs`. Se qualquer uma dessas fontes tiver URL válida para um index, esse clipe é considerado `ready` e deve entrar no array `clips` persistido.
+
+`clips_ready_count` e `missing_clips` devem ser recalculados sempre pelo estado normalizado. Clipes podem chegar fora de ordem e o merge deve preservar todos os anteriores.
+
+`clip_jobs` sem URL em `generating` ou `retrying` por mais de 120 segundos são considerados stale. Se ainda há tentativa disponível, voltam para `pending` para nova tentativa automática; se já atingiram 3 tentativas, viram `error_final`.
+
+Quando `videoComposerMode` estiver vazio, mas o endpoint externo estiver configurado, o modo público/diagnóstico deve cair para `external_service`.
+
+### Motivo
+
+O diagnóstico real mostrou `clips_ready_count=1` e `missing_clips=[1,2,3]`, embora a UI/Network indicasse que clipes haviam chegado. Isso apontou perda de persistência/merge entre arrays parciais e `clip_jobs`.
+
+### Impacto
+
+Um clipe com URL não some mais do storage por resposta parcial. Jobs presos em `generating` deixam de bloquear a composição indefinidamente. Assim que os 4 indexes tiverem URL, a composição externa pode iniciar.
+
+### Status
+
+Decidido
+
 ## 2026-05-21 - Clipes semi-paralelos, URLs limpas, narração sem tags e música opcional
 
 ### Decisao

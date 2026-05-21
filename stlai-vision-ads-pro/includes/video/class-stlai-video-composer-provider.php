@@ -13,7 +13,7 @@ class STLAI_Video_Composer_Provider {
 
     public static function start_composition( array $job ) {
         $settings = self::settings();
-        $mode = self::composer_mode( $settings['videoComposerMode'] ?? '' );
+        $mode = self::composer_mode( self::setting_value( $settings, array( 'videoComposerMode', 'video_composer_mode' ), '' ) );
 
         if ( 'local_ffmpeg' === $mode ) {
             return self::local_ffmpeg_unavailable();
@@ -24,7 +24,7 @@ class STLAI_Video_Composer_Provider {
 
     public static function get_composition_status( $render_job_id ) {
         $settings = self::settings();
-        $mode = self::composer_mode( $settings['videoComposerMode'] ?? '' );
+        $mode = self::composer_mode( self::setting_value( $settings, array( 'videoComposerMode', 'video_composer_mode' ), '' ) );
 
         if ( 'local_ffmpeg' === $mode ) {
             return self::local_ffmpeg_unavailable();
@@ -45,7 +45,7 @@ class STLAI_Video_Composer_Provider {
             return self::error( 'COMPOSER_STATUS_ERROR', 'Job de composição externo ausente.', 'render_job_id vazio.' );
         }
 
-        $timeout = self::timeout( $settings['videoComposerTimeout'] ?? self::DEFAULT_TIMEOUT );
+        $timeout = self::timeout( self::setting_value( $settings, array( 'videoComposerTimeout', 'video_composer_timeout' ), self::DEFAULT_TIMEOUT ) );
         $status_url = rtrim( $endpoint, '/' ) . '/' . rawurlencode( $render_job_id );
         self::log(
             'status_request',
@@ -161,14 +161,14 @@ class STLAI_Video_Composer_Provider {
                 'job_id'              => $job['job_id'] ?? '',
                 'clips_count'         => count( $payload['clips'] ?? array() ),
                 'audio_url_exists'    => ! empty( $payload['audio_url'] ),
-                'endpoint_configured' => ! empty( $settings['videoComposerEndpoint'] ?? '' ),
+                'endpoint_configured' => ! empty( self::setting_value( $settings, array( 'videoComposerEndpoint', 'video_composer_endpoint' ), '' ) ),
                 'endpoint_host'       => self::endpoint_host( $endpoint ),
                 'endpoint_path'       => self::endpoint_path( $endpoint ),
                 'composer_mode'       => $mode,
             )
         );
 
-        $timeout = self::timeout( $settings['videoComposerTimeout'] ?? self::DEFAULT_TIMEOUT );
+        $timeout = self::timeout( self::setting_value( $settings, array( 'videoComposerTimeout', 'video_composer_timeout' ), self::DEFAULT_TIMEOUT ) );
         $response = wp_remote_post(
             $endpoint,
             array(
@@ -285,16 +285,16 @@ class STLAI_Video_Composer_Provider {
 
     public static function configured_timeout() {
         $settings = self::settings();
-        return self::timeout( $settings['videoComposerTimeout'] ?? self::DEFAULT_TIMEOUT );
+        return self::timeout( self::setting_value( $settings, array( 'videoComposerTimeout', 'video_composer_timeout' ), self::DEFAULT_TIMEOUT ) );
     }
 
     public static function diagnostics() {
         $settings = self::settings();
         $endpoint = self::endpoint( $settings );
-        $raw_endpoint = trim( (string) ( $settings['videoComposerEndpoint'] ?? '' ) );
+        $raw_endpoint = trim( (string) self::setting_value( $settings, array( 'videoComposerEndpoint', 'video_composer_endpoint' ), '' ) );
 
         return array(
-            'composer_mode'                => self::composer_mode( $settings['videoComposerMode'] ?? '' ),
+            'composer_mode'                => self::composer_mode( self::setting_value( $settings, array( 'videoComposerMode', 'video_composer_mode' ), '' ) ),
             'composer_endpoint_configured' => ! empty( $raw_endpoint ) && ! is_wp_error( $endpoint ),
             'composer_endpoint_host'       => self::endpoint_host( is_wp_error( $endpoint ) ? $raw_endpoint : $endpoint ),
             'composer_endpoint_path'       => self::endpoint_path( is_wp_error( $endpoint ) ? $raw_endpoint : $endpoint ),
@@ -302,7 +302,7 @@ class STLAI_Video_Composer_Provider {
     }
 
     private static function endpoint( array $settings ) {
-        $raw_endpoint = trim( (string) ( $settings['videoComposerEndpoint'] ?? '' ) );
+        $raw_endpoint = trim( (string) self::setting_value( $settings, array( 'videoComposerEndpoint', 'video_composer_endpoint' ), '' ) );
         if ( empty( $raw_endpoint ) ) {
             return self::error( 'COMPOSER_ENDPOINT_MISSING', 'Configure o endpoint do serviço externo de composição de vídeo.', 'videoComposerEndpoint vazio.' );
         }
@@ -332,7 +332,7 @@ class STLAI_Video_Composer_Provider {
     }
 
     private static function api_key( array $settings ) {
-        $api_key = trim( (string) ( $settings['videoComposerApiKey'] ?? '' ) );
+        $api_key = trim( (string) self::setting_value( $settings, array( 'videoComposerApiKey', 'video_composer_api_key' ), '' ) );
         if ( empty( $api_key ) ) {
             return self::error( 'COMPOSER_API_KEY_MISSING', 'Configure a API key do serviço externo de composição de vídeo.', 'videoComposerApiKey vazio.' );
         }
@@ -431,6 +431,16 @@ class STLAI_Video_Composer_Provider {
     private static function settings() {
         $settings = get_option( 'stlai_vision_ads_pro_settings', array() );
         return is_array( $settings ) ? $settings : array();
+    }
+
+    private static function setting_value( array $settings, array $keys, $default = '' ) {
+        foreach ( $keys as $key ) {
+            if ( array_key_exists( $key, $settings ) && '' !== $settings[ $key ] && null !== $settings[ $key ] ) {
+                return $settings[ $key ];
+            }
+        }
+
+        return $default;
     }
 
     private static function composer_mode( $mode ) {
