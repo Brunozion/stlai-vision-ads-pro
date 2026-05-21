@@ -565,8 +565,19 @@
   <div class="video-motion-host mt" id="video-motion-box" style="display:none"></div>
 
   <div class="video-final-box mt" id="video-final-box" style="display:none">
-    <div class="sl">Vídeo final</div>
+    <div class="video-final-head">
+      <div>
+        <div class="sl">Vídeo final</div>
+        <p>Seu anúncio em vídeo foi gerado com sucesso.</p>
+      </div>
+      <span>Pronto</span>
+    </div>
     <video id="video-final-player" controls playsinline webkit-playsinline preload="metadata"></video>
+    <div class="video-final-actions">
+      <button class="btn bs bsm" type="button" onclick="downloadFinalVideo()">Baixar vídeo</button>
+      <button class="btn bs bsm" type="button" onclick="openFinalVideo()">Ampliar</button>
+      <button class="btn bs bsm" type="button" onclick="copyFinalVideoLink()">Copiar link</button>
+    </div>
   </div>
 
   <div class="video-clips-box mt" id="video-clips-box" style="display:none">
@@ -690,8 +701,19 @@
         <div class="sum-video-meta"><span>Narração</span><strong id="sum-video-narration">-</strong></div>
       </div>
       <div class="sum-video-final-wrap" id="sum-video-final-wrap" style="display:none">
-        <span>Vídeo final</span>
+        <div class="sum-video-final-head">
+          <div>
+            <span>Vídeo final</span>
+            <p>Narração e clipes combinados com sucesso.</p>
+          </div>
+          <strong>Pronto</strong>
+        </div>
         <video id="sum-video-final-player" controls playsinline webkit-playsinline preload="metadata"></video>
+        <div class="video-final-actions">
+          <button class="btn bs bsm" type="button" onclick="downloadFinalVideo()">Baixar vídeo</button>
+          <button class="btn bs bsm" type="button" onclick="openFinalVideo()">Ampliar</button>
+          <button class="btn bs bsm" type="button" onclick="copyFinalVideoLink()">Copiar link</button>
+        </div>
       </div>
       <div class="sum-video-motion-wrap" id="sum-video-motion-wrap" style="display:none"></div>
       <div class="sum-video-retry-wrap" id="sum-video-retry-wrap" style="display:none">
@@ -760,5 +782,6 @@
 <div id="lightbox" onclick="closeLightbox(event)">
   <button id="lightbox-close" onclick="closeLightbox(event, true)">&times;</button>
   <img id="lightbox-img" src="" alt="Zoom">
+  <video id="lightbox-video" controls playsinline webkit-playsinline style="display:none"></video>
 </div>
 </div>

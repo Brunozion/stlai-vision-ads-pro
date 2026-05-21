@@ -1084,6 +1084,47 @@ function dlImg(url,label){
   toast(`Download: ${label}`,"info");
 }
 
+function downloadVideoAsset(url,label="video"){
+  const clean=normalizeMediaUrl(url);
+  if(!clean){toast("Vídeo ainda não disponível.","warn");return;}
+  const a=document.createElement("a");
+  a.href=clean;
+  a.download=`stlai-${String(label).replace(/\s+/g,"-").toLowerCase()}.mp4`;
+  a.target="_blank";
+  a.rel="noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function openVideoAsset(url){
+  const clean=normalizeMediaUrl(url);
+  if(!clean){toast("Vídeo ainda não disponível.","warn");return;}
+  openLightbox(clean,"video");
+}
+
+function copyMediaLink(url){
+  const clean=normalizeMediaUrl(url);
+  if(!clean){toast("Link ainda não disponível.","warn");return;}
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(clean).then(()=>toast("Link copiado.","success")).catch(()=>window.open(clean,"_blank","noopener"));
+    return;
+  }
+  window.open(clean,"_blank","noopener");
+}
+
+function downloadFinalVideo(){
+  downloadVideoAsset(S.video.finalVideoUrl,"video-final");
+}
+
+function openFinalVideo(){
+  openVideoAsset(S.video.finalVideoUrl);
+}
+
+function copyFinalVideoLink(){
+  copyMediaLink(S.video.finalVideoUrl);
+}
+
 function dlCombo(){
   if(!S.comboUrl){toast("Combo ainda não gerado.","warn");return;}
   const a=document.createElement("a");
@@ -2290,9 +2331,17 @@ function renderVideoClipsGridMarkup(clips){
     const clip=byIndex[index];
     const clipJob=jobsByIndex[index] || {status:clip && clip.url ? "ready" : "pending",attempt:0,error:""};
     if(clip && clip.url){
+      const clipUrl=esc(clip.url || "");
+      const clipLabel=`clipe-${index}`;
       cards.push(`<div class="video-clip-card">
         <div class="video-clip-title">Clipe ${index}</div>
-	        <div class="video-clip-media"><video controls playsinline webkit-playsinline muted preload="metadata" controlsList="nofullscreen nodownload noplaybackrate" disablePictureInPicture src="${esc(clip.url || "")}"></video></div>
+	        <div class="video-clip-media">
+	          <video controls playsinline webkit-playsinline muted preload="metadata" controlsList="nofullscreen nodownload noplaybackrate" disablePictureInPicture src="${clipUrl}"></video>
+	          <div class="video-clip-actions">
+	            <button type="button" data-video-action="download" data-url="${clipUrl}" data-label="${esc(clipLabel)}">Baixar</button>
+	            <button type="button" data-video-action="preview" data-url="${clipUrl}">Ampliar</button>
+	          </div>
+	        </div>
       </div>`);
       continue;
     }
@@ -2318,6 +2367,25 @@ function renderVideoClipsGridMarkup(clips){
   }
 
   return cards.join("");
+}
+
+function bindVideoClipActions(root){
+  if(!root || root.dataset.videoActionsBound==="1") return;
+  root.dataset.videoActionsBound="1";
+  root.addEventListener("click",(event)=>{
+    const btn=event.target.closest("[data-video-action]");
+    if(!btn || !root.contains(btn)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const url=btn.dataset.url || "";
+    if(btn.dataset.videoAction==="download"){
+      downloadVideoAsset(url, btn.dataset.label || "clipe");
+      return;
+    }
+    if(btn.dataset.videoAction==="preview"){
+      openVideoAsset(url);
+    }
+  });
 }
 
 function videoClipsGridSignature(clips){
@@ -2355,7 +2423,7 @@ function renderVideoClips(){
     grid.dataset.sig=signature;
   }
 
-	  grid.querySelectorAll("video").forEach(video=>{
+  grid.querySelectorAll("video").forEach(video=>{
 	    video.muted=true;
 	    video.defaultMuted=true;
 	    video.setAttribute("playsinline","");
@@ -2363,6 +2431,7 @@ function renderVideoClips(){
 	    video.setAttribute("controlsList","nofullscreen nodownload noplaybackrate");
 	    video.setAttribute("disablePictureInPicture","");
 	  });
+  bindVideoClipActions(grid);
 }
 
 function videoFramesFromClips(clips){
@@ -2697,6 +2766,7 @@ function renderSummaryVideo(){
 	        video.setAttribute("controlsList","nofullscreen nodownload noplaybackrate");
 	        video.setAttribute("disablePictureInPicture","");
 	      });
+      bindVideoClipActions(clipsGrid);
     }else{
       clipsGrid.innerHTML="";
       clipsGrid.dataset.sig="";
@@ -2993,6 +3063,11 @@ function triggerLightbox(key) {
 
 window.dlImg = dlImg;
 window.openLightbox = openLightbox;
+window.downloadVideoAsset = downloadVideoAsset;
+window.openVideoAsset = openVideoAsset;
+window.downloadFinalVideo = downloadFinalVideo;
+window.openFinalVideo = openFinalVideo;
+window.copyFinalVideoLink = copyFinalVideoLink;
 window.dlAll = dlAll;
 window.dlCombo = dlCombo;
 window.triggerDlImg = triggerDlImg;
@@ -3461,13 +3536,32 @@ function esc(s){
   return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
 function escAttr(s){return String(s ?? "").replace(/'/g,"&#39;");}
-function openLightbox(url) {
+function openLightbox(url, type="image") {
   const lb = document.getElementById('lightbox');
-  document.getElementById('lightbox-img').src = url;
+  const img=document.getElementById('lightbox-img');
+  const video=document.getElementById('lightbox-video');
+  const clean=normalizeMediaUrl(url);
+  const isVideo=type==="video" || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(clean);
+  if(img){
+    img.style.display=isVideo ? "none" : "block";
+    img.src=isVideo ? "" : clean;
+  }
+  if(video){
+    video.style.display=isVideo ? "block" : "none";
+    if(isVideo && video.getAttribute("src")!==clean){
+      video.setAttribute("src",clean);
+      video.load();
+    }else if(!isVideo){
+      video.pause();
+      video.removeAttribute("src");
+    }
+  }
   lb.classList.add('show');
 }
 function closeLightbox(e, force=false) {
   if (force || e.target.id === 'lightbox') {
+    const video=document.getElementById('lightbox-video');
+    if(video) video.pause();
     document.getElementById('lightbox').classList.remove('show');
   }
 }

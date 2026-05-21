@@ -851,6 +851,28 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - UX premium do vídeo final e clipes
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- .bmad/active-context.md
+- .bmad/decisions.md
+
+O que foi feito:
+
+- O player final agora usa tamanho controlado por formato: preview vertical menor e centralizado para 9:16, horizontal mais largo para 16:9.
+- O card de vídeo final ganhou status "Pronto", subtítulo e ações próprias: baixar, ampliar e copiar link.
+- O lightbox existente passou a suportar vídeo além de imagem.
+- Os 4 clipes preparados ganharam botões próprios de baixar e ampliar sobre o player, sem depender dos controles nativos do navegador.
+- Os cards de clipes ganharam moldura/padding/z-index para manter ações clicáveis no desktop e no mobile.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Retry Veo e concorrência de clipes
 
 Arquivos alterados:

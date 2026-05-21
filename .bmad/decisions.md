@@ -1056,3 +1056,25 @@ O pipeline preserva clipes prontos, mantém `generating_clips` enquanto houver r
 ### Status
 
 Decidido
+
+## 2026-05-21 - Player final compacto e ações próprias
+
+### Decisao
+
+A UI pública do vídeo final deve tratar o player como preview premium, não como mídia em tela cheia dentro da página.
+
+Para 9:16, o player final fica centralizado em formato mobile preview, com largura controlada. Para 16:9, o player pode ser mais largo, mas sempre limitado ao card.
+
+Os clipes preparados e o vídeo final devem ter ações próprias de interface para baixar e ampliar/visualizar, sem depender de menus nativos do navegador.
+
+### Motivo
+
+O player final grande demais quebrava o ritmo visual da página e escondia ações. Os controles nativos de vídeo variam por navegador e podem ocultar download/ampliação.
+
+### Impacto
+
+O frontend renderiza botões consistentes de baixar, ampliar e copiar link no vídeo final, e baixar/ampliar em cada clipe preparado. O lightbox existente passa a abrir vídeos em overlay controlado.
+
+### Status
+
+Decidido
