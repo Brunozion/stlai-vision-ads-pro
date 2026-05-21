@@ -851,6 +851,31 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - Concorrência 2 clipes e player final vertical compacto
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- .bmad/active-context.md
+- .bmad/video-pipeline.md
+- .bmad/decisions.md
+
+O que foi feito:
+
+- `max_concurrent_clip_generations` passou de 1 para 2.
+- O frontend agenda no máximo 2 clipes ativos e preenche slots conforme clipes terminam.
+- O backend bloqueia novos clipes quando já existem 2 `generating/retrying` não stale e mantém proteção contra duplicar o mesmo índice.
+- Diagnostics passam a expor `next_clip_indexes` e `started_clip_indexes`.
+- O player final 9:16 ficou centralizado em card menor, com vídeo em largura máxima de 360px no desktop.
+- O player final 16:9 ficou limitado a 800px.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - UX premium do vídeo final e clipes
 
 Arquivos alterados:

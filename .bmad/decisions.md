@@ -1043,7 +1043,7 @@ Falhas de clipe Veo com `VEO_INVALID_RESPONSE`, URI de vídeo ausente, resposta 
 
 Jobs antigos que tenham `error_final` prematuro com `attempt < 3` e erro retryable devem ser recuperados automaticamente para `pending/retrying`, sem ação manual do usuário.
 
-Para estabilidade do MVP, `max_concurrent_clip_generations = 1`. Se já existe um clipe `generating` não stale, o backend não inicia outro e retorna diagnóstico `concurrency_blocked=true`.
+Para estabilidade do MVP, `max_concurrent_clip_generations = 2`. Se já existem 2 clipes `generating` não stale, o backend não inicia outro e retorna diagnóstico `concurrency_blocked=true`.
 
 ### Motivo
 
@@ -1052,6 +1052,26 @@ O Veo pode concluir uma operação sem devolver URI de vídeo. Esse caso é inte
 ### Impacto
 
 O pipeline preserva clipes prontos, mantém `generating_clips` enquanto houver retry automático e só exibe erro final após esgotar tentativas. A UI mostra "Ajustando clipe X" durante retry e continua polling.
+
+### Status
+
+Decidido
+
+## 2026-05-21 - Concorrência controlada 2 clipes e player vertical compacto
+
+### Decisao
+
+A geração Veo deve usar concorrência controlada de até 2 clipes ativos por job no MVP. O frontend dispara no máximo 2 requisições `start_clip` simultâneas e preenche novos slots conforme clipes terminam; o backend mantém trava por índice e bloqueia novas gerações quando `active_generating_count >= 2`.
+
+O player final 9:16 deve ser exibido como preview vertical compacto, com card centralizado e largura máxima de 360px para o vídeo no desktop. O player final 16:9 fica limitado a 800px.
+
+### Motivo
+
+Um clipe por vez deixa o fluxo lento demais, mas 4 simultâneos aumentam risco de intermitência no Veo. O limite 2 reduz tempo total sem abrir demais o risco. O player vertical precisava deixar de parecer um canvas grande com laterais pretas.
+
+### Impacto
+
+Diagnostics passam a refletir `max_concurrent_clip_generations=2`, `next_clip_indexes` e `started_clip_indexes`. A UI pode mostrar dois placeholders ativos. O player final vertical fica menor, centralizado e com `object-fit: cover` dentro de um container 9:16.
 
 ### Status
 

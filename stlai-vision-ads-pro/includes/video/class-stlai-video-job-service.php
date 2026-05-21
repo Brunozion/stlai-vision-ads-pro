@@ -11,6 +11,7 @@ class STLAI_Video_Job_Service {
     const CLIP_DURATION = 8.0;
     const FADE_DURATION = 0.4;
     const CLIP_MAX_ATTEMPTS = 3;
+    const CLIP_MAX_CONCURRENT = 2;
     const CLIP_GENERATION_STALE_SECONDS = 75;
     const CLIP_STALE_SECONDS = 75;
 
@@ -385,7 +386,7 @@ class STLAI_Video_Job_Service {
         $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $clips, false );
         $active_generating_count = self::active_generating_count( $clip_jobs );
         $requested_job = self::clip_job_by_index( $clip_jobs, $clip_index );
-        if ( $active_generating_count >= 1 && ! self::is_active_generating_clip_job( is_array( $requested_job ) ? $requested_job : array() ) ) {
+        if ( $active_generating_count >= self::CLIP_MAX_CONCURRENT && ! self::is_active_generating_clip_job( is_array( $requested_job ) ? $requested_job : array() ) ) {
             return STLAI_Video_Storage::update_job(
                 $job['job_id'],
                 array_merge(
@@ -394,8 +395,10 @@ class STLAI_Video_Job_Service {
                         'status'        => 'generating_clips',
                         'message'       => 'Aguardando o clipe em geração terminar antes de iniciar o próximo.',
                         'active_generating_count' => $active_generating_count,
-                        'max_concurrent_clip_generations' => 1,
+                        'max_concurrent_clip_generations' => self::CLIP_MAX_CONCURRENT,
                         'concurrency_blocked' => true,
+                        'next_clip_indexes' => array(),
+                        'started_clip_indexes' => array(),
                         'auto_clip_generation_triggered' => false,
                         'auto_clip_generation_result' => 'skipped',
                         'skipped_reason' => 'clip_already_generating_not_stale',
@@ -435,7 +438,7 @@ class STLAI_Video_Job_Service {
 
         $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $job['clips'] ?? array(), false );
         $active_generating_count = self::active_generating_count( $clip_jobs );
-        if ( $active_generating_count >= 1 ) {
+        if ( $active_generating_count >= self::CLIP_MAX_CONCURRENT ) {
             return STLAI_Video_Storage::update_job(
                 $job['job_id'],
                 array_merge(
@@ -446,12 +449,14 @@ class STLAI_Video_Job_Service {
                         'progress_hint' => self::clip_jobs_progress( $clip_jobs ),
                         'message'       => 'Aguardando o clipe em geração terminar antes de iniciar o próximo.',
                         'next_clip_index' => 0,
+                        'next_clip_indexes' => array(),
+                        'started_clip_indexes' => array(),
                         'next_clip_reason' => '',
                         'auto_clip_generation_triggered' => false,
                         'auto_clip_generation_result' => 'skipped',
                         'skipped_reason' => 'clip_already_generating_not_stale',
                         'active_generating_count' => $active_generating_count,
-                        'max_concurrent_clip_generations' => 1,
+                        'max_concurrent_clip_generations' => self::CLIP_MAX_CONCURRENT,
                         'concurrency_blocked' => true,
                         'stale_threshold_seconds' => self::CLIP_GENERATION_STALE_SECONDS,
                     )
@@ -467,6 +472,8 @@ class STLAI_Video_Job_Service {
                         'status'        => 'clip_generation_error',
                         'message'       => 'Um dos clipes falhou após as tentativas automáticas.',
                         'next_clip_index' => 0,
+                        'next_clip_indexes' => array(),
+                        'started_clip_indexes' => array(),
                         'next_clip_reason' => '',
                         'auto_clip_generation_triggered' => false,
                         'auto_clip_generation_result' => 'skipped',
@@ -504,7 +511,7 @@ class STLAI_Video_Job_Service {
                         'auto_clip_generation_result' => 'skipped',
                         'skipped_reason' => $has_error ? 'clip_error_final' : ( $active_generating_count > 0 ? 'clip_already_generating_not_stale' : 'no_processable_clip' ),
                         'active_generating_count' => $active_generating_count,
-                        'max_concurrent_clip_generations' => 1,
+                        'max_concurrent_clip_generations' => self::CLIP_MAX_CONCURRENT,
                         'stale_threshold_seconds' => self::CLIP_GENERATION_STALE_SECONDS,
                     )
                 )
@@ -518,12 +525,14 @@ class STLAI_Video_Job_Service {
             $job['job_id'],
             array(
                 'next_clip_index' => $next_index,
+                'next_clip_indexes' => array( $next_index ),
+                'started_clip_indexes' => array( $next_index ),
                 'next_clip_reason' => $next_reason,
                 'auto_clip_generation_triggered' => true,
                 'auto_clip_generation_result' => 'processing',
                 'skipped_reason' => '',
                 'active_generating_count' => self::active_generating_count( $clip_jobs ),
-                'max_concurrent_clip_generations' => 1,
+                'max_concurrent_clip_generations' => self::CLIP_MAX_CONCURRENT,
                 'concurrency_blocked' => false,
                 'retryable' => $next_will_retry,
                 'will_retry' => $next_will_retry,
@@ -552,12 +561,14 @@ class STLAI_Video_Job_Service {
             $result['job_id'],
             array(
                 'next_clip_index' => $next_index,
+                'next_clip_indexes' => array( $next_index ),
+                'started_clip_indexes' => array( $next_index ),
                 'next_clip_reason' => $next_reason,
                 'auto_clip_generation_triggered' => true,
                 'auto_clip_generation_result' => $result_status,
                 'skipped_reason' => '',
                 'active_generating_count' => self::active_generating_count( $result_jobs ),
-                'max_concurrent_clip_generations' => 1,
+                'max_concurrent_clip_generations' => self::CLIP_MAX_CONCURRENT,
                 'concurrency_blocked' => false,
                 'stale_threshold_seconds' => self::CLIP_GENERATION_STALE_SECONDS,
             )
@@ -992,6 +1003,8 @@ class STLAI_Video_Job_Service {
                     'clip_retry_count'     => max( 0, $start_attempt - 1 ),
                     'last_clip_error'      => '',
                     'max_clip_attempts'    => self::CLIP_MAX_ATTEMPTS,
+                    'max_concurrent_clip_generations' => self::CLIP_MAX_CONCURRENT,
+                    'started_clip_indexes' => array( $clip_index ),
                     'retryable'            => false,
                     'retry_reason'         => '',
                     'will_retry'           => false,

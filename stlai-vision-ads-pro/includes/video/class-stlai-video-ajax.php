@@ -123,8 +123,16 @@ class STLAI_Video_Ajax {
         $auto_clip_generation_result = sanitize_key( $job['auto_clip_generation_result'] ?? '' );
         $skipped_reason = sanitize_key( $job['skipped_reason'] ?? '' );
         $active_generating_count = self::active_generating_count( $clip_summary );
-        $max_concurrent_clip_generations = (int) ( $job['max_concurrent_clip_generations'] ?? 1 );
+        $max_concurrent_clip_generations = (int) ( $job['max_concurrent_clip_generations'] ?? 2 );
         $concurrency_blocked = ! empty( $job['concurrency_blocked'] ) || $active_generating_count >= $max_concurrent_clip_generations;
+        $next_clip_indexes = self::public_index_list( $job['next_clip_indexes'] ?? array() );
+        if ( empty( $next_clip_indexes ) ) {
+            $next_clip_indexes = self::next_clip_indexes( $clip_summary, max( 1, $max_concurrent_clip_generations - $active_generating_count ) );
+        }
+        if ( empty( $next_clip_indexes ) && $next_clip_index > 0 ) {
+            $next_clip_indexes = array( $next_clip_index );
+        }
+        $started_clip_indexes = self::public_index_list( $job['started_clip_indexes'] ?? array() );
         $stale_threshold_seconds = (int) ( $job['stale_threshold_seconds'] ?? self::CLIP_GENERATION_STALE_SECONDS );
         $summary_retryable = false;
         $summary_will_retry = false;
@@ -179,7 +187,9 @@ class STLAI_Video_Ajax {
             'clip_jobs_summary'            => $clip_summary,
             'next_clip_action'             => $next_clip_action,
             'next_clip_index'              => $next_clip_index,
+            'next_clip_indexes'            => $next_clip_indexes,
             'next_clip_reason'             => $next_clip_reason,
+            'started_clip_indexes'         => $started_clip_indexes,
             'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
             'auto_clip_generation_result'  => $auto_clip_generation_result,
             'skipped_reason'               => $skipped_reason,
@@ -243,7 +253,9 @@ class STLAI_Video_Ajax {
             'composition_start_blocker' => sanitize_key( $composition_start['composition_start_blocker'] ?? '' ),
             'next_clip_action' => $next_clip_action,
             'next_clip_index' => $next_clip_index,
+            'next_clip_indexes' => $next_clip_indexes,
             'next_clip_reason' => $next_clip_reason,
+            'started_clip_indexes' => $started_clip_indexes,
             'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
             'auto_clip_generation_result' => $auto_clip_generation_result,
             'skipped_reason' => $skipped_reason,
@@ -693,6 +705,42 @@ class STLAI_Video_Ajax {
         return 0;
     }
 
+    private static function next_clip_indexes( array $clip_summary, $limit ) {
+        $limit = max( 0, (int) $limit );
+        if ( $limit <= 0 ) {
+            return array();
+        }
+
+        $indexes = array();
+        $add = function ( $item ) use ( &$indexes, $limit ) {
+            if ( count( $indexes ) >= $limit || ! empty( $item['has_url'] ) ) {
+                return;
+            }
+            $index = (int) ( $item['index'] ?? 0 );
+            if ( $index >= 1 && $index <= 4 && ! in_array( $index, $indexes, true ) ) {
+                $indexes[] = $index;
+            }
+        };
+
+        foreach ( $clip_summary as $item ) {
+            if ( ! empty( $item['is_stale'] ) ) {
+                $add( $item );
+            }
+        }
+        foreach ( $clip_summary as $item ) {
+            if ( ! empty( $item['will_retry'] ) || ! empty( $item['retryable'] ) || 'retrying' === sanitize_key( $item['status'] ?? '' ) ) {
+                $add( $item );
+            }
+        }
+        foreach ( $clip_summary as $item ) {
+            if ( in_array( sanitize_key( $item['status'] ?? '' ), array( 'pending', 'queued' ), true ) ) {
+                $add( $item );
+            }
+        }
+
+        return $indexes;
+    }
+
     private static function active_generating_count( array $clip_summary ) {
         $count = 0;
         foreach ( $clip_summary as $item ) {
@@ -705,6 +753,21 @@ class STLAI_Video_Ajax {
             }
         }
         return $count;
+    }
+
+    private static function public_index_list( $items ) {
+        if ( ! is_array( $items ) ) {
+            return array();
+        }
+        $indexes = array();
+        foreach ( $items as $item ) {
+            $index = (int) $item;
+            if ( $index >= 1 && $index <= 4 && ! in_array( $index, $indexes, true ) ) {
+                $indexes[] = $index;
+            }
+        }
+        sort( $indexes );
+        return $indexes;
     }
 
     private static function clip_job_age_seconds( $started_at ) {

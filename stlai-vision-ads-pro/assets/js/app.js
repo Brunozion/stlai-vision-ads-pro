@@ -72,6 +72,9 @@ const S = {
     autoClipGenerationResult: "",
     skippedReason: "",
     maxClipAttempts: 3,
+    maxConcurrentClipGenerations: 2,
+    startedClipIndexes: [],
+    nextClipIndexes: [],
     retryable: false,
     retryReason: "",
     willRetry: false,
@@ -1271,8 +1274,12 @@ function normalizeClipJobs(jobs, clips=S.video.clips){
           index,
 	          status:String(job.status || "pending"),
 	          attempt:Number(job.attempt || 0),
+          max_attempts:Number(job.max_attempts || job.maxAttempts || 3),
 	          url:normalizeMediaUrl(job.url),
           error:String(job.error || ""),
+          retryable:Boolean(job.retryable),
+          will_retry:Boolean(job.will_retry || job.willRetry),
+          retry_reason:String(job.retry_reason || job.retryReason || ""),
           started_at:String(job.started_at || ""),
           finished_at:String(job.finished_at || "")
         };
@@ -1539,11 +1546,14 @@ function applyVideoState(payload={}, options={}){
   S.video.compositionStartBlocker=(!stale && incoming.composition_start_blocker) || S.video.compositionStartBlocker || "";
   S.video.nextClipAction=(!stale && incoming.next_clip_action) || incoming.diagnostics?.next_clip_action || S.video.nextClipAction || "";
   S.video.nextClipIndex=Number((!stale && incoming.next_clip_index) || incoming.diagnostics?.next_clip_index || S.video.nextClipIndex || 0);
+  S.video.nextClipIndexes=Array.isArray(incoming.next_clip_indexes) ? incoming.next_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (Array.isArray(incoming.diagnostics?.next_clip_indexes) ? incoming.diagnostics.next_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (S.video.nextClipIndexes || []));
   S.video.nextClipReason=(!stale && incoming.next_clip_reason) || incoming.diagnostics?.next_clip_reason || S.video.nextClipReason || "";
+  S.video.startedClipIndexes=Array.isArray(incoming.started_clip_indexes) ? incoming.started_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (Array.isArray(incoming.diagnostics?.started_clip_indexes) ? incoming.diagnostics.started_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (S.video.startedClipIndexes || []));
   S.video.autoClipGenerationTriggered=Boolean((!stale && incoming.auto_clip_generation_triggered) || incoming.diagnostics?.auto_clip_generation_triggered || false);
   S.video.autoClipGenerationResult=(!stale && incoming.auto_clip_generation_result) || incoming.diagnostics?.auto_clip_generation_result || S.video.autoClipGenerationResult || "";
   S.video.skippedReason=(!stale && incoming.skipped_reason) || incoming.diagnostics?.skipped_reason || S.video.skippedReason || "";
   S.video.maxClipAttempts=Number((!stale && incoming.max_clip_attempts) || incoming.diagnostics?.max_clip_attempts || S.video.maxClipAttempts || 3);
+  S.video.maxConcurrentClipGenerations=Number((!stale && incoming.max_concurrent_clip_generations) || incoming.diagnostics?.max_concurrent_clip_generations || S.video.maxConcurrentClipGenerations || 2);
   S.video.retryable=Boolean((!stale && incoming.retryable) || incoming.diagnostics?.retryable || false);
   S.video.retryReason=(!stale && incoming.retry_reason) || incoming.diagnostics?.retry_reason || S.video.retryReason || "";
   S.video.willRetry=Boolean((!stale && incoming.will_retry) || incoming.diagnostics?.will_retry || false);
@@ -2848,10 +2858,25 @@ function hasActiveClipJobs(){
   return normalizeClipJobs(S.video.clipJobs, S.video.clips).some(job=>["queued","generating","retrying"].includes(job.status));
 }
 
+function activeVideoClipJobCount(){
+  return normalizeClipJobs(S.video.clipJobs, S.video.clips)
+    .filter(job=>["generating","retrying"].includes(job.status) && !job.url)
+    .length;
+}
+
 function scheduleVideoClipStarts(){
   if(!S.video.jobId || !S.video.audioUrl || S.video.finalVideoUrl) return;
+  const maxConcurrent=Math.max(1, Number(S.video.maxConcurrentClipGenerations || 2));
+  const openSlots=Math.max(0, maxConcurrent - activeVideoClipJobCount());
+  if(openSlots<=0) return;
   const jobs=normalizeClipJobs(S.video.clipJobs, S.video.clips)
-    .filter(job=>job.status!=="ready" && job.status!=="generating" && job.status!=="retrying" && job.status!=="error_final");
+    .filter(job=>job.status!=="ready" && job.status!=="generating" && job.status!=="retrying" && job.status!=="error_final")
+    .sort((a,b)=>{
+      const aRetry=(a.will_retry || a.retryable || a.status==="retrying") ? 0 : 1;
+      const bRetry=(b.will_retry || b.retryable || b.status==="retrying") ? 0 : 1;
+      return aRetry-bRetry || Number(a.index)-Number(b.index);
+    })
+    .slice(0, openSlots);
   if(!jobs.length) return;
 
   clearVideoClipLaunchers();
@@ -2865,8 +2890,8 @@ function scheduleVideoClipStarts(){
 function maybeScheduleMissingVideoClips(){
   if(!S.video.jobId || !S.video.audioUrl || S.video.finalVideoUrl) return;
   if(readyVideoClipCount()>=4) return;
-  if(recoverableVideoErrorStatus(S.video.status)) return;
-  if(hasActiveClipJobs()) return;
+  if(recoverableVideoErrorStatus(S.video.status) && !S.video.willRetry) return;
+  if(activeVideoClipJobCount()>=Math.max(1, Number(S.video.maxConcurrentClipGenerations || 2))) return;
   if(S.video.nextClipAction && !["generate_missing_clip","retry_stale_clip","retry_clip"].includes(S.video.nextClipAction)) return;
   scheduleVideoClipStarts();
 }
@@ -2882,6 +2907,7 @@ async function startVideoClip(index){
     applyVideoState(data, {debug:true});
     renderVideoStatus();
     if(S.step>=6) renderSummaryVideo();
+    maybeScheduleMissingVideoClips();
   }catch(err){
     const data=normalizeVideoJobPayload(err.data || {});
     console.warn("Clip generation error", data || err);
@@ -2889,6 +2915,7 @@ async function startVideoClip(index){
     S.video.message=data.message || partialClipFailureMessage(S.video.failedClipIndex, readyVideoClipCount());
     renderVideoStatus();
     if(S.step>=6) renderSummaryVideo();
+    maybeScheduleMissingVideoClips();
   }
 }
 
@@ -2923,6 +2950,7 @@ async function startVideoClip(index){
     }
     renderVideoStatus();
     if(S.step>=6) renderSummaryVideo();
+    maybeScheduleMissingVideoClips();
     S.video.pollTimer=setTimeout(pollVideoStatus, 1200);
   }catch(err){
     const data=err.data || {};
