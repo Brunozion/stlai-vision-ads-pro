@@ -122,12 +122,30 @@ class STLAI_Video_Ajax {
         $auto_clip_generation_triggered = ! empty( $job['auto_clip_generation_triggered'] );
         $auto_clip_generation_result = sanitize_key( $job['auto_clip_generation_result'] ?? '' );
         $skipped_reason = sanitize_key( $job['skipped_reason'] ?? '' );
-        $active_generating_count = (int) ( $job['active_generating_count'] ?? self::active_generating_count( $clip_summary ) );
+        $active_generating_count = self::active_generating_count( $clip_summary );
         $max_concurrent_clip_generations = (int) ( $job['max_concurrent_clip_generations'] ?? 1 );
+        $concurrency_blocked = ! empty( $job['concurrency_blocked'] ) || $active_generating_count >= $max_concurrent_clip_generations;
         $stale_threshold_seconds = (int) ( $job['stale_threshold_seconds'] ?? self::CLIP_GENERATION_STALE_SECONDS );
-        $retryable = ! empty( $job['retryable'] );
-        $will_retry = ! empty( $job['will_retry'] );
-        $retry_reason = sanitize_key( $job['retry_reason'] ?? '' );
+        $summary_retryable = false;
+        $summary_will_retry = false;
+        $summary_retry_reason = '';
+        foreach ( $clip_summary as $clip_item ) {
+            if ( ! empty( $clip_item['retryable'] ) ) {
+                $summary_retryable = true;
+            }
+            if ( ! empty( $clip_item['will_retry'] ) ) {
+                $summary_will_retry = true;
+                if ( empty( $summary_retry_reason ) ) {
+                    $summary_retry_reason = sanitize_key( $clip_item['retry_reason'] ?? '' );
+                }
+            }
+        }
+        $retryable = ! empty( $job['retryable'] ) || $summary_retryable;
+        $will_retry = ! empty( $job['will_retry'] ) || $summary_will_retry;
+        $retry_reason = sanitize_key( $job['retry_reason'] ?? $summary_retry_reason );
+        if ( empty( $retry_reason ) ) {
+            $retry_reason = $summary_retry_reason;
+        }
         $error_final_reason = sanitize_key( $job['error_final_reason'] ?? '' );
         $max_clip_attempts = (int) ( $job['max_clip_attempts'] ?? 3 );
         $safe_diagnostics = array(
@@ -168,6 +186,7 @@ class STLAI_Video_Ajax {
             'stale_threshold_seconds'      => $stale_threshold_seconds,
             'active_generating_count'      => $active_generating_count,
             'max_concurrent_clip_generations' => $max_concurrent_clip_generations,
+            'concurrency_blocked'          => $concurrency_blocked,
             'failed_clip_index'            => (int) ( $job['failed_clip_index'] ?? 0 ),
             'failed_clip_role'             => sanitize_key( $job['failed_clip_role'] ?? '' ),
             'current_clip_attempt'         => (int) ( $job['current_clip_attempt'] ?? 0 ),
@@ -231,6 +250,7 @@ class STLAI_Video_Ajax {
             'stale_threshold_seconds' => $stale_threshold_seconds,
             'active_generating_count' => $active_generating_count,
             'max_concurrent_clip_generations' => $max_concurrent_clip_generations,
+            'concurrency_blocked' => $concurrency_blocked,
             'max_clip_attempts' => $max_clip_attempts,
             'retryable' => $retryable,
             'retry_reason' => $retry_reason,
@@ -400,13 +420,21 @@ class STLAI_Video_Ajax {
             if ( ! is_array( $job ) ) {
                 continue;
             }
+            $error = sanitize_text_field( $job['error'] ?? '' );
+            $attempt = (int) ( $job['attempt'] ?? 0 );
+            $retryable = empty( $job['url'] ) && self::is_retryable_clip_error_summary( $error );
 
             $response[] = array(
                 'index'       => (int) ( $job['index'] ?? 0 ),
                 'status'      => sanitize_key( $job['status'] ?? 'pending' ),
-                'attempt'     => (int) ( $job['attempt'] ?? 0 ),
+                'attempt'     => $attempt,
+                'max_attempts' => 3,
                 'url'         => esc_url_raw( $job['url'] ?? '' ),
-                'error'       => sanitize_text_field( $job['error'] ?? '' ),
+                'error'       => $error,
+                'error_code'  => self::clip_error_code_from_summary( $error ),
+                'retryable'   => $retryable,
+                'will_retry'  => $retryable && $attempt > 0 && $attempt < 3,
+                'retry_reason' => $retryable ? self::clip_retry_reason_from_summary( $error ) : '',
                 'started_at'  => sanitize_text_field( $job['started_at'] ?? '' ),
                 'finished_at' => sanitize_text_field( $job['finished_at'] ?? '' ),
             );
@@ -571,17 +599,59 @@ class STLAI_Video_Ajax {
             $started_at = sanitize_text_field( $clip_job['started_at'] ?? '' );
             $age = self::clip_job_age_seconds( $started_at );
             $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+            $attempt = (int) ( $clip_job['attempt'] ?? 0 );
+            $error = sanitize_text_field( $clip_job['error'] ?? '' );
+            $error_code = self::clip_error_code_from_summary( $error );
+            $retryable = empty( $clip_job['url'] ) && self::is_retryable_clip_error_summary( $error );
+            $will_retry = $retryable && $attempt > 0 && $attempt < 3 && 'ready' !== $status;
             $summary[] = array(
                 'index'       => $index,
                 'status'      => $status ?: 'pending',
-                'attempt'     => (int) ( $clip_job['attempt'] ?? 0 ),
+                'attempt'     => $attempt,
+                'max_attempts' => 3,
                 'has_url'     => ! empty( $clip_job['url'] ),
+                'error_code'  => $error_code,
+                'retryable'   => $retryable,
+                'will_retry'  => $will_retry,
+                'retry_reason' => $retryable ? self::clip_retry_reason_from_summary( $error ) : '',
+                'error_final_reason' => 'error_final' === $status ? ( $will_retry ? '' : ( $retryable ? 'max_attempts_exhausted' : 'non_retryable_error' ) ) : '',
                 'started_at'  => $started_at,
                 'age_seconds' => $age,
                 'is_stale'    => in_array( $status, array( 'pending', 'generating', 'retrying' ), true ) && empty( $clip_job['url'] ) && ! empty( $started_at ) && $age >= self::CLIP_GENERATION_STALE_SECONDS,
             );
         }
         return $summary;
+    }
+
+    private static function is_retryable_clip_error_summary( $summary ) {
+        return (bool) preg_match( '/veo_invalid_response|o servi[cç]o de v[ií]deo n[aã]o retornou um v[ií]deo v[aá]lido|uri do v[ií]deo ausente|missing video uri|video uri missing|operation completed without video|opera[cç][aã]o conclu[ií]da sem v[ií]deo|empty video response|response without video|completed operation without generated video|generatedvideos vazio|video uri ausente|timeout|timed out|operation timeout|sem resposta|no response|curl|tempor[aá]ri|temporary|unavailable|reset|empty|vazia|json|408|409|429|500|502|503|504/i', (string) $summary );
+    }
+
+    private static function clip_error_code_from_summary( $summary ) {
+        if ( preg_match( '/\b([A-Z0-9_]{3,})\s*:/', (string) $summary, $matches ) ) {
+            return sanitize_key( $matches[1] );
+        }
+        if ( false !== stripos( (string) $summary, 'veo_invalid_response' ) ) {
+            return 'veo_invalid_response';
+        }
+        return '';
+    }
+
+    private static function clip_retry_reason_from_summary( $summary ) {
+        $summary = strtolower( (string) $summary );
+        if ( preg_match( '/uri do v[ií]deo ausente|video uri missing|missing video uri|operation completed without video|opera[cç][aã]o conclu[ií]da sem v[ií]deo|empty video response|response without video|completed operation without generated video|generatedvideos vazio|video uri ausente|sem uri/i', $summary ) ) {
+            return 'veo_completed_without_video_uri';
+        }
+        if ( false !== strpos( $summary, 'veo_invalid_response' ) || preg_match( '/o servi[cç]o de v[ií]deo n[aã]o retornou um v[ií]deo v[aá]lido/i', $summary ) ) {
+            return 'veo_invalid_response';
+        }
+        if ( preg_match( '/timeout|timed out|operation timeout/i', $summary ) ) {
+            return 'timeout';
+        }
+        if ( preg_match( '/408|409|429|500|502|503|504/', $summary, $matches ) ) {
+            return 'http_' . $matches[0];
+        }
+        return 'temporary_or_unknown';
     }
 
     private static function next_clip_action( array $job, array $composition_start, array $clip_summary ) {

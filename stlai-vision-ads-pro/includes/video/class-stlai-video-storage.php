@@ -302,6 +302,7 @@ class STLAI_Video_Storage {
 	                    'started_at'  => sanitize_text_field( $clip_job['started_at'] ?? '' ),
 	                    'finished_at' => sanitize_text_field( $clip_job['finished_at'] ?? '' ),
 	                );
+	                $by_index[ $index ] = self::recover_premature_final_clip_job( $by_index[ $index ] );
 	                $by_index[ $index ] = self::recover_stale_clip_job( $by_index[ $index ] );
 	            }
 	        }
@@ -330,6 +331,23 @@ class STLAI_Video_Storage {
 	        }
 	        ksort( $by_index );
 	        return array_values( $by_index );
+	    }
+
+	    private static function recover_premature_final_clip_job( array $clip_job ) {
+	        $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+	        $attempt = max( 0, (int) ( $clip_job['attempt'] ?? 0 ) );
+	        if ( 'error_final' !== $status || ! empty( $clip_job['url'] ) || $attempt >= 3 ) {
+	            return $clip_job;
+	        }
+
+	        if ( ! self::is_retryable_clip_error_summary( $clip_job['error'] ?? '' ) ) {
+	            return $clip_job;
+	        }
+
+	        $clip_job['status'] = 'pending';
+	        $clip_job['attempt'] = max( 1, $attempt );
+	        $clip_job['finished_at'] = '';
+	        return $clip_job;
 	    }
 
 	    private static function clips_from_clip_jobs( array $clip_jobs ) {
@@ -386,6 +404,10 @@ class STLAI_Video_Storage {
 	            return 0;
 	        }
 	        return max( 0, current_time( 'timestamp' ) - $timestamp );
+	    }
+
+	    private static function is_retryable_clip_error_summary( $summary ) {
+	        return (bool) preg_match( '/veo_invalid_response|o servi[cç]o de v[ií]deo n[aã]o retornou um v[ií]deo v[aá]lido|uri do v[ií]deo ausente|missing video uri|video uri missing|operation completed without video|opera[cç][aã]o conclu[ií]da sem v[ií]deo|empty video response|response without video|completed operation without generated video|generatedvideos vazio|video uri ausente|timeout|timed out|operation timeout|sem resposta|no response|curl|tempor[aá]ri|temporary|unavailable|reset|empty|vazia|json|408|409|429|500|502|503|504/i', (string) $summary );
 	    }
 
 	    private static function merge_clip_jobs( array $existing, array $incoming, array $clips ) {

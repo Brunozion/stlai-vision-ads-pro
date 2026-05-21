@@ -851,6 +851,30 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - Retry Veo e concorrência de clipes
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- `VEO_INVALID_RESPONSE` e respostas sem URI de vídeo passam a ser retryable antes de 3 tentativas.
+- Jobs já salvos indevidamente como `error_final` com tentativa menor que 3 e erro retryable são recuperados para `pending`.
+- O pipeline mantém status global `generating_clips` enquanto ainda existe retry automático.
+- O limite MVP de concorrência foi fixado em 1 clipe ativo; se já houver clipe `generating` não stale, novas gerações são bloqueadas até a próxima rodada.
+- Diagnostics passam a expor retry por clipe, motivo de retry, bloqueio de concorrência e contagem ativa real.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Frontend exibe vídeo final pronto
 
 Arquivos alterados:

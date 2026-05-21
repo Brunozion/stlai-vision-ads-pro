@@ -383,6 +383,26 @@ class STLAI_Video_Job_Service {
         }
 
         $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $clips, false );
+        $active_generating_count = self::active_generating_count( $clip_jobs );
+        $requested_job = self::clip_job_by_index( $clip_jobs, $clip_index );
+        if ( $active_generating_count >= 1 && ! self::is_active_generating_clip_job( is_array( $requested_job ) ? $requested_job : array() ) ) {
+            return STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array_merge(
+                    self::clip_job_state_fields( $clip_jobs ),
+                    array(
+                        'status'        => 'generating_clips',
+                        'message'       => 'Aguardando o clipe em geração terminar antes de iniciar o próximo.',
+                        'active_generating_count' => $active_generating_count,
+                        'max_concurrent_clip_generations' => 1,
+                        'concurrency_blocked' => true,
+                        'auto_clip_generation_triggered' => false,
+                        'auto_clip_generation_result' => 'skipped',
+                        'skipped_reason' => 'clip_already_generating_not_stale',
+                    )
+                )
+            );
+        }
         foreach ( $clip_jobs as $clip_job ) {
             if ( (int) ( $clip_job['index'] ?? 0 ) !== $clip_index ) {
                 continue;
@@ -414,6 +434,30 @@ class STLAI_Video_Job_Service {
         }
 
         $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $job['clips'] ?? array(), false );
+        $active_generating_count = self::active_generating_count( $clip_jobs );
+        if ( $active_generating_count >= 1 ) {
+            return STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array_merge(
+                    self::clip_job_state_fields( $clip_jobs ),
+                    array(
+                        'status'        => 'generating_clips',
+                        'progress'      => self::clip_jobs_progress( $clip_jobs ),
+                        'progress_hint' => self::clip_jobs_progress( $clip_jobs ),
+                        'message'       => 'Aguardando o clipe em geração terminar antes de iniciar o próximo.',
+                        'next_clip_index' => 0,
+                        'next_clip_reason' => '',
+                        'auto_clip_generation_triggered' => false,
+                        'auto_clip_generation_result' => 'skipped',
+                        'skipped_reason' => 'clip_already_generating_not_stale',
+                        'active_generating_count' => $active_generating_count,
+                        'max_concurrent_clip_generations' => 1,
+                        'concurrency_blocked' => true,
+                        'stale_threshold_seconds' => self::CLIP_GENERATION_STALE_SECONDS,
+                    )
+                )
+            );
+        }
         if ( self::has_final_clip_errors( $clip_jobs ) ) {
             return STLAI_Video_Storage::update_job(
                 $job['job_id'],
@@ -469,6 +513,7 @@ class STLAI_Video_Job_Service {
 
         $next_index = (int) ( $next['index'] ?? 0 );
         $next_reason = self::next_clip_reason_for_job( $next );
+        $next_will_retry = in_array( $next_reason, array( 'pending_stale_retry', 'pending_retryable_error', 'retry_clip' ), true );
         $job = STLAI_Video_Storage::update_job(
             $job['job_id'],
             array(
@@ -479,6 +524,11 @@ class STLAI_Video_Job_Service {
                 'skipped_reason' => '',
                 'active_generating_count' => self::active_generating_count( $clip_jobs ),
                 'max_concurrent_clip_generations' => 1,
+                'concurrency_blocked' => false,
+                'retryable' => $next_will_retry,
+                'will_retry' => $next_will_retry,
+                'retry_reason' => $next_will_retry ? self::clip_retry_reason_from_summary( $next['error'] ?? '' ) : '',
+                'error_final_reason' => '',
                 'stale_threshold_seconds' => self::CLIP_GENERATION_STALE_SECONDS,
             )
         ) ?: $job;
@@ -508,6 +558,7 @@ class STLAI_Video_Job_Service {
                 'skipped_reason' => '',
                 'active_generating_count' => self::active_generating_count( $result_jobs ),
                 'max_concurrent_clip_generations' => 1,
+                'concurrency_blocked' => false,
                 'stale_threshold_seconds' => self::CLIP_GENERATION_STALE_SECONDS,
             )
         ) ?: $result;
@@ -569,6 +620,7 @@ class STLAI_Video_Job_Service {
                     'started_at'  => sanitize_text_field( $clip_job['started_at'] ?? '' ),
                     'finished_at' => sanitize_text_field( $clip_job['finished_at'] ?? '' ),
                 );
+                $by_index[ $index ] = self::recover_premature_final_clip_job( $by_index[ $index ] );
                 $by_index[ $index ] = self::recover_stale_clip_job( $by_index[ $index ] );
             }
         }
@@ -606,6 +658,23 @@ class STLAI_Video_Job_Service {
 
         ksort( $by_index );
         return array_values( $by_index );
+    }
+
+    private static function recover_premature_final_clip_job( array $clip_job ) {
+        $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+        $attempt = max( 0, (int) ( $clip_job['attempt'] ?? 0 ) );
+        if ( 'error_final' !== $status || ! empty( $clip_job['url'] ) || $attempt >= self::CLIP_MAX_ATTEMPTS ) {
+            return $clip_job;
+        }
+
+        if ( ! self::is_retryable_clip_error_summary( $clip_job['error'] ?? '' ) ) {
+            return $clip_job;
+        }
+
+        $clip_job['status'] = 'pending';
+        $clip_job['attempt'] = max( 1, $attempt );
+        $clip_job['finished_at'] = '';
+        return $clip_job;
     }
 
     private static function clip_job_state_fields( array $clip_jobs ) {
@@ -778,7 +847,30 @@ class STLAI_Video_Job_Service {
     }
 
     private static function is_retryable_clip_error_summary( $summary ) {
-        return (bool) preg_match( '/timeout|timed out|operation timeout|sem resposta|no response|curl|tempor[aá]ri|temporary|unavailable|reset|empty|vazia|json|408|409|429|500|502|503|504|veo_invalid_response|uri do v[ií]deo ausente|missing video uri|video uri missing|operation completed without video|opera[cç][aã]o conclu[ií]da sem v[ií]deo/i', (string) $summary );
+        return self::is_retryable_clip_error_parts( '', (string) $summary, (string) $summary );
+    }
+
+    private static function is_retryable_clip_error_parts( $code, $message, $debug = '' ) {
+        $code = sanitize_key( (string) $code );
+        $summary = strtolower( trim( (string) $code . ' ' . (string) $message . ' ' . (string) $debug ) );
+
+        if ( in_array( $code, array( 'missing_video_api_key', 'missing_video_model', 'missing_video_base_url', 'missing_selected_image', 'image_fetch_error', 'invalid_image_mime_type', 'invalid_video_format', 'image_preprocessor_unavailable', 'video_save_error' ), true ) ) {
+            return false;
+        }
+
+        if ( preg_match( '/quota|billing|pagamento|payment|required|api key|chave.*inv[aá]lida|invalid.*api|invalid.*model|modelo.*inv[aá]lido|payload.*inv[aá]lido|invalid.*image|imagem.*inv[aá]lida|content policy|policy violation|safety|blocked|bloquead|prohibited|violat/i', $summary ) ) {
+            return false;
+        }
+
+        if ( 'veo_invalid_response' === $code || false !== strpos( $summary, 'veo_invalid_response' ) ) {
+            return true;
+        }
+
+        if ( preg_match( '/o servi[cç]o de v[ií]deo n[aã]o retornou um v[ií]deo v[aá]lido|uri do v[ií]deo ausente|missing video uri|video uri missing|operation completed without video|opera[cç][aã]o conclu[ií]da sem v[ií]deo|empty video response|response without video|completed operation without generated video|generatedvideos vazio|video uri ausente|timeout|timed out|operation timeout|sem resposta|no response|curl|tempor[aá]ri|temporary|unavailable|reset|empty|vazia|json|408|409|429|500|502|503|504/i', $summary ) ) {
+            return true;
+        }
+
+        return true;
     }
 
     private static function next_clip_reason_for_job( array $clip_job ) {
@@ -941,8 +1033,54 @@ class STLAI_Video_Job_Service {
             $last_error = is_array( $error_data ) ? ( $error_data['last_error_summary'] ?? $clip->get_error_message() ) : $clip->get_error_message();
             $failed_attempt = is_array( $error_data ) ? (int) ( $error_data['current_clip_attempt'] ?? $attempt ) : $attempt;
             $failed_attempt = max( 1, min( self::CLIP_MAX_ATTEMPTS, $failed_attempt ) );
-            $retryable = is_array( $error_data ) ? ! empty( $error_data['retryable'] ) : self::is_retryable_clip_error( $clip );
+            $retryable = self::is_retryable_clip_error( $clip );
             $retry_reason = is_array( $error_data ) ? sanitize_key( $error_data['retry_reason'] ?? self::clip_retry_reason( $clip ) ) : self::clip_retry_reason( $clip );
+            if ( $retryable && $failed_attempt < self::CLIP_MAX_ATTEMPTS ) {
+                $clip_jobs = self::replace_clip_job(
+                    $clip_jobs,
+                    $clip_index,
+                    array(
+                        'status'      => 'pending',
+                        'attempt'     => $failed_attempt,
+                        'error'       => $last_error,
+                        'finished_at' => '',
+                    )
+                );
+
+                return STLAI_Video_Storage::update_job(
+                    $job['job_id'],
+                    array_merge(
+                        self::clip_job_state_fields( $clip_jobs ),
+                        array(
+                            'status'               => 'generating_clips',
+                            'progress'             => self::clip_jobs_progress( $clip_jobs ),
+                            'progress_hint'        => self::clip_progress_hint( $clip_index ),
+                            'message'              => 'Ajustando clipe IA automaticamente. Refazendo o clipe ' . $clip_index . '. Tentativa ' . ( $failed_attempt + 1 ) . ' de ' . self::CLIP_MAX_ATTEMPTS . '.',
+                            'clips'                => $clips,
+                            'partial_clips'        => $clips,
+                            'video_frames'         => self::video_frames_from_clips( $clips ),
+                            'composition_status'   => 'pending',
+                            'current_clip_index'   => $clip_index,
+                            'current_clip_attempt' => $failed_attempt,
+                            'clip_retry_count'     => max( 0, $failed_attempt - 1 ),
+                            'last_clip_error'      => $last_error,
+                            'failed_clip_index'    => 0,
+                            'failed_clip_role'     => '',
+                            'max_clip_attempts'    => self::CLIP_MAX_ATTEMPTS,
+                            'retryable'            => true,
+                            'retry_reason'         => $retry_reason,
+                            'will_retry'           => true,
+                            'error_final_reason'   => '',
+                            'next_clip_action'     => 'retry_clip',
+                            'next_clip_index'      => $clip_index,
+                            'next_clip_reason'     => $retry_reason,
+                            'error_code'           => '',
+                            'error_message'        => '',
+                            'error_debug'          => self::clip_retry_debug( $clip, $clip_index, $failed_attempt, true ),
+                        )
+                    )
+                );
+            }
             $clip_jobs = self::replace_clip_job(
                 $clip_jobs,
                 $clip_index,
@@ -2447,33 +2585,12 @@ class STLAI_Video_Job_Service {
 
     private static function is_retryable_clip_error( WP_Error $error ) {
         $code = $error->get_error_code();
-        $summary = strtolower( self::safe_error_summary( $error ) );
-
-        if ( in_array( $code, array( 'MISSING_VIDEO_API_KEY', 'MISSING_VIDEO_MODEL', 'MISSING_VIDEO_BASE_URL', 'MISSING_SELECTED_IMAGE', 'IMAGE_FETCH_ERROR', 'INVALID_IMAGE_MIME_TYPE', 'INVALID_VIDEO_FORMAT', 'IMAGE_PREPROCESSOR_UNAVAILABLE', 'VIDEO_SAVE_ERROR' ), true ) ) {
-            return false;
-        }
-
         if ( 'VEO_OPERATION_TIMEOUT' === $code ) {
             return true;
         }
-
-        if ( preg_match( '/quota|billing|pagamento|payment|required|api key|chave.*inv[aá]lida|invalid.*api|invalid.*model|modelo.*inv[aá]lido|payload.*inv[aá]lido|invalid.*image|imagem.*inv[aá]lida|content policy|policy violation|safety|blocked|bloquead|prohibited|violat/i', $summary ) ) {
-            return false;
-        }
-
-        if ( 'VEO_HTTP_ERROR' === $code ) {
-            return (bool) preg_match( '/http\s+(408|409|429|500|502|503|504)\b/i', $summary );
-        }
-
-        if ( 'VEO_INVALID_RESPONSE' === $code ) {
-            return true;
-        }
-
-        if ( 'VEO_REQUEST_ERROR' === $code ) {
-            return (bool) preg_match( '/timeout|timed out|operation timeout|sem resposta|no response|cURL|curl|tempor[aá]ri|temporary|unavailable|reset|empty|vazia|json|408|409|429|500|502|503|504/i', $summary );
-        }
-
-        return true;
+        $data = $error->get_error_data();
+        $debug = is_array( $data ) ? (string) ( $data['debug'] ?? '' ) : '';
+        return self::is_retryable_clip_error_parts( $code, self::safe_error_summary( $error ), $debug );
     }
 
     private static function clip_retry_reason( WP_Error $error ) {
@@ -2492,6 +2609,23 @@ class STLAI_Video_Job_Service {
         }
         if ( 'VEO_REQUEST_ERROR' === $error->get_error_code() ) {
             return 'veo_request_error';
+        }
+        return 'temporary_or_unknown';
+    }
+
+    private static function clip_retry_reason_from_summary( $summary ) {
+        $summary = strtolower( (string) $summary );
+        if ( preg_match( '/uri do v[ií]deo ausente|video uri missing|missing video uri|operation completed without video|opera[cç][aã]o conclu[ií]da sem v[ií]deo|empty video response|response without video|completed operation without generated video|generatedvideos vazio|video uri ausente|sem uri/i', $summary ) ) {
+            return 'veo_completed_without_video_uri';
+        }
+        if ( false !== strpos( $summary, 'veo_invalid_response' ) || preg_match( '/o servi[cç]o de v[ií]deo n[aã]o retornou um v[ií]deo v[aá]lido/i', $summary ) ) {
+            return 'veo_invalid_response';
+        }
+        if ( preg_match( '/timeout|timed out|operation timeout/i', $summary ) ) {
+            return 'timeout';
+        }
+        if ( preg_match( '/408|409|429|500|502|503|504/', $summary, $matches ) ) {
+            return 'http_' . $matches[0];
         }
         return 'temporary_or_unknown';
     }

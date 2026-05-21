@@ -2299,10 +2299,14 @@ function renderVideoClipsGridMarkup(clips){
 
     if(shouldShowPlaceholders){
       const isActive=index===activeIndex;
-      const retrying=clipJob.status==="retrying" || (String(videoStatusForDisplay()).startsWith("retrying_clip_") && isActive);
+      const willRetry=Boolean(clipJob.will_retry || clipJob.willRetry || S.video.willRetry);
+      const retrying=clipJob.status==="retrying" || (willRetry && ["pending","queued"].includes(clipJob.status)) || (String(videoStatusForDisplay()).startsWith("retrying_clip_") && isActive);
       const generating=clipJob.status==="generating" || isActive;
       const failed=clipJob.status==="error_final" || clipJob.status==="error" || (recoverableVideoErrorStatus(S.video.status) && index===Number(S.video.failedClipIndex || 0));
-      const label=failed && !S.video.willRetry ? "Erro após tentativas" : (retrying || (S.video.willRetry && isActive) ? `Ajustando clipe ${index}` : (generating ? `Gerando clipe ${index}` : "Pendente"));
+      const maxAttempts=Number(clipJob.max_attempts || clipJob.maxAttempts || S.video.maxClipAttempts || 3);
+      const attempt=Number(clipJob.attempt || 0);
+      const finalFailed=failed && !willRetry && attempt >= maxAttempts;
+      const label=finalFailed ? "Erro após tentativas" : (retrying || (willRetry && isActive) ? `Ajustando clipe ${index}` : (generating ? `Gerando clipe ${index}` : "Pendente"));
       cards.push(`<div class="video-clip-card video-clip-card-placeholder ${isActive ? "active" : ""} ${failed ? "error" : ""}">
         <div class="video-clip-title">Clipe ${index}</div>
         <div class="video-clip-placeholder">

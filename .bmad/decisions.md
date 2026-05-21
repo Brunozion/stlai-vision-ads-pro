@@ -1034,3 +1034,25 @@ Ao receber a URL final, o frontend para polling/timers, marca progresso em 100%,
 ### Status
 
 Decidido
+
+## 2026-05-21 - Retry Veo antes de erro final
+
+### Decisao
+
+Falhas de clipe Veo com `VEO_INVALID_RESPONSE`, URI de vídeo ausente, resposta vazia, operação concluída sem vídeo, timeout ou HTTP 408/409/429/5xx são retryable. Um clipe só pode virar `error_final` depois de 3 tentativas reais ou quando houver erro claramente permanente.
+
+Jobs antigos que tenham `error_final` prematuro com `attempt < 3` e erro retryable devem ser recuperados automaticamente para `pending/retrying`, sem ação manual do usuário.
+
+Para estabilidade do MVP, `max_concurrent_clip_generations = 1`. Se já existe um clipe `generating` não stale, o backend não inicia outro e retorna diagnóstico `concurrency_blocked=true`.
+
+### Motivo
+
+O Veo pode concluir uma operação sem devolver URI de vídeo. Esse caso é intermitente e uma nova tentativa costuma resolver, então não deve interromper o pipeline na primeira falha.
+
+### Impacto
+
+O pipeline preserva clipes prontos, mantém `generating_clips` enquanto houver retry automático e só exibe erro final após esgotar tentativas. A UI mostra "Ajustando clipe X" durante retry e continua polling.
+
+### Status
+
+Decidido

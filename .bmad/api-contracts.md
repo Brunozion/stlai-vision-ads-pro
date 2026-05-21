@@ -1421,3 +1421,35 @@ Quando houver URL final renderizável, o frontend deve normalizar:
 ```
 
 `final_video_url` é terminal e monotônico: não pode ser apagado por resposta posterior atrasada.
+
+### Diagnostics de retry de clipe
+
+Cada item de `diagnostics.clip_jobs_summary` deve expor:
+
+```json
+{
+  "index": 1,
+  "status": "pending",
+  "attempt": 1,
+  "max_attempts": 3,
+  "has_url": false,
+  "error_code": "veo_invalid_response",
+  "retryable": true,
+  "will_retry": true,
+  "retry_reason": "veo_invalid_response",
+  "error_final_reason": "",
+  "started_at": "2026-05-21 18:30:00",
+  "age_seconds": 80,
+  "is_stale": true
+}
+```
+
+No nível do job:
+
+- `max_concurrent_clip_generations`: `1` no MVP.
+- `active_generating_count`: clipes `generating` sem URL e não stale.
+- `concurrency_blocked`: `true` quando o backend não iniciou novo clipe porque já existe geração ativa.
+- `retryable`: `true` se qualquer clipe pendente/erro ainda pode tentar novamente.
+- `will_retry`: `true` quando o pipeline deve continuar automaticamente.
+
+Regra: `VEO_INVALID_RESPONSE` e mensagens como "O serviço de vídeo não retornou um vídeo válido" ou "URI do vídeo ausente" não podem virar `error_final` antes de `attempt >= max_attempts`.
