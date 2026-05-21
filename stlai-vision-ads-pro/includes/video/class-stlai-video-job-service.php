@@ -50,6 +50,7 @@ class STLAI_Video_Job_Service {
                         'clip_started_at'      => $existing_job['clip_started_at'] ?? array(),
                         'clip_finished_at'     => $existing_job['clip_finished_at'] ?? array(),
                         'missing_clips'        => $existing_job['missing_clips'] ?? array( 1, 2, 3, 4 ),
+                        'reset_composition'    => true,
                         'composition_status'   => 'pending',
                         'current_clip_index'   => 0,
                         'current_clip_attempt' => 0,
@@ -63,6 +64,7 @@ class STLAI_Video_Job_Service {
                         'composer_provider'    => '',
                         'composer_status'      => '',
                         'render_job_id'        => '',
+                        'composition_started_at' => '',
                         'composed_at'          => '',
                         'failed_clip_index'    => 0,
                         'failed_clip_role'     => '',
@@ -185,8 +187,11 @@ class STLAI_Video_Job_Service {
             return new WP_Error( 'stlai_video_job_not_found', 'Job de video nao encontrado.' );
         }
 
-        $job = self::maybe_refresh_composition_status( $job );
+        $job = self::maybe_start_or_poll_composition( $job );
         if ( is_wp_error( $job ) ) {
+            return $job;
+        }
+        if ( in_array( $job['status'] ?? '', array( 'ready', 'composition_error', 'composition_pending' ), true ) ) {
             return $job;
         }
 
@@ -204,7 +209,7 @@ class STLAI_Video_Job_Service {
             return new WP_Error( 'stlai_video_job_not_found', 'Job de video nao encontrado.' );
         }
 
-        return self::maybe_refresh_composition_status( $job );
+        return self::maybe_start_or_poll_composition( $job );
     }
 
     public static function generate_test_veo_clip( array $payload ) {
@@ -227,7 +232,7 @@ class STLAI_Video_Job_Service {
             return new WP_Error( 'stlai_video_invalid_clip_index', 'Clipe invalido para geração.' );
         }
 
-        $job = self::maybe_refresh_composition_status( $job );
+        $job = self::maybe_start_or_poll_composition( $job );
         if ( is_wp_error( $job ) ) {
             return $job;
         }
@@ -294,7 +299,7 @@ class STLAI_Video_Job_Service {
         if ( ! $next ) {
             $has_error = false;
             foreach ( $clip_jobs as $clip_job ) {
-                if ( 'error' === ( $clip_job['status'] ?? '' ) ) {
+                if ( in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'error', 'error_final' ), true ) ) {
                     $has_error = true;
                     break;
                 }
@@ -355,13 +360,13 @@ class STLAI_Video_Job_Service {
                 }
 
                 $status = sanitize_key( $clip_job['status'] ?? 'pending' );
-                if ( $reset_failed && in_array( $status, array( 'error', 'retrying', 'generating', 'queued' ), true ) ) {
+                if ( $reset_failed && in_array( $status, array( 'error', 'error_final', 'retrying', 'generating', 'queued' ), true ) ) {
                     $status = 'pending';
                 }
 
                 $by_index[ $index ] = array(
                     'index'       => $index,
-                    'status'      => in_array( $status, array( 'pending', 'queued', 'generating', 'retrying', 'ready', 'error' ), true ) ? $status : 'pending',
+                    'status'      => in_array( $status, array( 'pending', 'queued', 'generating', 'retrying', 'ready', 'error', 'error_final' ), true ) ? $status : 'pending',
                     'attempt'     => max( 0, (int) ( $clip_job['attempt'] ?? 0 ) ),
                     'url'         => esc_url_raw( $clip_job['url'] ?? '' ),
                     'error'       => $reset_failed ? '' : sanitize_text_field( $clip_job['error'] ?? '' ),
@@ -469,6 +474,27 @@ class STLAI_Video_Job_Service {
         $role = $clip_roles[ $clip_index - 1 ] ?? array();
         $selected_images = array_slice( self::sanitize_images( $latest_for_start['selected_images'] ?? array() ), 0, 4 );
         $clip_jobs = self::normalize_clip_jobs( $latest_for_start['clip_jobs'] ?? array(), $clips, false );
+        foreach ( $clip_jobs as $clip_job ) {
+            if ( (int) ( $clip_job['index'] ?? 0 ) === $clip_index && 'error_final' === sanitize_key( $clip_job['status'] ?? '' ) ) {
+                return STLAI_Video_Storage::update_job(
+                    $job['job_id'],
+                    array_merge(
+                        self::clip_job_state_fields( $clip_jobs ),
+                        array(
+                            'status'               => 'clip_generation_error',
+                            'message'              => 'O clipe ' . $clip_index . ' falhou após as tentativas automáticas. Você pode tentar novamente.',
+                            'current_clip_index'   => $clip_index,
+                            'current_clip_attempt' => min( self::CLIP_MAX_ATTEMPTS, max( 1, (int) ( $clip_job['attempt'] ?? self::CLIP_MAX_ATTEMPTS ) ) ),
+                            'clip_retry_count'     => self::CLIP_MAX_ATTEMPTS - 1,
+                            'last_clip_error'      => sanitize_text_field( $clip_job['error'] ?? '' ),
+                            'failed_clip_index'    => $clip_index,
+                            'error_code'           => 'VEO_CLIP_' . $clip_index . '_ERROR',
+                            'error_message'        => 'Não foi possível gerar o clipe ' . $clip_index . '.',
+                        )
+                    )
+                );
+            }
+        }
         $clip_jobs = self::replace_clip_job(
             $clip_jobs,
             $clip_index,
@@ -533,7 +559,7 @@ class STLAI_Video_Job_Service {
                 $clip_jobs,
                 $clip_index,
                 array(
-                    'status'      => 'error',
+                    'status'      => 'error_final',
                     'attempt'     => $failed_attempt,
                     'error'       => $last_error,
                     'finished_at' => current_time( 'mysql' ),
@@ -611,7 +637,7 @@ class STLAI_Video_Job_Service {
         );
 
         if ( self::count_ready_clips( $clips ) >= 4 ) {
-            return self::start_composition_if_ready( $job );
+            return self::maybe_start_or_poll_composition( $job );
         }
 
         return $job;
@@ -643,14 +669,57 @@ class STLAI_Video_Job_Service {
         return self::normalize_clip_jobs( $clip_jobs, array(), false );
     }
 
+    private static function maybe_start_or_poll_composition( array $job ) {
+        if ( 'ready' === sanitize_key( $job['status'] ?? '' ) ) {
+            return $job;
+        }
+
+        if ( ! empty( $job['final_video_url'] ) ) {
+            return STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array(
+                    'status'             => 'ready',
+                    'composition_status' => 'complete',
+                    'composer_status'    => 'ready',
+                    'progress'           => 100,
+                    'progress_hint'      => 100,
+                )
+            ) ?: $job;
+        }
+
+        if ( in_array( sanitize_key( $job['composition_status'] ?? '' ), array( 'error', 'timeout' ), true ) || 'composition_error' === sanitize_key( $job['status'] ?? '' ) ) {
+            return $job;
+        }
+
+        if ( ! empty( $job['render_job_id'] ) || in_array( sanitize_key( $job['status'] ?? '' ), array( 'composition_queued', 'composition_processing', 'composing_final_video' ), true ) ) {
+            return self::maybe_refresh_composition_status( $job );
+        }
+
+        if ( empty( $job['audio_url'] ) || self::count_ready_clips( $job['clips'] ?? array() ) < 4 ) {
+            return $job;
+        }
+
+        return self::start_composition_if_ready( $job );
+    }
+
 	    private static function start_composition_if_ready( array $job ) {
 	        $latest_job = STLAI_Video_Storage::get_job( $job['job_id'] ) ?: $job;
-	        if ( ! empty( $latest_job['render_job_id'] ) || in_array( $latest_job['status'] ?? '', array( 'composition_queued', 'composition_processing', 'composing_final_video' ), true ) || in_array( $latest_job['composition_status'] ?? '', array( 'queued', 'processing' ), true ) ) {
+	        if ( ! empty( $latest_job['render_job_id'] ) || in_array( $latest_job['composition_status'] ?? '', array( 'processing' ), true ) ) {
 	            return self::maybe_refresh_composition_status( $latest_job );
 	        }
 
 	        $job = $latest_job;
 	        $clips = self::normalize_clip_list( $job['clips'] ?? array() );
+	        self::log_composition(
+	            'start_check',
+	            array(
+	                'job_id'              => $job['job_id'] ?? '',
+	                'clips_count'         => count( $clips ),
+	                'audio_url_exists'    => ! empty( $job['audio_url'] ),
+	                'endpoint_configured' => self::composer_endpoint_configured(),
+	                'composer_mode'       => self::composer_mode_setting(),
+	            )
+	        );
         if ( count( $clips ) < 4 ) {
             return STLAI_Video_Storage::update_job(
                 $job['job_id'],
@@ -748,17 +817,69 @@ class STLAI_Video_Job_Service {
             );
         }
 
+        if ( 'ready' === sanitize_key( $composer['status'] ?? '' ) ) {
+            self::log_composition(
+                'start_ready',
+                array(
+                    'job_id'                 => $job['job_id'] ?? '',
+                    'render_job_id'          => $composer['render_job_id'] ?? '',
+                    'final_video_url_exists' => ! empty( $composer['final_video_url'] ),
+                )
+            );
+
+            return STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array(
+                    'status'               => 'ready',
+                    'progress'             => 100,
+                    'progress_hint'        => 100,
+                    'message'              => $composer['message'] ?? 'Vídeo final composto com sucesso.',
+                    'clips'                => $clips,
+                    'video_frames'         => self::video_frames_from_clips( $clips ),
+                    'composition_status'   => 'complete',
+                    'composer_status'      => 'ready',
+                    'render_job_id'        => $composer['render_job_id'] ?? '',
+                    'final_video_url'      => $composer['final_video_url'] ?? '',
+                    'final_video_duration' => $composer['final_video_duration'] ?? 0,
+                    'final_video_debug'    => $composer['debug'] ?? '',
+                    'transition_used'      => $composer['transition_used'] ?? '',
+                    'fallback_used'        => $composer['fallback_used'] ?? '',
+                    'render_time_seconds'  => $composer['render_time_seconds'] ?? 0,
+                    'background_music_used' => ! empty( $composer['background_music_used'] ),
+                    'background_music_volume' => $composer['background_music_volume'] ?? 0,
+                    'fast_compose'         => ! empty( $composer['fast_compose'] ),
+                    'composer_mode'        => $composer['composer_mode'] ?? '',
+                    'composer_provider'    => $composer['composer_provider'] ?? '',
+                    'composed_at'          => current_time( 'mysql' ),
+                    'error_code'           => '',
+                    'error_message'        => '',
+                    'error_debug'          => '',
+                )
+            );
+        }
+
+        $composer_status = sanitize_key( $composer['status'] ?? 'queued' );
+        self::log_composition(
+            'start_accepted',
+            array(
+                'job_id'                 => $job['job_id'] ?? '',
+                'render_job_id'          => $composer['render_job_id'] ?? '',
+                'status'                 => $composer_status,
+                'final_video_url_exists' => ! empty( $composer['final_video_url'] ?? '' ),
+            )
+        );
+
         return STLAI_Video_Storage::update_job(
             $job['job_id'],
             array(
-                'status'               => 'composition_queued',
+                'status'               => 'processing' === $composer_status ? 'composition_processing' : 'composition_queued',
                 'progress'             => max( 82, min( 84, (int) ( $composer['progress'] ?? 82 ) ) ),
                 'progress_hint'        => 82,
                 'message'              => 'Composição final em andamento...',
                 'clips'                => $clips,
                 'video_frames'         => self::video_frames_from_clips( $clips ),
-                'composition_status'   => 'queued',
-                'composer_status'      => $composer['status'] ?? 'queued',
+                'composition_status'   => 'processing' === $composer_status ? 'processing' : 'queued',
+                'composer_status'      => $composer_status,
                 'render_job_id'        => $composer['render_job_id'] ?? '',
                 'final_video_url'      => '',
                 'final_video_path'     => '',
@@ -783,12 +904,78 @@ class STLAI_Video_Job_Service {
 
         $render_job_id = $job['render_job_id'] ?? '';
         if ( empty( $render_job_id ) ) {
-            return $job;
+            if ( self::count_ready_clips( $job['clips'] ?? array() ) < 4 || empty( $job['audio_url'] ) ) {
+                if ( self::composition_elapsed_seconds( $job ) > 90 ) {
+                    return self::composition_timeout_error(
+                        $job,
+                        'COMPOSER_TIMEOUT',
+                        'composition_queued sem render_job_id por mais de 90s.'
+                    );
+                }
+                return $job;
+            }
+
+            self::log_composition(
+                'recover_queued_without_render_job',
+                array(
+                    'job_id'      => $job['job_id'] ?? '',
+                    'clips_count' => self::count_ready_clips( $job['clips'] ?? array() ),
+                    'has_audio'   => ! empty( $job['audio_url'] ),
+                )
+            );
+            $recovered = STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array(
+                    'status'             => 'clips_ready',
+                    'composition_status' => 'pending',
+                    'composer_status'    => '',
+                    'render_job_id'      => '',
+                    'composition_started_at' => '',
+                )
+            );
+            return self::start_composition_if_ready( $recovered ?: $job );
+        }
+
+        if ( self::composition_elapsed_seconds( $job ) > self::composer_timeout_seconds() ) {
+                return self::composition_timeout_error(
+                    $job,
+                    'COMPOSER_TIMEOUT',
+                    'composition_processing excedeu videoComposerTimeout.'
+                );
         }
 
         $remote = STLAI_Video_Composer_Provider::get_composition_status( $render_job_id );
         if ( is_wp_error( $remote ) ) {
             $error_data = $remote->get_error_data();
+            self::log_composition(
+                'status_error',
+                array(
+                    'job_id'        => $job['job_id'] ?? '',
+                    'render_job_id' => $render_job_id,
+                    'code'          => $remote->get_error_code(),
+                    'message'       => $remote->get_error_message(),
+                )
+            );
+            if ( 'COMPOSER_STATUS_ERROR' === $remote->get_error_code() && self::composition_elapsed_seconds( $job ) <= self::composer_timeout_seconds() ) {
+                return STLAI_Video_Storage::update_job(
+                    $job['job_id'],
+                    array(
+                        'status'             => 'composition_processing',
+                        'progress'           => max( 82, (int) ( $job['progress'] ?? 82 ) ),
+                        'progress_hint'      => max( 82, (int) ( $job['progress_hint'] ?? ( $job['progress'] ?? 82 ) ) ),
+                        'message'            => 'Composição final em andamento...',
+                        'composition_status' => 'processing',
+                    'composer_status'    => 'processing',
+                        'poll_count'         => (int) ( $job['poll_count'] ?? 0 ) + 1,
+                        'last_composer_error_code' => $remote->get_error_code(),
+                        'last_composer_error_message' => $remote->get_error_message(),
+                        'error_code'         => '',
+                        'error_message'      => '',
+                        'error_debug'        => is_array( $error_data ) ? ( $error_data['debug'] ?? '' ) : '',
+                    )
+                );
+            }
+
             return STLAI_Video_Storage::update_job(
                 $job['job_id'],
                 array(
@@ -798,6 +985,9 @@ class STLAI_Video_Job_Service {
                     'message'            => $remote->get_error_message(),
                     'composition_status' => 'error',
                     'composer_status'    => 'error',
+                    'poll_count'         => (int) ( $job['poll_count'] ?? 0 ) + 1,
+                    'last_composer_error_code' => $remote->get_error_code(),
+                    'last_composer_error_message' => $remote->get_error_message(),
                     'error_code'         => $remote->get_error_code(),
                     'error_message'      => $remote->get_error_message(),
                     'error_debug'        => is_array( $error_data ) ? ( $error_data['debug'] ?? '' ) : '',
@@ -806,6 +996,15 @@ class STLAI_Video_Job_Service {
         }
 
         $remote_status = sanitize_key( $remote['status'] ?? 'processing' );
+        self::log_composition(
+            'status_update',
+            array(
+                'job_id'                 => $job['job_id'] ?? '',
+                'render_job_id'          => $render_job_id,
+                'status'                 => $remote_status,
+                'final_video_url_exists' => ! empty( $remote['final_video_url'] ?? '' ),
+            )
+        );
         if ( 'ready' === $remote_status ) {
             return STLAI_Video_Storage::update_job(
                 $job['job_id'],
@@ -816,6 +1015,7 @@ class STLAI_Video_Job_Service {
                     'message'              => $remote['message'] ?? 'Vídeo final composto com sucesso.',
                     'composition_status'   => 'complete',
                     'composer_status'      => 'ready',
+                    'poll_count'           => (int) ( $job['poll_count'] ?? 0 ) + 1,
                     'final_video_url'      => $remote['final_video_url'] ?? '',
                     'final_video_duration' => $remote['final_video_duration'] ?? 0,
                     'final_video_debug'    => $remote['debug'] ?? '',
@@ -831,6 +1031,31 @@ class STLAI_Video_Job_Service {
                     'error_code'           => '',
                     'error_message'        => '',
                     'error_debug'          => '',
+                    'last_composer_error_code' => '',
+                    'last_composer_error_message' => '',
+                )
+            );
+        }
+
+        if ( 'error' === $remote_status ) {
+            $remote_error_code = ! empty( $remote['code'] ) ? sanitize_text_field( $remote['code'] ) : 'COMPOSER_RENDER_ERROR';
+            $remote_error_message = ! empty( $remote['message'] ) ? sanitize_text_field( $remote['message'] ) : 'Não foi possível concluir o vídeo final.';
+
+            return STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array(
+                    'status'             => 'composition_error',
+                    'progress'           => max( 82, (int) ( $job['progress'] ?? 82 ) ),
+                    'progress_hint'      => max( 82, (int) ( $job['progress_hint'] ?? ( $job['progress'] ?? 82 ) ) ),
+                    'message'            => 'Não foi possível concluir o vídeo final. Os clipes e a narração foram preservados. Você pode tentar novamente.',
+                    'composition_status' => 'error',
+                    'composer_status'    => 'error',
+                    'poll_count'         => (int) ( $job['poll_count'] ?? 0 ) + 1,
+                    'last_composer_error_code' => $remote_error_code,
+                    'last_composer_error_message' => $remote_error_message,
+                    'error_code'         => $remote_error_code,
+                    'error_message'      => $remote_error_message,
+                    'error_debug'        => $remote['debug'] ?? '',
                 )
             );
         }
@@ -844,10 +1069,85 @@ class STLAI_Video_Job_Service {
                 'message'            => $remote['message'] ?? 'Composição final em andamento...',
                 'composition_status' => 'queued' === $remote_status ? 'queued' : 'processing',
                 'composer_status'    => $remote_status,
+                'poll_count'         => (int) ( $job['poll_count'] ?? 0 ) + 1,
                 'composer_mode'      => $remote['composer_mode'] ?? ( $job['composer_mode'] ?? '' ),
                 'composer_provider'  => $remote['composer_provider'] ?? ( $job['composer_provider'] ?? '' ),
             )
         );
+    }
+
+    private static function composition_timeout_error( array $job, $code, $debug ) {
+        $message = 'A composição demorou mais que o esperado. Os clipes e a narração foram preservados. Tente novamente.';
+
+        self::log_composition(
+            'timeout',
+            array(
+                'job_id'        => $job['job_id'] ?? '',
+                'render_job_id' => $job['render_job_id'] ?? '',
+                'status'        => $job['status'] ?? '',
+                'elapsed'       => self::composition_elapsed_seconds( $job ),
+                'debug'         => $debug,
+            )
+        );
+
+        return STLAI_Video_Storage::update_job(
+            $job['job_id'],
+            array(
+                'status'             => 'composition_error',
+                'progress'           => max( 82, (int) ( $job['progress'] ?? 82 ) ),
+                'progress_hint'      => max( 82, (int) ( $job['progress_hint'] ?? ( $job['progress'] ?? 82 ) ) ),
+                'message'            => $message,
+                'composition_status' => 'timeout',
+                'composer_status'    => 'timeout',
+                'last_composer_error_code' => strtoupper( preg_replace( '/[^A-Z0-9_]/i', '_', (string) $code ) ),
+                'last_composer_error_message' => $message,
+                'error_code'         => strtoupper( preg_replace( '/[^A-Z0-9_]/i', '_', (string) $code ) ),
+                'error_message'      => $message,
+                'error_debug'        => sanitize_text_field( $debug ),
+            )
+        );
+    }
+
+    private static function composition_elapsed_seconds( array $job ) {
+        $timestamp = strtotime( (string) ( $job['composition_started_at'] ?? '' ) );
+        if ( ! $timestamp ) {
+            $timestamp = strtotime( (string) ( $job['updated_at'] ?? '' ) );
+        }
+        if ( ! $timestamp ) {
+            return 0;
+        }
+
+        return max( 0, current_time( 'timestamp' ) - $timestamp );
+    }
+
+    private static function composer_timeout_seconds() {
+        return STLAI_Video_Composer_Provider::configured_timeout();
+    }
+
+    private static function composer_endpoint_configured() {
+        $settings = get_option( 'stlai_vision_ads_pro_settings', array() );
+        return is_array( $settings ) && ! empty( $settings['videoComposerEndpoint'] );
+    }
+
+    private static function composer_mode_setting() {
+        $settings = get_option( 'stlai_vision_ads_pro_settings', array() );
+        $mode = is_array( $settings ) ? sanitize_key( $settings['videoComposerMode'] ?? '' ) : '';
+        return in_array( $mode, array( 'external_service', 'local_ffmpeg' ), true ) ? $mode : 'external_service';
+    }
+
+    private static function log_composition( $event, array $context = array() ) {
+        $safe = array();
+        foreach ( $context as $key => $value ) {
+            if ( preg_match( '/api|key|token|authorization/i', (string) $key ) ) {
+                continue;
+            }
+            if ( is_bool( $value ) || is_numeric( $value ) ) {
+                $safe[ $key ] = $value;
+            } else {
+                $safe[ $key ] = substr( sanitize_text_field( (string) $value ), 0, 500 );
+            }
+        }
+        error_log( '[STLAI video job composition] ' . sanitize_key( $event ) . ' ' . wp_json_encode( $safe ) );
     }
 
     private static function compose_final_video( array $job ) {

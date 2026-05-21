@@ -1150,3 +1150,151 @@ Regras de monotonicidade:
 - `job_version` ajuda o frontend a detectar respostas atrasadas; uma resposta antiga não pode reduzir `progress`, apagar assets ou regredir status visual.
 - Se `final_video_url` existir, o status efetivo é `ready`.
 - Se `composition_status` ou `composer_status` for `queued`/`processing`, a composição não deve ser iniciada novamente.
+
+## 22. Composição externa síncrona ou assíncrona
+
+O plugin deve aceitar dois formatos de resposta do renderer em `POST /render`.
+
+Resposta síncrona pronta:
+
+```json
+{
+  "success": true,
+  "status": "ready",
+  "final_video_url": "https://video-render.seudominio.com/renders/arquivo.mp4",
+  "duration": 72,
+  "render_time_seconds": 38.5,
+  "transition_used": "cut",
+  "fallback_used": "",
+  "message": "Vídeo final composto com sucesso."
+}
+```
+
+Resposta assíncrona:
+
+```json
+{
+  "success": true,
+  "render_job_id": "render_xxx",
+  "status": "queued",
+  "message": "Composição recebida e iniciada."
+}
+```
+
+Consulta assíncrona:
+
+```http
+GET /render/render_xxx
+Authorization: Bearer RENDER_API_KEY
+```
+
+Resposta durante processamento:
+
+```json
+{
+  "success": true,
+  "render_job_id": "render_xxx",
+  "status": "processing",
+  "progress": 78,
+  "message": "Compondo vídeo final em modo rápido..."
+}
+```
+
+Resposta pronta:
+
+```json
+{
+  "success": true,
+  "render_job_id": "render_xxx",
+  "status": "ready",
+  "progress": 100,
+  "final_video_url": "https://video-render.seudominio.com/renders/stlai-final-render_xxx.mp4",
+  "duration": 72,
+  "render_time_seconds": 38.5,
+  "transition_used": "cut",
+  "fallback_used": "",
+  "fast_compose": true,
+  "message": "Vídeo final composto com sucesso."
+}
+```
+
+Regras de timeout no WordPress:
+
+- `composition_queued` sem `render_job_id` por mais de 90s vira `composition_error`.
+- `composition_processing` por mais que `videoComposerTimeout` vira `composition_error`.
+- Falha temporária no `GET /render/:id` mantém `composition_processing` até timeout.
+- `composition_error` deve preservar `audio_url`, `clips`, `video_frames` e permitir tentar novamente apenas a composição.
+- Se o endpoint configurado for a base do serviço, por exemplo `https://stlai-video-renderer.onrender.com`, o plugin deve normalizar para `POST /render` e `GET /render/{render_job_id}`.
+- Se o endpoint terminar em `/health`, o plugin deve retornar `COMPOSER_ENDPOINT_INVALID`.
+
+Diagnóstico seguro em respostas AJAX de composição:
+
+```json
+{
+  "diagnostics": {
+    "job_id": "stlai_video_xxx",
+    "status": "composition_queued",
+    "audio_url_exists": true,
+    "clips_ready_count": 4,
+    "missing_clips": [],
+    "composition_status": "queued",
+    "render_job_id": "render_xxx",
+    "final_video_url_exists": false,
+    "composer_mode": "external_service",
+    "composer_endpoint_configured": true,
+    "composer_endpoint_host": "stlai-video-renderer.onrender.com",
+    "composer_endpoint_path": "/render",
+    "composer_started_at": "2026-05-21 18:30:00",
+    "composer_elapsed_seconds": 12,
+    "composer_poll_count": 3,
+    "last_composer_error_code": "",
+    "last_composer_error_message": "",
+    "can_start_composition": false,
+    "composition_start_blocker": "poll_render_job"
+  },
+  "composition_status": "queued",
+  "render_job_id": "render_xxx",
+  "final_video_url": null,
+  "composer_mode": "external_service",
+  "composer_endpoint_configured": true,
+  "composer_endpoint_host": "stlai-video-renderer.onrender.com",
+  "composer_endpoint_path": "/render",
+  "composer_started_at": "2026-05-21 18:30:00",
+  "composer_updated_at": "2026-05-21 18:30:12",
+  "composer_elapsed_seconds": 12,
+  "composer_poll_count": 3,
+  "clips_ready_count": 4,
+  "has_audio": true,
+  "can_start_composition": false,
+  "composition_start_blocker": "poll_render_job",
+  "last_composer_error_code": "",
+  "last_composer_error_message": ""
+}
+```
+
+Valores de `composition_start_blocker`:
+
+- `missing_audio`
+- `missing_clips`
+- `composer_endpoint`
+- `poll_render_job`
+- `composition_error`
+- `already_ready`
+
+Estados de `clip_jobs.status`:
+
+- `pending`
+- `queued`
+- `generating`
+- `retrying`
+- `ready`
+- `error`
+- `error_final`
+
+`error_final` significa que as 3 tentativas automáticas foram esgotadas. O frontend deve mostrar "Erro após tentativas" e só reiniciar esse clipe depois de "Tentar novamente".
+
+Logs seguros:
+
+- WordPress registra `job_id`, `clips_count`, presença de áudio, endpoint configurado, modo, HTTP status, `render_job_id`, status e presença de `final_video_url`.
+- Renderer registra `POST /render`, `render_job_id`, `clips_count`, presença de áudio, duração detectada, início/fim do FFmpeg, `render_time_seconds`, `final_video_url` e erro resumido.
+- API key, token, Authorization e payload completo sensível nunca devem ser logados.

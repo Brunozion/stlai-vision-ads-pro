@@ -651,6 +651,7 @@ async function processRenderJob(renderJobId, payload) {
       progress: 78,
       message: FAST_COMPOSE ? "Compondo vídeo final em modo rápido..." : "Compondo vídeo final..."
     });
+    logJob(renderJobId, "ffmpeg_command_started", `mode=${FAST_COMPOSE ? "fast_concat" : (payload.enableFade ? "xfade" : "concat")}; target=${settings.width}x${settings.height}; audio_duration=${formatSeconds(audioDuration)}s`);
 
     if (FAST_COMPOSE) {
       try {
@@ -716,6 +717,7 @@ async function processRenderJob(renderJobId, payload) {
     }
 
     await assertOutput(outputPath);
+    logJob(renderJobId, "ffmpeg_completed", `output=${path.basename(outputPath)}`);
     await removeDirSafe(workDir);
 
     const renderTimeSeconds = Number(((Date.now() - renderStartedAt) / 1000).toFixed(3));
@@ -779,6 +781,11 @@ app.post("/render", requireAuth, async (req, res) => {
     const payload = validateRenderBody(req.body);
     const renderJobId = `render_${crypto.randomUUID()}`;
     const settings = targetSettings(payload.format);
+    logJob(
+      "renderer",
+      "post_render_received",
+      `render_job_id=${renderJobId}; source_job_id=${payload.sourceJobId}; clips_count=${payload.clips.length}; audio_url_received=${Boolean(payload.audioUrl)}; format=${payload.format}; fast=${FAST_COMPOSE}; quality=${RENDER_OUTPUT_QUALITY}; xfade=${payload.enableFade}`
+    );
 
     await writeJob(renderJobId, {
       success: true,
@@ -793,6 +800,7 @@ app.post("/render", requireAuth, async (req, res) => {
       target_width: settings.width,
       target_height: settings.height
     });
+    logJob(renderJobId, "queued", `clips_count=${payload.clips.length}; audio_url_received=${Boolean(payload.audioUrl)}; ${settings.width}x${settings.height}`);
 
     setImmediate(() => {
       processRenderJob(renderJobId, payload).catch((err) => {
@@ -820,6 +828,7 @@ app.post("/render", requireAuth, async (req, res) => {
 app.get("/render/:render_job_id", requireAuth, async (req, res) => {
   const renderJobId = String(req.params.render_job_id || "");
   const job = await readJob(renderJobId);
+  logJob(renderJobId || "renderer", "get_render_status", job ? `status=${job.status || "processing"}; progress=${Number(job.progress || 0)}; final_video_url=${Boolean(job.final_video_url)}` : "not_found");
 
   if (!job) {
     return jsonError(
@@ -833,24 +842,21 @@ app.get("/render/:render_job_id", requireAuth, async (req, res) => {
   }
 
   if (job.status === "error") {
-    return jsonError(
-      res,
-      200,
-      job.code || "COMPOSER_RENDER_ERROR",
-      job.message || "Não foi possível compor o vídeo final.",
-      job.debug || "",
-      {
-        render_job_id: job.render_job_id,
-        status: "error",
-        progress: Number(job.progress || 100),
-        transition_used: job.transition_used || "",
-	        fallback_used: job.fallback_used || "",
-	        background_music_used: Boolean(job.background_music_used),
-	        background_music_volume: Number(job.background_music_volume || 0),
-	        render_time_seconds: Number(job.render_time_seconds || 0),
-        fast_compose: Boolean(job.fast_compose)
-      }
-    );
+    return res.json({
+      success: true,
+      render_job_id: job.render_job_id,
+      status: "error",
+      progress: Number(job.progress || 100),
+      code: job.code || "COMPOSER_RENDER_ERROR",
+      message: job.message || "Não foi possível compor o vídeo final.",
+      debug: safeDebug(job.debug || ""),
+      transition_used: job.transition_used || "",
+      fallback_used: job.fallback_used || null,
+      background_music_used: Boolean(job.background_music_used),
+      background_music_volume: Number(job.background_music_volume || 0),
+      render_time_seconds: Number(job.render_time_seconds || 0),
+      fast_compose: Boolean(job.fast_compose)
+    });
   }
 
   return res.json({

@@ -21,6 +21,10 @@ A implementação inicial será focada em vídeo comercial automático com:
 
 Atualização 2026-05-21: no plugin atual, os 4 clipes são disparados por AJAX semi-paralelo, com 1 segundo de diferença entre cada início. O polling acompanha o job e a composição, mas não deve iniciar clipes automaticamente. A composição externa pode mixar música de fundo opcional via renderer, nunca via ElevenLabs.
 
+Atualização 2026-05-21: a composição final externa não pode ficar indefinidamente em fila. O `POST /render` pode responder `ready` com `final_video_url` ou responder `queued/processing` com `render_job_id`; nesse caso o WordPress consulta `GET /render/:render_job_id`. Timeouts viram `composition_error` recuperável, preservando narração, clipes e imagens no formato para tentar novamente só a composição.
+
+Atualização 2026-05-21: se um job legado ficar em `composition_queued` sem `render_job_id`, mas tiver áudio e 4 clipes prontos, o polling deve iniciar `POST /render` automaticamente. A resposta AJAX deve expor diagnóstico seguro de composição para depuração no DevTools.
+
 UGC com Seedance 2.0 / BytePlus ModelArk e MuAPI fica reservado para roadmap futuro.
 
 ## Escopo do MVP

@@ -851,6 +851,31 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - Diagnóstico forte de composição e retry terminal de clipe
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-composer-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- Toda resposta AJAX de vídeo passa a incluir um bloco `diagnostics` seguro com motivo de bloqueio da composição.
+- O job service concentra a decisão em `maybe_start_or_poll_composition`: com áudio + 4 clipes + sem vídeo final, inicia `POST /render` ou consulta `GET /render/:id`.
+- `composition_queued` com áudio + 4 clipes e sem `render_job_id` é recuperado no próximo polling com novo `POST /render`.
+- Timeout de composição vira `composition_status=timeout` e erro recuperável, sem polling infinito.
+- Clipe que falha após 3 tentativas vira `error_final`; ele não volta para retry/generating até o usuário clicar em "Tentar novamente".
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Estado monotônico dos clipes de vídeo
 
 Arquivos alterados:
@@ -872,6 +897,37 @@ O que foi feito:
 - O status geral passa a ser derivado do estado real para não voltar para narração/clipe antigo quando já há clipes prontos.
 - O frontend passou a aplicar merge monotônico em `applyVideoState`, preservando clipes, vídeo final, áudio, frames e progresso contra respostas AJAX atrasadas.
 - A composição final ganhou proteção para não iniciar novamente quando `render_job_id`, `status`, `composition_status` ou `composer_status` já indicam composição em andamento.
+
+Status:
+
+- Correção concluida.
+
+## 2026-05-21 - Destravamento da composição final
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-composer-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-video-renderer/server.js
+- stlai-video-renderer/README.md
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O plugin passou a aceitar resposta síncrona `ready` e resposta assíncrona `queued/processing` do renderer.
+- O polling de composição mantém erro temporário de status até timeout, sem apagar `render_job_id`, áudio ou clipes.
+- `composition_queued` sem `render_job_id` por mais de 90s vira `composition_error` recuperável.
+- `composition_processing` acima de `videoComposerTimeout` vira `composition_error` recuperável.
+- Jobs presos em `composition_queued` sem `render_job_id`, mas com áudio e 4 clipes, são recuperados automaticamente chamando `POST /render` no próximo polling.
+- A resposta AJAX de composição agora inclui diagnóstico seguro: host do endpoint, `render_job_id`, elapsed, poll count, áudio/clipes prontos e último erro do composer.
+- O endpoint configurado como base do renderer é normalizado para `/render`; `/health` retorna `COMPOSER_ENDPOINT_INVALID`.
+- "Tentar novamente" limpa apenas o estado de composição e reutiliza narração, clipes e imagens no formato.
+- O frontend não trata mais `clips_ready`/`ready_for_composition` como terminal; ele continua polling até `ready`, `composition_pending`, `composition_error` ou erro terminal de clipe.
+- WordPress e renderer ganharam logs seguros do ciclo de composição.
 
 Status:
 

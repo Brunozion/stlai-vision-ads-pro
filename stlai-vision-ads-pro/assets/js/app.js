@@ -59,6 +59,13 @@ const S = {
     errorCode: "",
     compositionStatus: "pending",
     composerStatus: "",
+    composerEndpointConfigured: false,
+    composerEndpointHost: "",
+    composerEndpointPath: "",
+    composerElapsedSeconds: 0,
+    composerPollCount: 0,
+    compositionStartBlocker: "",
+    diagnostics: {},
     testClipUrl: "",
     testClipOperationId: "",
     testClipStatus: "idle",
@@ -1233,7 +1240,7 @@ function normalizeClipJobs(jobs, clips=S.video.clips){
 }
 
 function clipStatusRank(status){
-  const rank={pending:1,queued:2,generating:3,retrying:4,error:5,ready:6};
+  const rank={pending:1,queued:2,generating:3,retrying:4,error:5,error_final:6,ready:7};
   return rank[String(status || "pending")] || 1;
 }
 
@@ -1357,6 +1364,7 @@ function deriveMergedVideoStatus(previous, incoming, merged){
   const composerStatus=String(merged.composerStatus || "");
 
   if(merged.finalVideoUrl || incomingStatus==="ready" || previousStatus==="ready") return "ready";
+  if(compositionStatus==="error" || compositionStatus==="timeout" || composerStatus==="error" || composerStatus==="timeout") return "composition_error";
   if(incomingStatus==="composition_error" || previousStatus==="composition_error") return "composition_error";
   if(incomingStatus==="clip_generation_error" || incomingStatus==="clips_partial_error") return incomingStatus;
   if(previousStatus==="clip_generation_error" || previousStatus==="clips_partial_error"){
@@ -1429,6 +1437,14 @@ function applyVideoState(payload={}, options={}){
   S.video.compositionStatus=merged.compositionStatus;
   S.video.composerStatus=merged.composerStatus;
   S.video.renderJobId=incoming.render_job_id || S.video.renderJobId || "";
+  S.video.composerEndpointConfigured=Boolean(incoming.composer_endpoint_configured ?? S.video.composerEndpointConfigured);
+  S.video.composerEndpointHost=(!stale && incoming.composer_endpoint_host) || S.video.composerEndpointHost || "";
+  S.video.composerEndpointPath=(!stale && incoming.composer_endpoint_path) || S.video.composerEndpointPath || "";
+  S.video.composerElapsedSeconds=Number((!stale && incoming.composer_elapsed_seconds) || S.video.composerElapsedSeconds || 0);
+  S.video.composerPollCount=Number((!stale && incoming.composer_poll_count) || S.video.composerPollCount || 0);
+  S.video.compositionStartBlocker=(!stale && incoming.composition_start_blocker) || S.video.compositionStartBlocker || "";
+  S.video.diagnostics=(!stale && incoming.diagnostics && typeof incoming.diagnostics==="object") ? incoming.diagnostics : (S.video.diagnostics || {});
+  if(!S.video.errorCode && incoming.last_composer_error_code) S.video.errorCode=incoming.last_composer_error_code;
   S.video.jobVersion=Math.max(previousVersion, incomingVersion);
   S.video.updatedAt=(!stale && incoming.updated_at) ? incoming.updated_at : (S.video.updatedAt || incoming.updated_at || "");
   applyVideoClipJobData({...incoming, clips:mergedClips, partial_clips:mergedClips, clip_jobs:mergedClipJobs});
@@ -1441,6 +1457,27 @@ function applyVideoState(payload={}, options={}){
       job_version:S.video.jobVersion
     });
   }
+}
+
+function warnVideoCompositionDiagnostic(context="poll"){
+  const status=String(S.video.status || "");
+  const compositionStatus=String(S.video.compositionStatus || "");
+  const shouldWarn=status==="composition_error"
+    || compositionStatus==="error"
+    || compositionStatus==="timeout"
+    || (status==="composition_queued" && Number(S.video.composerElapsedSeconds || 0) >= 30 && !S.video.renderJobId);
+  if(!shouldWarn) return;
+  console.warn("STLAI video composition diagnostic", {
+    context,
+    composition_status:compositionStatus,
+    render_job_id_exists:Boolean(S.video.renderJobId),
+    clips_ready_count:readyVideoClipCount(),
+    has_audio:Boolean(S.video.audioUrl),
+    last_composer_error_code:S.video.diagnostics?.last_composer_error_code || S.video.errorCode || "",
+    last_composer_error_message:S.video.diagnostics?.last_composer_error_message || S.video.message || "",
+    composer_elapsed_seconds:Number(S.video.composerElapsedSeconds || 0),
+    composition_start_blocker:S.video.compositionStartBlocker || S.video.diagnostics?.composition_start_blocker || ""
+  });
 }
 
 function readyVideoClipCount(){
@@ -1459,7 +1496,7 @@ function currentClipJob(){
   }
 	  return jobs.find(job=>job.status==="generating" || job.status==="retrying")
 	    || jobs.find(job=>job.status==="queued" || job.status==="pending")
-    || jobs.find(job=>job.status==="error")
+    || jobs.find(job=>job.status==="error_final" || job.status==="error")
     || null;
 }
 
@@ -1739,7 +1776,7 @@ async function mockGenerateVideo(){
 	    toast(S.video.finalVideoUrl ? "Vídeo final preparado com sucesso." : (S.video.renderJobId ? "Composição final iniciada." : (S.video.clips.length===4 ? "4 clipes gerados com sucesso." : (S.video.audioUrl ? "Narração gerada com sucesso." : "Job de vídeo criado com sucesso."))),"success");
 	    const activeClipJobs=hasActiveClipJobs();
 	    const terminalClipError=S.video.status==="clip_generation_error" && !activeClipJobs;
-	    if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || terminalClipError){
+	    if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || terminalClipError){
 	      S.video.mockReady=true;
 	      if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || terminalClipError) stopVideoProgressLoop();
       renderSummaryVideo();
@@ -2148,7 +2185,7 @@ function renderVideoClipsGridMarkup(clips){
       const isActive=index===activeIndex;
       const retrying=clipJob.status==="retrying" || (String(videoStatusForDisplay()).startsWith("retrying_clip_") && isActive);
       const generating=clipJob.status==="generating" || isActive;
-      const failed=clipJob.status==="error" || (recoverableVideoErrorStatus(S.video.status) && index===Number(S.video.failedClipIndex || 0));
+      const failed=clipJob.status==="error_final" || clipJob.status==="error" || (recoverableVideoErrorStatus(S.video.status) && index===Number(S.video.failedClipIndex || 0));
       const label=failed ? "Erro após tentativas" : (retrying ? "Tentando novamente" : (generating ? `Gerando clipe ${index}` : "Pendente"));
       cards.push(`<div class="video-clip-card video-clip-card-placeholder ${isActive ? "active" : ""} ${failed ? "error" : ""}">
         <div class="video-clip-title">Clipe ${index}</div>
@@ -2612,7 +2649,7 @@ function hasActiveClipJobs(){
 function scheduleVideoClipStarts(){
   if(!S.video.jobId || !S.video.audioUrl || S.video.finalVideoUrl) return;
   const jobs=normalizeClipJobs(S.video.clipJobs, S.video.clips)
-    .filter(job=>job.status!=="ready" && job.status!=="generating" && job.status!=="retrying");
+    .filter(job=>job.status!=="ready" && job.status!=="generating" && job.status!=="retrying" && job.status!=="error_final");
   if(!jobs.length) return;
 
   clearVideoClipLaunchers();
@@ -2648,9 +2685,10 @@ async function startVideoClip(index){
   try{
     const data=await videoAjaxRequest("stlai_check_video_status", {job_id:S.video.jobId});
     applyVideoState(data, {debug:true});
+    warnVideoCompositionDiagnostic("poll");
     const activeClipJobs=hasActiveClipJobs();
     const terminalClipError=S.video.status==="clip_generation_error" && !activeClipJobs;
-    if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
+    if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
       S.video.mockReady=true;
       if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || terminalClipError) stopVideoProgressLoop();
       renderVideoStatus();
@@ -2672,6 +2710,7 @@ async function startVideoClip(index){
     const data=err.data || {};
     console.warn("Video generation error", data || err);
     applyVideoState({...data, status:data.status || (data.failed_clip_index || data.failed_clip ? "clip_generation_error" : "error"), message:data.message || err.message}, {debug:true});
+    warnVideoCompositionDiagnostic("poll_error");
     S.video.message=isComposerPendingCode(S.video.errorCode) || S.video.status==="composition_pending"
       ? "Narração e clipes preparados. A composição final está pendente."
       : (S.video.status==="clips_partial_error" || S.video.status==="clip_generation_error"

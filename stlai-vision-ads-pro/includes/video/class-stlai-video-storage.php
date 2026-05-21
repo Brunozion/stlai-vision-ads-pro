@@ -111,6 +111,8 @@ class STLAI_Video_Storage {
 
 	    private static function merge_job_data( array $existing, array $incoming ) {
 	        $data = $incoming;
+	        $reset_composition = ! empty( $incoming['reset_composition'] );
+	        unset( $data['reset_composition'] );
 
 	        $existing_clips = self::normalize_clips( $existing['clips'] ?? array() );
 	        $incoming_clips = self::normalize_clips( $incoming['clips'] ?? array() );
@@ -131,7 +133,7 @@ class STLAI_Video_Storage {
 	        $job['partial_clips'] = $merged_clips;
 	        $job['clip_jobs'] = $merged_jobs;
 
-	        if ( empty( $incoming['final_video_url'] ?? '' ) && ! empty( $existing['final_video_url'] ?? '' ) ) {
+	        if ( ! $reset_composition && empty( $incoming['final_video_url'] ?? '' ) && ! empty( $existing['final_video_url'] ?? '' ) ) {
 	            $job['final_video_url'] = $existing['final_video_url'];
 	        }
 
@@ -139,11 +141,11 @@ class STLAI_Video_Storage {
 	            $job['audio_url'] = $existing['audio_url'];
 	        }
 
-	        if ( empty( $incoming['render_job_id'] ?? '' ) && ! empty( $existing['render_job_id'] ?? '' ) ) {
+	        if ( ! $reset_composition && empty( $incoming['render_job_id'] ?? '' ) && ! empty( $existing['render_job_id'] ?? '' ) ) {
 	            $job['render_job_id'] = $existing['render_job_id'];
 	        }
 
-	        if ( empty( $incoming['composition_started_at'] ?? '' ) && ! empty( $existing['composition_started_at'] ?? '' ) ) {
+	        if ( ! $reset_composition && empty( $incoming['composition_started_at'] ?? '' ) && ! empty( $existing['composition_started_at'] ?? '' ) ) {
 	            $job['composition_started_at'] = $existing['composition_started_at'];
 	        }
 
@@ -269,7 +271,7 @@ class STLAI_Video_Storage {
 	                $status = sanitize_key( $clip_job['status'] ?? 'pending' );
 	                $by_index[ $index ] = array(
 	                    'index'       => $index,
-	                    'status'      => in_array( $status, array( 'pending', 'queued', 'generating', 'retrying', 'ready', 'error' ), true ) ? $status : 'pending',
+	                    'status'      => in_array( $status, array( 'pending', 'queued', 'generating', 'retrying', 'ready', 'error', 'error_final' ), true ) ? $status : 'pending',
 	                    'attempt'     => max( 0, (int) ( $clip_job['attempt'] ?? 0 ) ),
 	                    'url'         => esc_url_raw( $clip_job['url'] ?? '' ),
 	                    'error'       => sanitize_text_field( $clip_job['error'] ?? '' ),
@@ -321,7 +323,7 @@ class STLAI_Video_Storage {
 	    }
 
 	    private static function stronger_clip_job( array $existing, array $incoming ) {
-	        $rank = array( 'pending' => 1, 'queued' => 2, 'generating' => 3, 'retrying' => 4, 'error' => 5, 'ready' => 6 );
+	        $rank = array( 'pending' => 1, 'queued' => 2, 'generating' => 3, 'retrying' => 4, 'error' => 5, 'error_final' => 6, 'ready' => 7 );
 	        $existing_status = sanitize_key( $existing['status'] ?? 'pending' );
 	        $incoming_status = sanitize_key( $incoming['status'] ?? 'pending' );
 	        if ( ! empty( $existing['url'] ) ) {

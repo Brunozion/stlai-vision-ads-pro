@@ -47,6 +47,13 @@ class STLAI_Video_Composer_Provider {
 
         $timeout = self::timeout( $settings['videoComposerTimeout'] ?? self::DEFAULT_TIMEOUT );
         $status_url = rtrim( $endpoint, '/' ) . '/' . rawurlencode( $render_job_id );
+        self::log(
+            'status_request',
+            array(
+                'render_job_id' => $render_job_id,
+                'endpoint_configured' => ! empty( $endpoint ),
+            )
+        );
         $response = wp_remote_get(
             $status_url,
             array(
@@ -58,11 +65,26 @@ class STLAI_Video_Composer_Provider {
         );
 
         if ( is_wp_error( $response ) ) {
+            self::log(
+                'status_request_error',
+                array(
+                    'render_job_id' => $render_job_id,
+                    'code'          => $response->get_error_code(),
+                    'message'       => $response->get_error_message(),
+                )
+            );
             return self::error( 'COMPOSER_STATUS_ERROR', 'Não foi possível consultar o status da composição.', self::safe_debug( $response->get_error_message() ) );
         }
 
         $status_code = (int) wp_remote_retrieve_response_code( $response );
         $body = (string) wp_remote_retrieve_body( $response );
+        self::log(
+            'status_response',
+            array(
+                'render_job_id' => $render_job_id,
+                'http_status'   => $status_code,
+            )
+        );
         if ( $status_code < 200 || $status_code >= 300 ) {
             return self::error( 'COMPOSER_STATUS_ERROR', 'O serviço de composição retornou erro ao consultar o status.', 'HTTP ' . $status_code . '; ' . self::safe_debug( $body ) );
         }
@@ -82,6 +104,16 @@ class STLAI_Video_Composer_Provider {
 
         $status = sanitize_key( $json['status'] ?? 'processing' );
         $final_video_url = self::normalize_media_url( $json['final_video_url'] ?? '' );
+        self::log(
+            'status_json',
+            array(
+                'render_job_id' => sanitize_text_field( $json['render_job_id'] ?? $render_job_id ),
+                'status'        => $status,
+                'final_video_url_exists' => ! empty( $final_video_url ),
+                'code'          => $json['code'] ?? '',
+                'message'       => $json['message'] ?? '',
+            )
+        );
         if ( 'ready' === $status && empty( $final_video_url ) ) {
             return self::error( 'FINAL_VIDEO_URL_MISSING', 'O serviço de composição não retornou a URL do vídeo final.', 'status ready sem final_video_url.' );
         }
@@ -102,7 +134,8 @@ class STLAI_Video_Composer_Provider {
             'composer_mode'        => $mode,
             'composer_provider'    => 'external_service',
             'composed_at'          => 'ready' === $status ? current_time( 'mysql' ) : '',
-            'debug'                => 'external_status=' . $status . '; progress=' . max( 0, min( 100, (int) ( $json['progress'] ?? 0 ) ) ),
+            'code'                 => ! empty( $json['code'] ) ? self::safe_code( $json['code'] ) : '',
+            'debug'                => self::safe_debug( $json['debug'] ?? ( 'external_status=' . $status . '; progress=' . max( 0, min( 100, (int) ( $json['progress'] ?? 0 ) ) ) ) ),
         );
     }
 
@@ -122,6 +155,19 @@ class STLAI_Video_Composer_Provider {
             return $payload;
         }
 
+        self::log(
+            'start_composition',
+            array(
+                'job_id'              => $job['job_id'] ?? '',
+                'clips_count'         => count( $payload['clips'] ?? array() ),
+                'audio_url_exists'    => ! empty( $payload['audio_url'] ),
+                'endpoint_configured' => ! empty( $settings['videoComposerEndpoint'] ?? '' ),
+                'endpoint_host'       => self::endpoint_host( $endpoint ),
+                'endpoint_path'       => self::endpoint_path( $endpoint ),
+                'composer_mode'       => $mode,
+            )
+        );
+
         $timeout = self::timeout( $settings['videoComposerTimeout'] ?? self::DEFAULT_TIMEOUT );
         $response = wp_remote_post(
             $endpoint,
@@ -136,11 +182,26 @@ class STLAI_Video_Composer_Provider {
         );
 
         if ( is_wp_error( $response ) ) {
+            self::log(
+                'start_request_error',
+                array(
+                    'job_id'  => $job['job_id'] ?? '',
+                    'code'    => $response->get_error_code(),
+                    'message' => $response->get_error_message(),
+                )
+            );
             return self::error( 'COMPOSER_JOB_START_ERROR', 'Não foi possível iniciar a composição externa.', self::safe_debug( $response->get_error_message() ) );
         }
 
         $status_code = (int) wp_remote_retrieve_response_code( $response );
         $body = (string) wp_remote_retrieve_body( $response );
+        self::log(
+            'start_response',
+            array(
+                'job_id'      => $job['job_id'] ?? '',
+                'http_status' => $status_code,
+            )
+        );
 
         if ( $status_code < 200 || $status_code >= 300 ) {
             return self::error( 'COMPOSER_JOB_START_ERROR', 'O serviço externo não aceitou o job de composição.', 'HTTP ' . $status_code . '; ' . self::safe_debug( $body ) );
@@ -152,10 +213,57 @@ class STLAI_Video_Composer_Provider {
         }
 
         if ( empty( $json['success'] ) ) {
+            self::log(
+                'start_json_error',
+                array(
+                    'job_id'  => $job['job_id'] ?? '',
+                    'status'  => $json['status'] ?? '',
+                    'code'    => $json['code'] ?? '',
+                    'message' => $json['message'] ?? '',
+                )
+            );
             return self::error(
                 self::safe_code( $json['code'] ?? 'COMPOSER_JOB_START_ERROR' ),
                 sanitize_text_field( $json['message'] ?? 'Não foi possível iniciar a composição externa.' ),
                 self::safe_debug( $json['debug'] ?? '' )
+            );
+        }
+
+        $status = sanitize_key( $json['status'] ?? 'queued' );
+        $final_video_url = self::normalize_media_url( $json['final_video_url'] ?? '' );
+        self::log(
+            'start_json',
+            array(
+                'job_id'        => $job['job_id'] ?? '',
+                'render_job_id' => $json['render_job_id'] ?? '',
+                'status'        => $status,
+                'has_render_job_id' => ! empty( $json['render_job_id'] ?? '' ),
+                'final_video_url_exists' => ! empty( $final_video_url ),
+                'code'          => $json['code'] ?? '',
+            )
+        );
+
+        if ( 'ready' === $status ) {
+            if ( empty( $final_video_url ) ) {
+                return self::error( 'FINAL_VIDEO_URL_MISSING', 'O serviço de composição não retornou a URL do vídeo final.', 'resposta inicial ready sem final_video_url.' );
+            }
+
+            return array(
+                'render_job_id'        => sanitize_text_field( $json['render_job_id'] ?? '' ),
+                'status'               => 'ready',
+                'progress'             => 100,
+                'final_video_url'      => $final_video_url,
+                'final_video_duration' => max( 0, (float) ( $json['duration'] ?? 0 ) ),
+                'transition_used'       => sanitize_key( $json['transition_used'] ?? '' ),
+                'fallback_used'         => sanitize_key( $json['fallback_used'] ?? '' ),
+                'render_time_seconds'   => max( 0, (float) ( $json['render_time_seconds'] ?? 0 ) ),
+                'background_music_used' => ! empty( $json['background_music_used'] ),
+                'background_music_volume' => max( 0, min( 1, (float) ( $json['background_music_volume'] ?? 0 ) ) ),
+                'fast_compose'          => ! empty( $json['fast_compose'] ),
+                'composer_mode'         => $mode,
+                'composer_provider'     => 'external_service',
+                'message'               => sanitize_text_field( $json['message'] ?? 'Vídeo final composto com sucesso.' ),
+                'debug'                 => 'external_sync_ready=true',
             );
         }
 
@@ -166,8 +274,8 @@ class STLAI_Video_Composer_Provider {
 
         return array(
             'render_job_id'     => $render_job_id,
-            'status'            => sanitize_key( $json['status'] ?? 'queued' ),
-            'progress'          => 'processing' === sanitize_key( $json['status'] ?? 'queued' ) ? 82 : 80,
+            'status'            => in_array( $status, array( 'queued', 'processing' ), true ) ? $status : 'queued',
+            'progress'          => 'processing' === $status ? 82 : 80,
             'composer_mode'     => $mode,
             'composer_provider' => 'external_service',
             'message'           => sanitize_text_field( $json['message'] ?? 'Composição recebida e iniciada.' ),
@@ -175,10 +283,49 @@ class STLAI_Video_Composer_Provider {
         );
     }
 
+    public static function configured_timeout() {
+        $settings = self::settings();
+        return self::timeout( $settings['videoComposerTimeout'] ?? self::DEFAULT_TIMEOUT );
+    }
+
+    public static function diagnostics() {
+        $settings = self::settings();
+        $endpoint = self::endpoint( $settings );
+        $raw_endpoint = trim( (string) ( $settings['videoComposerEndpoint'] ?? '' ) );
+
+        return array(
+            'composer_mode'                => self::composer_mode( $settings['videoComposerMode'] ?? '' ),
+            'composer_endpoint_configured' => ! empty( $raw_endpoint ) && ! is_wp_error( $endpoint ),
+            'composer_endpoint_host'       => self::endpoint_host( is_wp_error( $endpoint ) ? $raw_endpoint : $endpoint ),
+            'composer_endpoint_path'       => self::endpoint_path( is_wp_error( $endpoint ) ? $raw_endpoint : $endpoint ),
+        );
+    }
+
     private static function endpoint( array $settings ) {
-        $endpoint = esc_url_raw( trim( (string) ( $settings['videoComposerEndpoint'] ?? '' ) ) );
-        if ( empty( $endpoint ) ) {
+        $raw_endpoint = trim( (string) ( $settings['videoComposerEndpoint'] ?? '' ) );
+        if ( empty( $raw_endpoint ) ) {
             return self::error( 'COMPOSER_ENDPOINT_MISSING', 'Configure o endpoint do serviço externo de composição de vídeo.', 'videoComposerEndpoint vazio.' );
+        }
+
+        $endpoint = esc_url_raw( $raw_endpoint );
+        $parts = wp_parse_url( $endpoint );
+        if ( empty( $parts['scheme'] ) || empty( $parts['host'] ) ) {
+            return self::error( 'COMPOSER_ENDPOINT_INVALID', 'Configure um endpoint de composição válido.', 'endpoint sem scheme/host.' );
+        }
+
+        $path = rtrim( (string) ( $parts['path'] ?? '' ), '/' );
+        $port = ! empty( $parts['port'] ) ? ':' . (int) $parts['port'] : '';
+        $base_url = $parts['scheme'] . '://' . $parts['host'] . $port;
+        if ( '/health' === $path || self::ends_with( $path, '/health' ) ) {
+            return self::error( 'COMPOSER_ENDPOINT_INVALID', 'O endpoint de composição deve apontar para /render, não /health.', 'endpoint termina em /health.' );
+        }
+
+        if ( '' === $path || '/' === $path ) {
+            $endpoint = $base_url . '/render';
+        } elseif ( ! self::ends_with( $path, '/render' ) ) {
+            return self::error( 'COMPOSER_ENDPOINT_INVALID', 'O endpoint de composição deve apontar para /render.', 'path=' . $path );
+        } else {
+            $endpoint = $base_url . $path;
         }
 
         return $endpoint;
@@ -320,5 +467,41 @@ class STLAI_Video_Composer_Provider {
         $debug = preg_replace( '/Bearer\s+[A-Za-z0-9._~+\/=-]+/i', 'Bearer [redacted]', $debug );
         $debug = preg_replace( '/(api[_-]?key|token|authorization)\s*[:=]\s*[^;\s]+/i', '$1=[redacted]', $debug );
         return substr( $debug, 0, 600 );
+    }
+
+    private static function endpoint_host( $endpoint ) {
+        $parts = wp_parse_url( (string) $endpoint );
+        return sanitize_text_field( (string) ( $parts['host'] ?? '' ) );
+    }
+
+    private static function endpoint_path( $endpoint ) {
+        $parts = wp_parse_url( (string) $endpoint );
+        return sanitize_text_field( (string) ( $parts['path'] ?? '' ) );
+    }
+
+    private static function ends_with( $haystack, $needle ) {
+        $haystack = (string) $haystack;
+        $needle = (string) $needle;
+        if ( '' === $needle ) {
+            return true;
+        }
+        return substr( $haystack, -strlen( $needle ) ) === $needle;
+    }
+
+    private static function log( $event, array $context = array() ) {
+        $safe = array();
+        foreach ( $context as $key => $value ) {
+            if ( preg_match( '/api|key|token|authorization/i', (string) $key ) ) {
+                continue;
+            }
+            if ( is_bool( $value ) ) {
+                $safe[ $key ] = $value;
+            } elseif ( is_numeric( $value ) ) {
+                $safe[ $key ] = $value;
+            } else {
+                $safe[ $key ] = self::safe_debug( (string) $value );
+            }
+        }
+        error_log( '[STLAI video composer] ' . sanitize_key( $event ) . ' ' . wp_json_encode( $safe ) );
     }
 }

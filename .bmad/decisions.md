@@ -102,6 +102,57 @@ O contrato público passa a expor `job_version`, `updated_at`, `clips_ready_coun
 
 Decidido
 
+## 2026-05-21 - Composição final não pode ficar em fila indefinidamente
+
+### Decisao
+
+Depois que os 4 clipes e a narração existem, a composição externa deve iniciar, salvar `render_job_id` quando assíncrona e ser acompanhada por `GET /render/:render_job_id` até `ready` ou `error`.
+
+O plugin deve aceitar dois contratos do renderer:
+
+- síncrono: `success=true`, `status=ready`, `final_video_url`;
+- assíncrono: `success=true`, `status=queued|processing`, `render_job_id`.
+
+`composition_queued` sem `render_job_id` por mais de 90 segundos vira `composition_error` recuperável. `composition_processing` acima de `videoComposerTimeout` também vira `composition_error`. Erros temporários ao consultar status não apagam `render_job_id`, clipes ou áudio antes do timeout.
+
+Se um job antigo estiver preso em `composition_queued` sem `render_job_id`, mas ainda tiver `audio_url` e 4 clipes prontos, o próximo polling deve recuperar automaticamente o fluxo chamando `POST /render`, sem exigir clique e sem regenerar áudio/clipes.
+
+O endpoint do renderer pode ser configurado como base do serviço ou como `/render`; o plugin normaliza ambos para o contrato correto. Configurar `/health` é erro claro `COMPOSER_ENDPOINT_INVALID`.
+
+### Motivo
+
+No teste real, os clipes ficavam prontos, mas o usuário permanecia por muitos minutos em "Vídeo na fila de composição". Esse estado precisa ter saída clara: pronto, processando, erro recuperável ou timeout.
+
+### Impacto
+
+O botão "Tentar novamente" deve retomar apenas a composição quando áudio e 4 clipes já existem. Logs seguros e campos de diagnóstico AJAX passam a registrar início, aceite, status, host do endpoint, polling, timeout e resultado da composição sem vazar API key.
+
+### Status
+
+Decidido
+
+## 2026-05-21 - Diagnóstico obrigatório e retry terminal de clipes
+
+### Decisao
+
+Toda resposta AJAX de vídeo deve trazer `diagnostics` seguro com `job_id`, status, presença de áudio, quantidade de clipes prontos, clipes faltantes, status de composição, `render_job_id`, existência de vídeo final, modo/host/path do composer, tempo decorrido, contador de polling, último erro e `composition_start_blocker`.
+
+A decisão de composição fica centralizada em `maybe_start_or_poll_composition`: se existe `final_video_url`, o job é `ready`; se falta áudio ou clipe, não compõe e informa blocker; se existem áudio + 4 clipes e não existe `render_job_id`, chama `POST /render`; se existe `render_job_id`, consulta `GET /render/:id`.
+
+Retries automáticos de clipe têm fim explícito. Após 3 tentativas, o clipe fica `error_final` e não volta para `retrying`, `generating` ou `pending` até ação do usuário. "Tentar novamente" reseta apenas clipes `error_final`/faltantes ou, se os 4 clipes já existem, tenta apenas a composição.
+
+### Motivo
+
+O teste real mostrou dois sintomas perigosos: loop visual de retry em clipe e polling infinito em `composition_queued`. Ambos precisam de estados terminais claros e diagnóstico direto no DevTools.
+
+### Impacto
+
+O frontend consegue exibir "Erro após tentativas" sem motion infinito, e o DevTools mostra exatamente por que a composição não iniciou: falta áudio, faltam clipes, endpoint ausente, já há `render_job_id` para polling ou erro/timeout de composição.
+
+### Status
+
+Decidido
+
 ## 2026-05-21 - Clipes semi-paralelos, URLs limpas, narração sem tags e música opcional
 
 ### Decisao
