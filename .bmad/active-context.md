@@ -851,6 +851,30 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - Reconciliação frontend/backend de clipes prontos
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O polling envia `client_ready_clips` com os clipes que o frontend já preservou localmente.
+- O backend só aceita URLs internas do diretório de uploads do WordPress e índices 1..4.
+- Clipes reconciliados são persistidos por índice em `clips`, `partial_clips` e `clip_jobs` como `ready`.
+- O job recalcula `clips_ready_count` e `missing_clips` após reconciliar.
+- A resposta AJAX expõe diagnóstico seguro de reconciliação.
+- Se a reconciliação completar 4 clipes e houver áudio, a composição pode iniciar no mesmo polling.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Diagnóstico forte de composição e retry terminal de clipe
 
 Arquivos alterados:

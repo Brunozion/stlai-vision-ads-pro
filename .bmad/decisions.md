@@ -197,6 +197,28 @@ O pipeline volta a andar sozinho: polling gera clipe 2, depois 3, depois 4, salv
 
 Decidido
 
+## 2026-05-21 - Reconciliação de clipes prontos entre frontend e backend
+
+### Decisao
+
+O backend continua sendo a fonte da verdade para iniciar composição, mas o polling pode receber `client_ready_clips` do frontend para recuperar clipes que já apareceram na UI e foram perdidos por race condition no storage.
+
+Cada clipe recebido do cliente só é aceito se tiver `index` entre 1 e 4 e URL pertencente ao diretório de uploads do próprio WordPress, com extensão de vídeo esperada. URLs externas arbitrárias são descartadas.
+
+Ao aceitar um clipe, o backend salva imediatamente por `index` em `clips`, `partial_clips` e `clip_jobs[index]` como `ready`, recalcula `clips_ready_count` e `missing_clips`, incrementa `job_version` e, se os 4 clipes + áudio existirem, inicia a composição.
+
+### Motivo
+
+O diagnóstico real mostrou divergência: a UI preservava 4 players prontos, mas o transient do WordPress retornava apenas um clipe e bloqueava a composição com `missing_clips`. A reconciliação evita que respostas AJAX parciais ou fora de ordem deixem o backend permanentemente atrasado.
+
+### Impacto
+
+As respostas AJAX passam a expor diagnóstico de reconciliação: `backend_clips_ready_count`, `client_ready_clips_received`, `client_ready_clips_accepted`, `reconciled_clips_ready_count`, `reconciled_missing_clips` e `reconciliation_used`.
+
+### Status
+
+Decidido
+
 ## 2026-05-21 - Clipes semi-paralelos, URLs limpas, narração sem tags e música opcional
 
 ### Decisao

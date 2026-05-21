@@ -183,12 +183,13 @@ class STLAI_Video_Job_Service {
         );
     }
 
-    public static function get_status( $job_id ) {
+    public static function get_status( $job_id, array $client_ready_clips = array(), $client_ready_clips_received = null ) {
         $job = STLAI_Video_Storage::get_job( $job_id );
         if ( ! $job ) {
             return new WP_Error( 'stlai_video_job_not_found', 'Job de video nao encontrado.' );
         }
 
+        $job = self::reconcile_client_ready_clips( $job, $client_ready_clips, $client_ready_clips_received );
         $job = self::maybe_start_or_poll_composition( $job );
         if ( is_wp_error( $job ) ) {
             return $job;
@@ -221,6 +222,102 @@ class STLAI_Video_Job_Service {
         }
 
         return self::maybe_process_clip_pipeline( $job );
+    }
+
+    private static function reconcile_client_ready_clips( array $job, array $client_ready_clips, $client_ready_clips_received = null ) {
+        $received = null === $client_ready_clips_received ? count( $client_ready_clips ) : max( 0, (int) $client_ready_clips_received );
+        $backend_ready_count = self::count_ready_clips(
+            self::merge_clip_lists(
+                self::normalize_clip_list( $job['clips'] ?? array() ),
+                self::normalize_clip_list( $job['partial_clips'] ?? array() )
+            )
+        );
+
+        if ( empty( $client_ready_clips ) ) {
+            return $job;
+        }
+
+        $incoming = self::normalize_clip_list( $client_ready_clips );
+        $accepted = count( $incoming );
+        if ( 0 === $accepted ) {
+            $backend_clips = self::merge_clip_lists(
+                self::normalize_clip_list( $job['clips'] ?? array() ),
+                self::normalize_clip_list( $job['partial_clips'] ?? array() )
+            );
+            return STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array(
+                    'backend_clips_ready_count'    => $backend_ready_count,
+                    'client_ready_clips_received'  => $received,
+                    'client_ready_clips_accepted'  => 0,
+                    'reconciled_clips_ready_count' => $backend_ready_count,
+                    'reconciled_missing_clips'     => self::missing_clip_indexes( $backend_clips, $job['clip_jobs'] ?? array() ),
+                    'reconciliation_used'          => false,
+                )
+            ) ?: $job;
+        }
+
+        $latest = STLAI_Video_Storage::get_job( $job['job_id'] ) ?: $job;
+        $clips = self::merge_clip_lists(
+            self::normalize_clip_list( $latest['clips'] ?? array() ),
+            self::normalize_clip_list( $latest['partial_clips'] ?? array() )
+        );
+        $clip_jobs = self::normalize_clip_jobs( $latest['clip_jobs'] ?? array(), $clips, false );
+        $clips = self::merge_clip_lists( $clips, $incoming );
+
+        foreach ( $incoming as $clip ) {
+            $index = (int) ( $clip['index'] ?? 0 );
+            if ( $index < 1 || $index > 4 || empty( $clip['url'] ) ) {
+                continue;
+            }
+
+            $clip_jobs = self::replace_clip_job(
+                $clip_jobs,
+                $index,
+                array(
+                    'status'      => 'ready',
+                    'attempt'     => max( 1, (int) ( self::clip_job_by_index( $clip_jobs, $index )['attempt'] ?? 1 ) ),
+                    'url'         => esc_url_raw( $clip['url'] ),
+                    'error'       => '',
+                    'finished_at' => current_time( 'mysql' ),
+                )
+            );
+        }
+
+        $clip_jobs = self::normalize_clip_jobs( $clip_jobs, $clips, false );
+        $reconciled_ready_count = self::count_ready_clips( $clips );
+        $reconciled_missing = self::missing_clip_indexes( $clips, $clip_jobs );
+
+        $job = STLAI_Video_Storage::update_job(
+            $job['job_id'],
+            array_merge(
+                self::clip_job_state_fields( $clip_jobs ),
+                array(
+                    'status'                         => $reconciled_ready_count >= 4 && ! empty( $latest['audio_url'] ) ? 'clips_ready' : ( $latest['status'] ?? 'generating_clips' ),
+                    'progress'                       => self::clip_jobs_progress( $clip_jobs ),
+                    'progress_hint'                  => self::clip_jobs_progress( $clip_jobs ),
+                    'message'                        => $reconciled_ready_count >= 4 ? '4 clipes prontos. Preparando composição final.' : ( $latest['message'] ?? 'Clipes reconciliados com segurança.' ),
+                    'clips'                          => $clips,
+                    'partial_clips'                  => $clips,
+                    'video_frames'                   => self::video_frames_from_clips( $clips ),
+                    'backend_clips_ready_count'      => $backend_ready_count,
+                    'client_ready_clips_received'    => $received,
+                    'client_ready_clips_accepted'    => $accepted,
+                    'reconciled_clips_ready_count'   => $reconciled_ready_count,
+                    'reconciled_missing_clips'       => $reconciled_missing,
+                    'reconciliation_used'            => $accepted > 0,
+                    'auto_clip_generation_triggered' => false,
+                    'auto_clip_generation_result'    => 'reconciled',
+                    'skipped_reason'                 => '',
+                )
+            )
+        ) ?: $latest;
+
+        if ( $reconciled_ready_count >= 4 && ! empty( $job['audio_url'] ) && empty( $job['final_video_url'] ) ) {
+            return self::maybe_start_or_poll_composition( $job );
+        }
+
+        return $job;
     }
 
     public static function get_result( $job_id ) {
@@ -1801,6 +1898,42 @@ class STLAI_Video_Job_Service {
 
     private static function count_ready_clips( $clips ) {
         return count( self::normalize_clip_list( is_array( $clips ) ? $clips : array() ) );
+    }
+
+    private static function missing_clip_indexes( $clips, $clip_jobs = array() ) {
+        $ready = array();
+        foreach ( self::normalize_clip_list( is_array( $clips ) ? $clips : array() ) as $clip ) {
+            $index = (int) ( $clip['index'] ?? 0 );
+            if ( $index >= 1 && $index <= 4 && ! empty( $clip['url'] ) ) {
+                $ready[ $index ] = true;
+            }
+        }
+
+        foreach ( self::normalize_clip_jobs( is_array( $clip_jobs ) ? $clip_jobs : array(), $clips, false ) as $clip_job ) {
+            $index = (int) ( $clip_job['index'] ?? 0 );
+            if ( $index >= 1 && $index <= 4 && ! empty( $clip_job['url'] ) ) {
+                $ready[ $index ] = true;
+            }
+        }
+
+        $missing = array();
+        for ( $index = 1; $index <= 4; $index++ ) {
+            if ( empty( $ready[ $index ] ) ) {
+                $missing[] = $index;
+            }
+        }
+
+        return $missing;
+    }
+
+    private static function clip_job_by_index( array $clip_jobs, $clip_index ) {
+        foreach ( $clip_jobs as $clip_job ) {
+            if ( (int) ( $clip_job['index'] ?? 0 ) === (int) $clip_index ) {
+                return $clip_job;
+            }
+        }
+
+        return array();
     }
 
     private static function clip_jobs_progress( $clip_jobs ) {

@@ -1318,6 +1318,48 @@ function mergeVideoClipJobs(existingJobs=[], incomingJobs=[], clips=[]){
   return Object.keys(byIndex).sort((a,b)=>Number(a)-Number(b)).map(key=>byIndex[key]);
 }
 
+function clientReadyVideoClips(){
+  const framesByIndex={};
+  (Array.isArray(S.video.videoFrames) ? S.video.videoFrames : []).forEach(frame=>{
+    const index=Number(frame?.index || 0);
+    if(index>=1 && index<=4 && frame?.url) framesByIndex[index]=normalizeVideoFrameUrlData(frame);
+  });
+
+  const clipsByIndex={};
+  mergeVideoClips(S.video.clips, []).forEach(clip=>{
+    const index=Number(clip.index || 0);
+    if(index>=1 && index<=4 && clip.url) clipsByIndex[index]=clip;
+  });
+
+  normalizeClipJobs(S.video.clipJobs, S.video.clips).forEach(job=>{
+    const index=Number(job.index || 0);
+    if(index>=1 && index<=4 && job.url && !clipsByIndex[index]){
+      clipsByIndex[index]={index, url:job.url, label:`Clipe ${index}`, duration:8, muted:true};
+    }
+  });
+
+  return Object.keys(clipsByIndex)
+    .sort((a,b)=>Number(a)-Number(b))
+    .map(key=>{
+      const clip=normalizeVideoClipUrlData(clipsByIndex[key]);
+      const index=Number(clip.index || key);
+      const frame=framesByIndex[index] || {};
+      return {
+        index,
+        url:clip.url,
+        role:clip.role || "",
+        label:clip.label || `Clipe ${index}`,
+        duration:Number(clip.duration || 8),
+        muted:true,
+        prepared_frame_url:clip.prepared_frame_url || frame.url || "",
+        prepared_frame_width:Number(clip.prepared_frame_width || frame.width || 0),
+        prepared_frame_height:Number(clip.prepared_frame_height || frame.height || 0),
+        aspect_ratio:clip.aspect_ratio || frame.aspect_ratio || S.video.format || ""
+      };
+    })
+    .filter(clip=>clip.index>=1 && clip.index<=4 && clip.url);
+}
+
 function applyVideoClipJobData(data={}){
   const incomingClips=mergeVideoClips(Array.isArray(data.clips) ? data.clips : [], Array.isArray(data.partial_clips) ? data.partial_clips : []);
   const mergedClips=mergeVideoClips(S.video.clips, incomingClips);
@@ -2686,7 +2728,8 @@ async function startVideoClip(index){
   try{
     const data=await videoAjaxRequest("stlai_start_video_clip", {
       job_id:S.video.jobId,
-      clip_index:index
+      clip_index:index,
+      client_ready_clips:JSON.stringify(clientReadyVideoClips())
     });
     applyVideoState(data, {debug:true});
     renderVideoStatus();
@@ -2704,7 +2747,10 @@ async function startVideoClip(index){
 	async function pollVideoStatus(){
   if(!S.video.jobId) return;
   try{
-    const data=await videoAjaxRequest("stlai_check_video_status", {job_id:S.video.jobId});
+    const data=await videoAjaxRequest("stlai_check_video_status", {
+      job_id:S.video.jobId,
+      client_ready_clips:JSON.stringify(clientReadyVideoClips())
+    });
     applyVideoState(data, {debug:true});
     warnVideoCompositionDiagnostic("poll");
     const activeClipJobs=hasActiveClipJobs();

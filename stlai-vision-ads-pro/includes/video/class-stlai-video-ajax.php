@@ -4,6 +4,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class STLAI_Video_Ajax {
+    private static $client_ready_clips_received = 0;
+
     public static function init() {
         add_action( 'wp_ajax_stlai_create_video_job', array( __CLASS__, 'create_video_job' ) );
         add_action( 'wp_ajax_nopriv_stlai_create_video_job', array( __CLASS__, 'create_video_job' ) );
@@ -50,7 +52,8 @@ class STLAI_Video_Ajax {
 
     public static function check_video_status() {
         $job_id = sanitize_text_field( wp_unslash( $_POST['job_id'] ?? '' ) );
-        $job = STLAI_Video_Job_Service::get_status( $job_id );
+        $client_ready_clips = self::client_ready_clips_from_request();
+        $job = STLAI_Video_Job_Service::get_status( $job_id, $client_ready_clips, self::$client_ready_clips_received );
 
         if ( is_wp_error( $job ) ) {
             wp_send_json_error( self::public_error_response( $job ) );
@@ -105,6 +108,14 @@ class STLAI_Video_Ajax {
         $next_clip_action = self::next_clip_action( $job, $composition_start, $clip_summary );
         $normalized_ready_count = self::normalized_ready_count( $job );
         $normalized_missing_clips = self::normalized_missing_clips( $job );
+        $backend_ready_count = (int) ( $job['backend_clips_ready_count'] ?? $normalized_ready_count );
+        $client_ready_received = (int) ( $job['client_ready_clips_received'] ?? 0 );
+        $client_ready_accepted = (int) ( $job['client_ready_clips_accepted'] ?? 0 );
+        $reconciled_ready_count = (int) ( $job['reconciled_clips_ready_count'] ?? $normalized_ready_count );
+        $reconciled_missing_clips = ! empty( $job['reconciled_missing_clips'] ) && is_array( $job['reconciled_missing_clips'] )
+            ? array_values( array_map( 'intval', $job['reconciled_missing_clips'] ) )
+            : $normalized_missing_clips;
+        $reconciliation_used = ! empty( $job['reconciliation_used'] );
         $next_clip_index = (int) ( $job['next_clip_index'] ?? self::next_clip_index( $clip_summary ) );
         $next_clip_reason = sanitize_key( $job['next_clip_reason'] ?? ( $next_clip_index ? $next_clip_action : '' ) );
         $auto_clip_generation_triggered = ! empty( $job['auto_clip_generation_triggered'] );
@@ -118,6 +129,12 @@ class STLAI_Video_Ajax {
             'missing_clips'                => $normalized_missing_clips,
             'normalized_clips_ready_count' => $normalized_ready_count,
             'normalized_missing_clips'     => $normalized_missing_clips,
+            'backend_clips_ready_count'     => $backend_ready_count,
+            'client_ready_clips_received'   => $client_ready_received,
+            'client_ready_clips_accepted'   => $client_ready_accepted,
+            'reconciled_clips_ready_count'  => $reconciled_ready_count,
+            'reconciled_missing_clips'      => $reconciled_missing_clips,
+            'reconciliation_used'           => $reconciliation_used,
             'composition_status'           => sanitize_key( $job['composition_status'] ?? 'pending' ),
             'render_job_id'                => ! empty( $job['render_job_id'] ) ? sanitize_text_field( $job['render_job_id'] ) : null,
             'final_video_url_exists'       => ! empty( $job['final_video_url'] ),
@@ -193,6 +210,12 @@ class STLAI_Video_Ajax {
             'skipped_reason' => $skipped_reason,
             'normalized_clips_ready_count' => $normalized_ready_count,
             'normalized_missing_clips' => $normalized_missing_clips,
+            'backend_clips_ready_count' => $backend_ready_count,
+            'client_ready_clips_received' => $client_ready_received,
+            'client_ready_clips_accepted' => $client_ready_accepted,
+            'reconciled_clips_ready_count' => $reconciled_ready_count,
+            'reconciled_missing_clips' => $reconciled_missing_clips,
+            'reconciliation_used' => $reconciliation_used,
             'diagnostics'      => $safe_diagnostics,
             'has_audio'       => ! empty( $job['audio_url'] ),
             'current_clip_index' => (int) ( $job['current_clip_index'] ?? 0 ),
@@ -237,6 +260,82 @@ class STLAI_Video_Ajax {
         }
 
         return $response;
+    }
+
+    private static function client_ready_clips_from_request() {
+        $raw = $_POST['client_ready_clips'] ?? array();
+        if ( is_string( $raw ) ) {
+            $decoded = json_decode( wp_unslash( $raw ), true );
+            $raw = is_array( $decoded ) ? $decoded : array();
+        }
+
+        if ( ! is_array( $raw ) ) {
+            self::$client_ready_clips_received = 0;
+            return array();
+        }
+
+        self::$client_ready_clips_received = count( $raw );
+        $clips = array();
+        foreach ( $raw as $clip ) {
+            if ( ! is_array( $clip ) ) {
+                continue;
+            }
+
+            $index = (int) ( $clip['index'] ?? 0 );
+            $url = self::sanitize_client_upload_url( $clip['url'] ?? '', array( 'mp4', 'webm', 'mov', 'm4v' ) );
+            if ( $index < 1 || $index > 4 || empty( $url ) ) {
+                continue;
+            }
+
+            $prepared_frame_url = self::sanitize_client_upload_url( $clip['prepared_frame_url'] ?? '', array( 'jpg', 'jpeg', 'png', 'webp' ) );
+            $clips[ $index ] = array(
+                'index'                 => $index,
+                'role'                  => sanitize_key( $clip['role'] ?? '' ),
+                'label'                 => sanitize_text_field( $clip['label'] ?? ( 'Clipe ' . $index ) ),
+                'url'                   => $url,
+                'duration'              => (int) ( $clip['duration'] ?? 8 ),
+                'muted'                 => true,
+                'prepared_frame_url'    => $prepared_frame_url,
+                'prepared_frame_width'  => (int) ( $clip['prepared_frame_width'] ?? ( $clip['width'] ?? 0 ) ),
+                'prepared_frame_height' => (int) ( $clip['prepared_frame_height'] ?? ( $clip['height'] ?? 0 ) ),
+                'aspect_ratio'          => sanitize_text_field( $clip['aspect_ratio'] ?? '' ),
+            );
+        }
+
+        ksort( $clips );
+        return array_values( $clips );
+    }
+
+    private static function sanitize_client_upload_url( $url, array $allowed_extensions ) {
+        if ( ! is_scalar( $url ) ) {
+            return '';
+        }
+
+        $url = esc_url_raw( str_replace( '\\/', '/', trim( (string) wp_unslash( $url ) ) ) );
+        if ( empty( $url ) ) {
+            return '';
+        }
+
+        $uploads = wp_upload_dir();
+        $base_url = isset( $uploads['baseurl'] ) ? esc_url_raw( $uploads['baseurl'] ) : '';
+        $url_parts = wp_parse_url( $url );
+        $base_parts = wp_parse_url( $base_url );
+        if ( empty( $url_parts['host'] ) || empty( $base_parts['host'] ) || strtolower( $url_parts['host'] ) !== strtolower( $base_parts['host'] ) ) {
+            return '';
+        }
+
+        $path = $url_parts['path'] ?? '';
+        $base_path = rtrim( $base_parts['path'] ?? '', '/' );
+        if ( empty( $path ) || empty( $base_path ) || 0 !== strpos( $path, $base_path . '/' ) ) {
+            return '';
+        }
+
+        $extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+        if ( ! in_array( $extension, $allowed_extensions, true ) ) {
+            return '';
+        }
+
+        return $url;
     }
 
     private static function public_video_frames_response( $frames ) {

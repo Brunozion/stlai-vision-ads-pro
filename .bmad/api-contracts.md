@@ -138,9 +138,25 @@ Entrada esperada:
 ```json
 {
   "action": "stlai_check_video_status",
-  "job_id": "stlai_video_..."
+  "job_id": "stlai_video_...",
+  "client_ready_clips": [
+    {
+      "index": 1,
+      "url": "https://.../wp-content/uploads/stlai-vision-video/clip-1.mp4",
+      "role": "apresentacao_geral",
+      "label": "Clipe 1",
+      "duration": 8,
+      "muted": true,
+      "prepared_frame_url": "https://.../wp-content/uploads/stlai-vision-video/frames/frame-1.jpg",
+      "aspect_ratio": "9:16",
+      "prepared_frame_width": 720,
+      "prepared_frame_height": 1280
+    }
+  ]
 }
 ```
+
+`client_ready_clips` é opcional e serve apenas para reconciliação segura quando o frontend já possui clipes prontos que não apareceram em uma resposta posterior do backend. O WordPress só aceita URLs do próprio diretório de uploads e índices 1..4; URLs externas são descartadas.
 
 Resposta de sucesso:
 
@@ -156,7 +172,15 @@ Resposta de sucesso:
     "clips": [],
     "final_video_url": "",
     "thumbnail_url": "",
-    "composition_status": "pending"
+    "composition_status": "pending",
+    "diagnostics": {
+      "backend_clips_ready_count": 1,
+      "client_ready_clips_received": 4,
+      "client_ready_clips_accepted": 3,
+      "reconciled_clips_ready_count": 4,
+      "reconciled_missing_clips": [],
+      "reconciliation_used": true
+    }
   }
 }
 ```
