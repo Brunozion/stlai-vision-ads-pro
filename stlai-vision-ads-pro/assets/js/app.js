@@ -1399,7 +1399,7 @@ function videoStateRank(snapshot={}){
   const status=String(snapshot.status || "");
   const compositionStatus=String(snapshot.compositionStatus || snapshot.composition_status || "");
   const composerStatus=String(snapshot.composerStatus || snapshot.composer_status || "");
-  if(snapshot.finalVideoUrl || snapshot.final_video_url || status==="ready") return 100;
+  if(snapshot.finalVideoUrl || snapshot.final_video_url || status==="ready" || compositionStatus==="complete" || compositionStatus==="ready" || composerStatus==="ready") return 100;
   if(status==="composition_processing" || compositionStatus==="processing" || composerStatus==="processing") return 90;
   if(status==="composition_queued" || status==="composing_final_video" || status==="composition_pending" || compositionStatus==="queued" || composerStatus==="queued") return 80;
   if(clips>=4 || status==="clips_ready" || status==="ready_for_composition") return 70;
@@ -1416,7 +1416,7 @@ function deriveMergedVideoStatus(previous, incoming, merged){
   const compositionStatus=String(merged.compositionStatus || "");
   const composerStatus=String(merged.composerStatus || "");
 
-  if(merged.finalVideoUrl || incomingStatus==="ready" || previousStatus==="ready") return "ready";
+  if(merged.finalVideoUrl || incomingStatus==="ready" || previousStatus==="ready" || compositionStatus==="complete" || compositionStatus==="ready" || composerStatus==="ready") return "ready";
   if(compositionStatus==="error" || compositionStatus==="timeout" || composerStatus==="error" || composerStatus==="timeout") return "composition_error";
   if(incomingStatus==="composition_error" || previousStatus==="composition_error") return "composition_error";
   if(incomingStatus==="clip_generation_error" || incomingStatus==="clips_partial_error") return incomingStatus;
@@ -1512,6 +1512,34 @@ function applyVideoState(payload={}, options={}){
   S.video.jobVersion=Math.max(previousVersion, incomingVersion);
   S.video.updatedAt=(!stale && incoming.updated_at) ? incoming.updated_at : (S.video.updatedAt || incoming.updated_at || "");
   applyVideoClipJobData({...incoming, clips:mergedClips, partial_clips:mergedClips, clip_jobs:mergedClipJobs});
+  const readySignal=Boolean(
+    S.video.finalVideoUrl
+    || incoming.final_video_url_exists
+    || incoming.status==="ready"
+    || incoming.composition_status==="complete"
+    || incoming.composition_status==="ready"
+    || incoming.composer_status==="ready"
+  );
+  if(readySignal){
+    S.video.status="ready";
+    S.video.progress=100;
+    S.video.progressHint=100;
+    S.video.visualProgress=100;
+    S.video.compositionStatus="complete";
+    S.video.composerStatus="ready";
+    S.video.message="Vídeo final pronto.";
+    clearVideoPolling();
+    clearVideoClipLaunchers();
+    stopVideoProgressLoop();
+    if(!S.video.finalVideoUrl){
+      console.warn("STLAI final video ready signal without renderable URL", {
+        status:S.video.status,
+        composition_status:S.video.compositionStatus,
+        composer_status:S.video.composerStatus,
+        final_video_url_exists:Boolean(incoming.final_video_url_exists)
+      });
+    }
+  }
   if(options.debug && S.cfg && S.cfg.debugVideo){
     console.debug("stlai video merge", {
       incoming_clips:incomingClips.length,
@@ -1593,7 +1621,7 @@ function deriveVideoStatusFromJob(status){
   const compositionStatus=String(S.video.compositionStatus || "");
   const composerStatus=String(S.video.composerStatus || "");
 
-  if(S.video.finalVideoUrl || base==="ready") return "ready";
+  if(S.video.finalVideoUrl || base==="ready" || compositionStatus==="complete" || compositionStatus==="ready" || composerStatus==="ready") return "ready";
   if(base==="composition_error" || base==="clip_generation_error" || base==="clips_partial_error" || base==="error") return base;
   if(/^retrying_clip_[1-4]$/.test(base) || /^generating_clip_[1-4]$/.test(base)) return base;
   if(base==="composition_processing" || composerStatus==="processing" || compositionStatus==="processing") return "composition_processing";
@@ -2086,6 +2114,8 @@ function videoMotionState(){
     stepStates=[S.video.audioUrl ? "done" : "pending", fourClipsReady ? "done" : "pending", "active", "pending"];
   }else if(status==="clips_partial_error" || status==="clip_generation_error"){
     stepStates=[S.video.audioUrl ? "done" : "pending", "active", "pending", "pending"];
+  }else if(status==="ready"){
+    stepStates=["done","done","done","done"];
   }
 
   return {visible,stage,progress,title,subtitle,mode,stepStates};
@@ -2147,6 +2177,13 @@ function renderSummaryVideoMotion(hasFinal=false){
 function renderVideoActionButton(){
   const btn=document.getElementById("btn-generate-video");
   if(!btn) return;
+  if(S.video.finalVideoUrl || S.video.status==="ready"){
+    btn.disabled=false;
+    btn.textContent="Ver vídeo final";
+    btn.onclick=goVideoResult;
+    return;
+  }
+  btn.onclick=mockGenerateVideo;
   if(isVideoBusyStatus(S.video.status)){
     btn.disabled=true;
     btn.textContent="Gerando...";
@@ -2195,9 +2232,22 @@ function isComposerPendingCode(code){
 function renderFinalVideo(){
   const box=document.getElementById("video-final-box");
   const player=document.getElementById("video-final-player");
-  if(!box || !player) return;
+  if(!box || !player){
+    if(S.video.finalVideoUrl){
+      console.warn("STLAI final video target missing", {
+        final_video_url_exists:true,
+        status:S.video.status,
+        composition_status:S.video.compositionStatus,
+        render_target_found:false
+      });
+    }
+    return;
+  }
 	  if(S.video.finalVideoUrl){
-	    if(player.getAttribute("src")!==S.video.finalVideoUrl) player.setAttribute("src", S.video.finalVideoUrl);
+	    if(player.getAttribute("src")!==S.video.finalVideoUrl){
+	      player.setAttribute("src", S.video.finalVideoUrl);
+	      player.load();
+	    }
 	    player.muted=false;
 	    player.defaultMuted=false;
 	    player.setAttribute("playsinline","");
@@ -2593,7 +2643,12 @@ function renderSummaryVideo(){
   badge.textContent=badgeText;
   if(finalWrap && finalPlayer){
 	    if(hasFinal){
-	      if(finalPlayer.getAttribute("src")!==S.video.finalVideoUrl) finalPlayer.setAttribute("src", S.video.finalVideoUrl);
+	      if(finalPlayer.getAttribute("src")!==S.video.finalVideoUrl){
+	        finalPlayer.setAttribute("src", S.video.finalVideoUrl);
+	        finalPlayer.load();
+	      }
+	      finalPlayer.muted=false;
+	      finalPlayer.defaultMuted=false;
 	      finalPlayer.setAttribute("playsinline","");
 	      finalPlayer.setAttribute("webkit-playsinline","");
 	      finalWrap.classList.toggle("is-format-vertical", isVideoFormatVertical());
@@ -2603,6 +2658,13 @@ function renderSummaryVideo(){
       finalPlayer.removeAttribute("src");
       finalWrap.style.display="none";
     }
+  }else if(hasFinal){
+    console.warn("STLAI summary final video target missing", {
+      final_video_url_exists:true,
+      status:S.video.status,
+      composition_status:S.video.compositionStatus,
+      render_target_found:false
+    });
   }
   renderSummaryVideoMotion(hasFinal);
   if(audioWrap && audioPlayer){
@@ -2771,6 +2833,7 @@ async function startVideoClip(index){
       S.video.mockReady=true;
       if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || terminalClipError) stopVideoProgressLoop();
       renderVideoStatus();
+      if(S.step>=6) renderSummaryVideo();
 	      if(S.video.status==="composition_error" || terminalClipError){
         toast(S.video.status==="composition_error" ? "Não foi possível concluir o vídeo final." : "Não foi possível gerar todos os clipes.","error");
       }else{
@@ -2780,10 +2843,12 @@ async function startVideoClip(index){
     }
     if(S.video.status==="clips_partial_error"){
       renderVideoStatus();
+      if(S.step>=6) renderSummaryVideo();
       toast(S.video.message || partialClipFailureMessage(S.video.failedClipIndex, S.video.clips.length),"error");
       return;
     }
     renderVideoStatus();
+    if(S.step>=6) renderSummaryVideo();
     S.video.pollTimer=setTimeout(pollVideoStatus, 1200);
   }catch(err){
     const data=err.data || {};

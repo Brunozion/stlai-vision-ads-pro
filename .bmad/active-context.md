@@ -851,6 +851,27 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - Frontend exibe vídeo final pronto
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O frontend passa a tratar `final_video_url`, `final_video_url_exists`, `status=ready`, `composition_status=complete` e `composer_status=ready` como sinais terminais.
+- `final_video_url` virou campo terminal no merge monotônico: uma resposta posterior não pode voltar a UI para composição.
+- Ao receber a URL final, o polling, os timers de clipe e o motion de progresso são interrompidos.
+- O player do passo 5 e o player do Resultado final carregam a URL com `load()` e áudio ativo.
+- O Resultado final é re-renderizado quando o polling termina em `ready`.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Reconciliação frontend/backend de clipes prontos
 
 Arquivos alterados:

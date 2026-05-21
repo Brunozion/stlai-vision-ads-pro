@@ -1014,3 +1014,23 @@ O renderer passa a tentar concatenação rápida em uma única passagem de FFmpe
 ### Status
 
 Decidido
+
+## 2026-05-21 - URL final é estado terminal no frontend
+
+### Decisao
+
+Quando qualquer resposta AJAX trouxer `final_video_url` válido, `final_video_url_exists=true`, `status=ready`, `composition_status=complete` ou `composer_status=ready`, o frontend deve normalizar o estado do vídeo como `ready`.
+
+`final_video_url` tem prioridade máxima no merge monotônico. Respostas posteriores sem URL ou com status de composição anterior não podem apagar a URL final, reduzir progresso, reativar motion de composição ou reiniciar polling.
+
+### Motivo
+
+O backend já pode concluir a composição e retornar o vídeo final enquanto a UI ainda conserva um estado visual antigo como `composition_processing`. Sem normalização terminal, o usuário vê "Compondo vídeo final" mesmo com o MP4 pronto.
+
+### Impacto
+
+Ao receber a URL final, o frontend para polling/timers, marca progresso em 100%, esconde o motion de processamento e renderiza o player principal no passo 5 e no Resultado final. Clipes, imagens no formato e roteiro continuam preservados.
+
+### Status
+
+Decidido

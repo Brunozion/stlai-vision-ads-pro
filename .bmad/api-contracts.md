@@ -1396,3 +1396,28 @@ Logs seguros:
 - WordPress registra `job_id`, `clips_count`, presença de áudio, endpoint configurado, modo, HTTP status, `render_job_id`, status e presença de `final_video_url`.
 - Renderer registra `POST /render`, `render_job_id`, `clips_count`, presença de áudio, duração detectada, início/fim do FFmpeg, `render_time_seconds`, `final_video_url` e erro resumido.
 - API key, token, Authorization e payload completo sensível nunca devem ser logados.
+
+### Normalização frontend de vídeo pronto
+
+Qualquer resposta AJAX de vídeo deve ser considerada terminal pelo frontend quando contiver um destes sinais:
+
+- `final_video_url` com URL válida.
+- `final_video_url_exists: true`.
+- `status: "ready"`.
+- `composition_status: "complete"` ou `"ready"`.
+- `composer_status: "ready"`.
+
+Quando houver URL final renderizável, o frontend deve normalizar:
+
+```json
+{
+  "status": "ready",
+  "progress": 100,
+  "progress_hint": 100,
+  "composition_status": "complete",
+  "composer_status": "ready",
+  "message": "Vídeo final pronto."
+}
+```
+
+`final_video_url` é terminal e monotônico: não pode ser apagado por resposta posterior atrasada.
