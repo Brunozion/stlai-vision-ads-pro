@@ -2731,7 +2731,7 @@ function maybeScheduleMissingVideoClips(){
   if(readyVideoClipCount()>=4) return;
   if(recoverableVideoErrorStatus(S.video.status)) return;
   if(hasActiveClipJobs()) return;
-  if(S.video.nextClipAction && !["generate_missing_clip","retry_stale_clip"].includes(S.video.nextClipAction)) return;
+  if(S.video.nextClipAction && !["generate_missing_clip","retry_stale_clip","retry_clip"].includes(S.video.nextClipAction)) return;
   scheduleVideoClipStarts();
 }
 

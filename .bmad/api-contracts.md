@@ -189,7 +189,22 @@ Resposta de sucesso:
       "will_retry": true,
       "error_final_reason": "",
       "next_clip_action": "retry_clip",
-      "next_clip_index": 1
+      "next_clip_index": 1,
+      "next_clip_reason": "pending_stale_retry",
+      "stale_threshold_seconds": 75,
+      "active_generating_count": 0,
+      "max_concurrent_clip_generations": 1,
+      "clip_jobs_summary": [
+        {
+          "index": 1,
+          "status": "pending",
+          "attempt": 1,
+          "has_url": false,
+          "started_at": "2026-05-21 10:00:00",
+          "age_seconds": 273,
+          "is_stale": true
+        }
+      ]
     }
   }
 }

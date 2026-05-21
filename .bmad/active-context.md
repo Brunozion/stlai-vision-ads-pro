@@ -898,6 +898,30 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - Pending antigo reprocessado automaticamente
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- `pending`, `retrying` e `generating` sem URL viram stale quando `started_at` passa de 75 segundos.
+- `pending` com "Tentativa anterior ficou sem resposta" é tratado como retryable enquanto `attempt < 3`.
+- O próximo clipe prioriza stale/retryable, depois pending novo.
+- `active_generating_count` conta apenas geração realmente ativa e não stale.
+- O diagnóstico expõe `stale_threshold_seconds`, `active_generating_count`, `max_concurrent_clip_generations` e `is_stale`.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Diagnóstico forte de composição e retry terminal de clipe
 
 Arquivos alterados:

@@ -6,7 +6,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 class STLAI_Video_Storage {
     const TRANSIENT_PREFIX = 'stlai_video_job_';
     const TTL = DAY_IN_SECONDS;
-    const CLIP_STALE_SECONDS = 120;
+    const CLIP_GENERATION_STALE_SECONDS = 75;
+    const CLIP_STALE_SECONDS = 75;
 
     public static function create_job( array $data ) {
         $now = current_time( 'mysql' );
@@ -355,12 +356,12 @@ class STLAI_Video_Storage {
 
 	    private static function recover_stale_clip_job( array $clip_job ) {
 	        $status = sanitize_key( $clip_job['status'] ?? 'pending' );
-	        if ( ! in_array( $status, array( 'generating', 'retrying' ), true ) || ! empty( $clip_job['url'] ) ) {
+	        if ( ! in_array( $status, array( 'pending', 'generating', 'retrying' ), true ) || ! empty( $clip_job['url'] ) ) {
 	            return $clip_job;
 	        }
 
 	        $age = self::clip_job_age_seconds( $clip_job['started_at'] ?? '' );
-	        if ( $age < self::CLIP_STALE_SECONDS ) {
+	        if ( empty( $clip_job['started_at'] ) || $age < self::CLIP_GENERATION_STALE_SECONDS ) {
 	            return $clip_job;
 	        }
 

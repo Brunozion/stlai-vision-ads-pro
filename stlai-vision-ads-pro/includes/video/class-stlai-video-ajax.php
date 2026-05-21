@@ -5,6 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class STLAI_Video_Ajax {
     private static $client_ready_clips_received = 0;
+    const CLIP_GENERATION_STALE_SECONDS = 75;
 
     public static function init() {
         add_action( 'wp_ajax_stlai_create_video_job', array( __CLASS__, 'create_video_job' ) );
@@ -121,6 +122,9 @@ class STLAI_Video_Ajax {
         $auto_clip_generation_triggered = ! empty( $job['auto_clip_generation_triggered'] );
         $auto_clip_generation_result = sanitize_key( $job['auto_clip_generation_result'] ?? '' );
         $skipped_reason = sanitize_key( $job['skipped_reason'] ?? '' );
+        $active_generating_count = (int) ( $job['active_generating_count'] ?? self::active_generating_count( $clip_summary ) );
+        $max_concurrent_clip_generations = (int) ( $job['max_concurrent_clip_generations'] ?? 1 );
+        $stale_threshold_seconds = (int) ( $job['stale_threshold_seconds'] ?? self::CLIP_GENERATION_STALE_SECONDS );
         $retryable = ! empty( $job['retryable'] );
         $will_retry = ! empty( $job['will_retry'] );
         $retry_reason = sanitize_key( $job['retry_reason'] ?? '' );
@@ -161,6 +165,9 @@ class STLAI_Video_Ajax {
             'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
             'auto_clip_generation_result'  => $auto_clip_generation_result,
             'skipped_reason'               => $skipped_reason,
+            'stale_threshold_seconds'      => $stale_threshold_seconds,
+            'active_generating_count'      => $active_generating_count,
+            'max_concurrent_clip_generations' => $max_concurrent_clip_generations,
             'failed_clip_index'            => (int) ( $job['failed_clip_index'] ?? 0 ),
             'failed_clip_role'             => sanitize_key( $job['failed_clip_role'] ?? '' ),
             'current_clip_attempt'         => (int) ( $job['current_clip_attempt'] ?? 0 ),
@@ -221,6 +228,9 @@ class STLAI_Video_Ajax {
             'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
             'auto_clip_generation_result' => $auto_clip_generation_result,
             'skipped_reason' => $skipped_reason,
+            'stale_threshold_seconds' => $stale_threshold_seconds,
+            'active_generating_count' => $active_generating_count,
+            'max_concurrent_clip_generations' => $max_concurrent_clip_generations,
             'max_clip_attempts' => $max_clip_attempts,
             'retryable' => $retryable,
             'retry_reason' => $retry_reason,
@@ -568,7 +578,7 @@ class STLAI_Video_Ajax {
                 'has_url'     => ! empty( $clip_job['url'] ),
                 'started_at'  => $started_at,
                 'age_seconds' => $age,
-                'is_stale'    => in_array( $status, array( 'generating', 'retrying' ), true ) && empty( $clip_job['url'] ) && $age >= 120,
+                'is_stale'    => in_array( $status, array( 'pending', 'generating', 'retrying' ), true ) && empty( $clip_job['url'] ) && ! empty( $started_at ) && $age >= self::CLIP_GENERATION_STALE_SECONDS,
             );
         }
         return $summary;
@@ -583,7 +593,7 @@ class STLAI_Video_Ajax {
         }
         foreach ( $clip_summary as $item ) {
             if ( ! empty( $item['is_stale'] ) ) {
-                return 'retry_stale_clip';
+                return 'retry_clip';
             }
         }
         foreach ( $clip_summary as $item ) {
@@ -601,16 +611,30 @@ class STLAI_Video_Ajax {
 
     private static function next_clip_index( array $clip_summary ) {
         foreach ( $clip_summary as $item ) {
-            if ( empty( $item['has_url'] ) && in_array( sanitize_key( $item['status'] ?? '' ), array( 'pending', 'queued', 'retrying' ), true ) ) {
-                return (int) ( $item['index'] ?? 0 );
-            }
-        }
-        foreach ( $clip_summary as $item ) {
             if ( ! empty( $item['is_stale'] ) ) {
                 return (int) ( $item['index'] ?? 0 );
             }
         }
+        foreach ( $clip_summary as $item ) {
+            if ( empty( $item['has_url'] ) && in_array( sanitize_key( $item['status'] ?? '' ), array( 'pending', 'queued', 'retrying' ), true ) ) {
+                return (int) ( $item['index'] ?? 0 );
+            }
+        }
         return 0;
+    }
+
+    private static function active_generating_count( array $clip_summary ) {
+        $count = 0;
+        foreach ( $clip_summary as $item ) {
+            if (
+                'generating' === sanitize_key( $item['status'] ?? '' )
+                && empty( $item['has_url'] )
+                && empty( $item['is_stale'] )
+            ) {
+                $count++;
+            }
+        }
+        return $count;
     }
 
     private static function clip_job_age_seconds( $started_at ) {

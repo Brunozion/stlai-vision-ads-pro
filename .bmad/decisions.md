@@ -239,6 +239,28 @@ O frontend não mostra erro final nem botão "Tentar novamente" enquanto houver 
 
 Decidido
 
+## 2026-05-21 - Pending antigo de clipe também é stale
+
+### Decisao
+
+Qualquer `clip_job` sem URL em `pending`, `retrying` ou `generating` com `started_at` antigo deve ser tratado como stale após 75 segundos.
+
+Um clipe `pending` com erro como "Tentativa anterior ficou sem resposta" é retryable enquanto `attempt < 3`. Ele não pode ficar passivo indefinidamente; o polling deve escolher esse clipe como próximo, marcar `next_clip_reason=pending_stale_retry` ou `pending_retryable_error` e disparar nova geração automática.
+
+`active_generating_count` conta apenas clipes `generating` sem URL e com idade menor que o threshold. `pending`, `retrying`, stale, `ready` e `error_final` não bloqueiam o próximo processamento.
+
+### Motivo
+
+No teste real, clipes ficaram em `pending`, `attempt=1`, `started_at` antigo e sem URL, mas `is_stale=false`. Isso deixou `missing_clips` preso e impediu a composição final.
+
+### Impacto
+
+Jobs com clipes antigos pendentes voltam a andar sozinhos: o próximo polling reprocessa o menor índice faltante, preserva clipes já prontos por merge monotônico e inicia composição quando os 4 clipes estiverem `ready`.
+
+### Status
+
+Decidido
+
 ## 2026-05-21 - Clipes semi-paralelos, URLs limpas, narração sem tags e música opcional
 
 ### Decisao

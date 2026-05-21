@@ -11,7 +11,8 @@ class STLAI_Video_Job_Service {
     const CLIP_DURATION = 8.0;
     const FADE_DURATION = 0.4;
     const CLIP_MAX_ATTEMPTS = 3;
-    const CLIP_STALE_SECONDS = 120;
+    const CLIP_GENERATION_STALE_SECONDS = 75;
+    const CLIP_STALE_SECONDS = 75;
 
     public static function create_job( array $payload ) {
         $validated = self::validate_payload( $payload );
@@ -388,7 +389,7 @@ class STLAI_Video_Job_Service {
             }
 
             $status = sanitize_key( $clip_job['status'] ?? 'pending' );
-            if ( in_array( $status, array( 'generating', 'retrying' ), true ) ) {
+            if ( in_array( $status, array( 'generating', 'retrying' ), true ) && ! self::is_stale_retryable_clip_job( $clip_job ) ) {
                 return $job;
             }
             break;
@@ -434,13 +435,13 @@ class STLAI_Video_Job_Service {
         $next = self::next_processable_clip_job( $clip_jobs );
         if ( ! $next ) {
             $has_error = false;
-            $has_active = false;
+            $active_generating_count = 0;
             foreach ( $clip_jobs as $clip_job ) {
                 if ( in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'error', 'error_final' ), true ) ) {
                     $has_error = true;
                 }
-                if ( in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'generating', 'retrying' ), true ) ) {
-                    $has_active = true;
+                if ( self::is_active_generating_clip_job( $clip_job ) ) {
+                    $active_generating_count++;
                 }
             }
 
@@ -457,21 +458,28 @@ class STLAI_Video_Job_Service {
                         'next_clip_reason' => '',
                         'auto_clip_generation_triggered' => false,
                         'auto_clip_generation_result' => 'skipped',
-                        'skipped_reason' => $has_error ? 'clip_error_final' : ( $has_active ? 'clip_already_generating_not_stale' : 'no_processable_clip' ),
+                        'skipped_reason' => $has_error ? 'clip_error_final' : ( $active_generating_count > 0 ? 'clip_already_generating_not_stale' : 'no_processable_clip' ),
+                        'active_generating_count' => $active_generating_count,
+                        'max_concurrent_clip_generations' => 1,
+                        'stale_threshold_seconds' => self::CLIP_GENERATION_STALE_SECONDS,
                     )
                 )
             );
         }
 
         $next_index = (int) ( $next['index'] ?? 0 );
+        $next_reason = self::next_clip_reason_for_job( $next );
         $job = STLAI_Video_Storage::update_job(
             $job['job_id'],
             array(
                 'next_clip_index' => $next_index,
-                'next_clip_reason' => 'generate_missing_clip',
+                'next_clip_reason' => $next_reason,
                 'auto_clip_generation_triggered' => true,
                 'auto_clip_generation_result' => 'processing',
                 'skipped_reason' => '',
+                'active_generating_count' => self::active_generating_count( $clip_jobs ),
+                'max_concurrent_clip_generations' => 1,
+                'stale_threshold_seconds' => self::CLIP_GENERATION_STALE_SECONDS,
             )
         ) ?: $job;
 
@@ -494,10 +502,13 @@ class STLAI_Video_Job_Service {
             $result['job_id'],
             array(
                 'next_clip_index' => $next_index,
-                'next_clip_reason' => 'generate_missing_clip',
+                'next_clip_reason' => $next_reason,
                 'auto_clip_generation_triggered' => true,
                 'auto_clip_generation_result' => $result_status,
                 'skipped_reason' => '',
+                'active_generating_count' => self::active_generating_count( $result_jobs ),
+                'max_concurrent_clip_generations' => 1,
+                'stale_threshold_seconds' => self::CLIP_GENERATION_STALE_SECONDS,
             )
         ) ?: $result;
     }
@@ -635,12 +646,12 @@ class STLAI_Video_Job_Service {
 
     private static function recover_stale_clip_job( array $clip_job ) {
         $status = sanitize_key( $clip_job['status'] ?? 'pending' );
-        if ( ! in_array( $status, array( 'generating', 'retrying' ), true ) || ! empty( $clip_job['url'] ) ) {
+        if ( ! in_array( $status, array( 'pending', 'generating', 'retrying' ), true ) || ! empty( $clip_job['url'] ) ) {
             return $clip_job;
         }
 
         $age = self::clip_job_age_seconds( $clip_job['started_at'] ?? '' );
-        if ( $age < self::CLIP_STALE_SECONDS ) {
+        if ( empty( $clip_job['started_at'] ) || $age < self::CLIP_GENERATION_STALE_SECONDS ) {
             return $clip_job;
         }
 
@@ -693,8 +704,28 @@ class STLAI_Video_Job_Service {
 
     private static function next_processable_clip_job( array $clip_jobs ) {
         foreach ( $clip_jobs as $clip_job ) {
+            if ( self::is_stale_retryable_clip_job( $clip_job ) ) {
+                return $clip_job;
+            }
+        }
+
+        foreach ( $clip_jobs as $clip_job ) {
+            if ( self::is_pending_retryable_clip_job( $clip_job ) ) {
+                return $clip_job;
+            }
+        }
+
+        foreach ( $clip_jobs as $clip_job ) {
             $status = sanitize_key( $clip_job['status'] ?? 'pending' );
-            if ( in_array( $status, array( 'pending', 'queued', 'retrying' ), true ) ) {
+            $attempt = (int) ( $clip_job['attempt'] ?? 0 );
+            if ( empty( $clip_job['url'] ) && in_array( $status, array( 'pending', 'queued' ), true ) && 0 === $attempt ) {
+                return $clip_job;
+            }
+        }
+
+        foreach ( $clip_jobs as $clip_job ) {
+            $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+            if ( empty( $clip_job['url'] ) && in_array( $status, array( 'pending', 'queued', 'retrying' ), true ) ) {
                 return $clip_job;
             }
         }
@@ -704,12 +735,91 @@ class STLAI_Video_Job_Service {
 
     private static function has_processable_clip_jobs( array $clip_jobs ) {
         foreach ( $clip_jobs as $clip_job ) {
-            if ( in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'pending', 'queued', 'retrying' ), true ) ) {
+            if ( empty( $clip_job['url'] ) && in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'pending', 'queued', 'retrying' ), true ) ) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private static function is_stale_retryable_clip_job( array $clip_job ) {
+        if ( ! empty( $clip_job['url'] ) ) {
+            return false;
+        }
+
+        $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+        if ( ! in_array( $status, array( 'pending', 'generating', 'retrying' ), true ) ) {
+            return false;
+        }
+
+        $started_at = sanitize_text_field( $clip_job['started_at'] ?? '' );
+        if ( empty( $started_at ) ) {
+            return false;
+        }
+
+        return self::clip_job_age_seconds( $started_at ) >= self::CLIP_GENERATION_STALE_SECONDS
+            && (int) ( $clip_job['attempt'] ?? 0 ) < self::CLIP_MAX_ATTEMPTS;
+    }
+
+    private static function is_pending_retryable_clip_job( array $clip_job ) {
+        if ( ! empty( $clip_job['url'] ) ) {
+            return false;
+        }
+
+        $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+        $attempt = (int) ( $clip_job['attempt'] ?? 0 );
+        $error = strtolower( sanitize_text_field( $clip_job['error'] ?? '' ) );
+
+        return 'pending' === $status
+            && $attempt > 0
+            && $attempt < self::CLIP_MAX_ATTEMPTS
+            && ( empty( $error ) || false !== strpos( $error, 'tentativa anterior ficou sem resposta' ) || self::is_retryable_clip_error_summary( $error ) );
+    }
+
+    private static function is_retryable_clip_error_summary( $summary ) {
+        return (bool) preg_match( '/timeout|timed out|operation timeout|sem resposta|no response|curl|tempor[aá]ri|temporary|unavailable|reset|empty|vazia|json|408|409|429|500|502|503|504|veo_invalid_response|uri do v[ií]deo ausente|missing video uri|video uri missing|operation completed without video|opera[cç][aã]o conclu[ií]da sem v[ií]deo/i', (string) $summary );
+    }
+
+    private static function next_clip_reason_for_job( array $clip_job ) {
+        if ( self::is_stale_retryable_clip_job( $clip_job ) ) {
+            return 'pending_stale_retry';
+        }
+        if ( self::is_pending_retryable_clip_job( $clip_job ) ) {
+            return 'pending_retryable_error';
+        }
+        $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+        if ( 'retrying' === $status ) {
+            return 'retry_clip';
+        }
+        if ( in_array( $status, array( 'pending', 'queued' ), true ) ) {
+            return 'generate_missing_clip';
+        }
+        return 'generate_missing_clip';
+    }
+
+    private static function is_active_generating_clip_job( array $clip_job ) {
+        if ( ! empty( $clip_job['url'] ) ) {
+            return false;
+        }
+
+        $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+        if ( 'generating' !== $status ) {
+            return false;
+        }
+
+        $started_at = sanitize_text_field( $clip_job['started_at'] ?? '' );
+        return ! empty( $started_at ) && self::clip_job_age_seconds( $started_at ) < self::CLIP_GENERATION_STALE_SECONDS;
+    }
+
+    private static function active_generating_count( array $clip_jobs ) {
+        $count = 0;
+        foreach ( $clip_jobs as $clip_job ) {
+            if ( self::is_active_generating_clip_job( $clip_job ) ) {
+                $count++;
+            }
+        }
+        return $count;
     }
 
     private static function has_final_clip_errors( array $clip_jobs ) {
