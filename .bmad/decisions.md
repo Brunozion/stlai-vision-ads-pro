@@ -219,6 +219,26 @@ As respostas AJAX passam a expor diagnóstico de reconciliação: `backend_clips
 
 Decidido
 
+## 2026-05-21 - VEO_INVALID_RESPONSE sem URI de vídeo é retryable
+
+### Decisao
+
+Erros do Veo em que a operação conclui mas não traz URI de vídeo (`VEO_INVALID_RESPONSE`, "URI do vídeo ausente", `generatedVideos` vazio, "operation completed without video") são temporários até prova contrária.
+
+Enquanto `attempt < 3`, o clipe deve ficar em `retrying`/fluxo automático, com `will_retry=true`, `retryable=true` e `retry_reason=veo_completed_without_video_uri`. Só após a terceira tentativa real falhada o clipe vira `error_final`.
+
+### Motivo
+
+No teste real, o Veo retornou operação concluída sem URI e o plugin marcou `error_final` na primeira tentativa, mesmo com `max_attempts=3`. Esse tipo de resposta pode ser intermitente e precisa consumir as tentativas automáticas antes de pedir ação do usuário.
+
+### Impacto
+
+O frontend não mostra erro final nem botão "Tentar novamente" enquanto houver retry automático. Os outros clipes podem continuar gerando em paralelo/semi-paralelo, e o diagnóstico AJAX passa a expor `retryable`, `retry_reason`, `will_retry`, `max_clip_attempts` e `error_final_reason`.
+
+### Status
+
+Decidido
+
 ## 2026-05-21 - Clipes semi-paralelos, URLs limpas, narração sem tags e música opcional
 
 ### Decisao

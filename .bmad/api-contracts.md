@@ -179,7 +179,17 @@ Resposta de sucesso:
       "client_ready_clips_accepted": 3,
       "reconciled_clips_ready_count": 4,
       "reconciled_missing_clips": [],
-      "reconciliation_used": true
+      "reconciliation_used": true,
+      "failed_clip_index": 1,
+      "failed_clip_role": "apresentacao_geral",
+      "current_clip_attempt": 1,
+      "max_clip_attempts": 3,
+      "retryable": true,
+      "retry_reason": "veo_completed_without_video_uri",
+      "will_retry": true,
+      "error_final_reason": "",
+      "next_clip_action": "retry_clip",
+      "next_clip_index": 1
     }
   }
 }

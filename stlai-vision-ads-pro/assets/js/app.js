@@ -71,6 +71,11 @@ const S = {
     autoClipGenerationTriggered: false,
     autoClipGenerationResult: "",
     skippedReason: "",
+    maxClipAttempts: 3,
+    retryable: false,
+    retryReason: "",
+    willRetry: false,
+    errorFinalReason: "",
     diagnostics: {},
     testClipUrl: "",
     testClipOperationId: "",
@@ -1497,6 +1502,11 @@ function applyVideoState(payload={}, options={}){
   S.video.autoClipGenerationTriggered=Boolean((!stale && incoming.auto_clip_generation_triggered) || incoming.diagnostics?.auto_clip_generation_triggered || false);
   S.video.autoClipGenerationResult=(!stale && incoming.auto_clip_generation_result) || incoming.diagnostics?.auto_clip_generation_result || S.video.autoClipGenerationResult || "";
   S.video.skippedReason=(!stale && incoming.skipped_reason) || incoming.diagnostics?.skipped_reason || S.video.skippedReason || "";
+  S.video.maxClipAttempts=Number((!stale && incoming.max_clip_attempts) || incoming.diagnostics?.max_clip_attempts || S.video.maxClipAttempts || 3);
+  S.video.retryable=Boolean((!stale && incoming.retryable) || incoming.diagnostics?.retryable || false);
+  S.video.retryReason=(!stale && incoming.retry_reason) || incoming.diagnostics?.retry_reason || S.video.retryReason || "";
+  S.video.willRetry=Boolean((!stale && incoming.will_retry) || incoming.diagnostics?.will_retry || false);
+  S.video.errorFinalReason=(!stale && incoming.error_final_reason) || incoming.diagnostics?.error_final_reason || S.video.errorFinalReason || "";
   S.video.diagnostics=(!stale && incoming.diagnostics && typeof incoming.diagnostics==="object") ? incoming.diagnostics : (S.video.diagnostics || {});
   if(!S.video.errorCode && incoming.last_composer_error_code) S.video.errorCode=incoming.last_composer_error_code;
   S.video.jobVersion=Math.max(previousVersion, incomingVersion);
@@ -2053,9 +2063,11 @@ function videoMotionState(){
     const ranges={1:[25,37],2:[38,51],3:[52,65],4:[66,78]};
     const range=ranges[failed] || [52,78];
     progress=clamp(rawProgress || range[0], range[0], range[1]);
-    title="Clipes parcialmente preparados";
-    subtitle=S.video.message || partialClipFailureMessage(S.video.failedClipIndex, S.video.clips.length);
-    mode="error";
+    title=S.video.willRetry ? "Ajustando clipe IA" : "Clipes parcialmente preparados";
+    subtitle=S.video.willRetry
+      ? `Refazendo o clipe ${failed} automaticamente. Tentativa ${Math.max(2, Number(S.video.currentClipAttempt || 1) + 1)} de ${S.video.maxClipAttempts || 3}.`
+      : (S.video.message || partialClipFailureMessage(S.video.failedClipIndex, S.video.clips.length));
+    mode=S.video.willRetry ? "loading" : "error";
   }else{
     visible=false;
   }
@@ -2240,7 +2252,7 @@ function renderVideoClipsGridMarkup(clips){
       const retrying=clipJob.status==="retrying" || (String(videoStatusForDisplay()).startsWith("retrying_clip_") && isActive);
       const generating=clipJob.status==="generating" || isActive;
       const failed=clipJob.status==="error_final" || clipJob.status==="error" || (recoverableVideoErrorStatus(S.video.status) && index===Number(S.video.failedClipIndex || 0));
-      const label=failed ? "Erro após tentativas" : (retrying ? "Tentando novamente" : (generating ? `Gerando clipe ${index}` : "Pendente"));
+      const label=failed && !S.video.willRetry ? "Erro após tentativas" : (retrying || (S.video.willRetry && isActive) ? `Ajustando clipe ${index}` : (generating ? `Gerando clipe ${index}` : "Pendente"));
       cards.push(`<div class="video-clip-card video-clip-card-placeholder ${isActive ? "active" : ""} ${failed ? "error" : ""}">
         <div class="video-clip-title">Clipe ${index}</div>
         <div class="video-clip-placeholder">
@@ -2754,8 +2766,8 @@ async function startVideoClip(index){
     applyVideoState(data, {debug:true});
     warnVideoCompositionDiagnostic("poll");
     const activeClipJobs=hasActiveClipJobs();
-    const terminalClipError=S.video.status==="clip_generation_error" && !activeClipJobs;
-    if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
+    const terminalClipError=S.video.status==="clip_generation_error" && !activeClipJobs && !S.video.willRetry;
+    if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || terminalClipError){
       S.video.mockReady=true;
       if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || terminalClipError) stopVideoProgressLoop();
       renderVideoStatus();

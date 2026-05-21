@@ -875,6 +875,29 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - Retry Veo para operação concluída sem URI
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- `VEO_INVALID_RESPONSE` com URI de vídeo ausente passa a ser retryable.
+- O clipe só vira `error_final` depois de 3 tentativas reais falhadas.
+- Enquanto houver retry automático, o job expõe `will_retry`, `retryable`, `retry_reason` e `max_clip_attempts`.
+- A UI continua em processamento/retry e não mostra erro final antes da hora.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Diagnóstico forte de composição e retry terminal de clipe
 
 Arquivos alterados:

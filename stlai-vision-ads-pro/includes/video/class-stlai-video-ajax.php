@@ -121,6 +121,11 @@ class STLAI_Video_Ajax {
         $auto_clip_generation_triggered = ! empty( $job['auto_clip_generation_triggered'] );
         $auto_clip_generation_result = sanitize_key( $job['auto_clip_generation_result'] ?? '' );
         $skipped_reason = sanitize_key( $job['skipped_reason'] ?? '' );
+        $retryable = ! empty( $job['retryable'] );
+        $will_retry = ! empty( $job['will_retry'] );
+        $retry_reason = sanitize_key( $job['retry_reason'] ?? '' );
+        $error_final_reason = sanitize_key( $job['error_final_reason'] ?? '' );
+        $max_clip_attempts = (int) ( $job['max_clip_attempts'] ?? 3 );
         $safe_diagnostics = array(
             'job_id'                       => sanitize_text_field( $job['job_id'] ?? '' ),
             'status'                       => sanitize_key( $job['status'] ?? 'queued' ),
@@ -156,6 +161,14 @@ class STLAI_Video_Ajax {
             'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
             'auto_clip_generation_result'  => $auto_clip_generation_result,
             'skipped_reason'               => $skipped_reason,
+            'failed_clip_index'            => (int) ( $job['failed_clip_index'] ?? 0 ),
+            'failed_clip_role'             => sanitize_key( $job['failed_clip_role'] ?? '' ),
+            'current_clip_attempt'         => (int) ( $job['current_clip_attempt'] ?? 0 ),
+            'max_clip_attempts'            => $max_clip_attempts,
+            'retryable'                    => $retryable,
+            'retry_reason'                 => $retry_reason,
+            'will_retry'                   => $will_retry,
+            'error_final_reason'           => $error_final_reason,
         );
         return array(
             'job_id'          => $job['job_id'] ?? '',
@@ -208,6 +221,11 @@ class STLAI_Video_Ajax {
             'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
             'auto_clip_generation_result' => $auto_clip_generation_result,
             'skipped_reason' => $skipped_reason,
+            'max_clip_attempts' => $max_clip_attempts,
+            'retryable' => $retryable,
+            'retry_reason' => $retry_reason,
+            'will_retry' => $will_retry,
+            'error_final_reason' => $error_final_reason,
             'normalized_clips_ready_count' => $normalized_ready_count,
             'normalized_missing_clips' => $normalized_missing_clips,
             'backend_clips_ready_count' => $backend_ready_count,
@@ -573,6 +591,11 @@ class STLAI_Video_Ajax {
                 return 'generate_missing_clip';
             }
         }
+        foreach ( $clip_summary as $item ) {
+            if ( empty( $item['has_url'] ) && 'retrying' === sanitize_key( $item['status'] ?? '' ) ) {
+                return 'retry_clip';
+            }
+        }
         return 'none';
     }
 
@@ -646,6 +669,26 @@ class STLAI_Video_Ajax {
 
             if ( isset( $data['clip_retry_count'] ) ) {
                 $response['clip_retry_count'] = (int) $data['clip_retry_count'];
+            }
+
+            if ( isset( $data['max_clip_attempts'] ) ) {
+                $response['max_clip_attempts'] = (int) $data['max_clip_attempts'];
+            }
+
+            if ( isset( $data['retryable'] ) ) {
+                $response['retryable'] = ! empty( $data['retryable'] );
+            }
+
+            if ( ! empty( $data['retry_reason'] ) ) {
+                $response['retry_reason'] = sanitize_key( $data['retry_reason'] );
+            }
+
+            if ( isset( $data['will_retry'] ) ) {
+                $response['will_retry'] = ! empty( $data['will_retry'] );
+            }
+
+            if ( ! empty( $data['error_final_reason'] ) ) {
+                $response['error_final_reason'] = sanitize_key( $data['error_final_reason'] );
             }
 
             if ( isset( $data['progress_hint'] ) ) {
