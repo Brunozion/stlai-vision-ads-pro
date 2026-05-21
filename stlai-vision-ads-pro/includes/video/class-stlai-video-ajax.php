@@ -9,6 +9,8 @@ class STLAI_Video_Ajax {
         add_action( 'wp_ajax_nopriv_stlai_create_video_job', array( __CLASS__, 'create_video_job' ) );
         add_action( 'wp_ajax_stlai_check_video_status', array( __CLASS__, 'check_video_status' ) );
         add_action( 'wp_ajax_nopriv_stlai_check_video_status', array( __CLASS__, 'check_video_status' ) );
+        add_action( 'wp_ajax_stlai_start_video_clip', array( __CLASS__, 'start_video_clip' ) );
+        add_action( 'wp_ajax_nopriv_stlai_start_video_clip', array( __CLASS__, 'start_video_clip' ) );
         add_action( 'wp_ajax_stlai_get_video_result', array( __CLASS__, 'get_video_result' ) );
         add_action( 'wp_ajax_nopriv_stlai_get_video_result', array( __CLASS__, 'get_video_result' ) );
         add_action( 'wp_ajax_stlai_generate_test_veo_clip', array( __CLASS__, 'generate_test_veo_clip' ) );
@@ -27,6 +29,18 @@ class STLAI_Video_Ajax {
         );
 
         $job = STLAI_Video_Job_Service::create_job( $payload );
+        if ( is_wp_error( $job ) ) {
+            wp_send_json_error( self::public_error_response( $job ) );
+        }
+
+        wp_send_json_success( self::public_job_response( $job ) );
+    }
+
+    public static function start_video_clip() {
+        $job_id = sanitize_text_field( wp_unslash( $_POST['job_id'] ?? '' ) );
+        $clip_index = (int) ( $_POST['clip_index'] ?? 0 );
+        $job = STLAI_Video_Job_Service::start_clip_job( $job_id, $clip_index );
+
         if ( is_wp_error( $job ) ) {
             wp_send_json_error( self::public_error_response( $job ) );
         }
@@ -104,6 +118,10 @@ class STLAI_Video_Ajax {
             'final_video_duration' => (float) ( $job['final_video_duration'] ?? 0 ),
             'transition_used' => sanitize_key( $job['transition_used'] ?? '' ),
             'fallback_used'   => sanitize_key( $job['fallback_used'] ?? '' ),
+            'render_time_seconds' => (float) ( $job['render_time_seconds'] ?? 0 ),
+            'background_music_used' => ! empty( $job['background_music_used'] ),
+            'background_music_volume' => (float) ( $job['background_music_volume'] ?? 0 ),
+            'fast_compose'    => ! empty( $job['fast_compose'] ),
             'composer_mode'   => sanitize_key( $job['composer_mode'] ?? '' ),
             'composer_provider' => sanitize_key( $job['composer_provider'] ?? '' ),
             'composer_status' => sanitize_key( $job['composer_status'] ?? '' ),

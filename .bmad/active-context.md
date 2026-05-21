@@ -851,6 +851,41 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - Pipeline final: clipes semi-paralelos, player, narração e imageQuality
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-composer-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-elevenlabs-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-veo-provider.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/admin/settings-page.php
+- stlai-video-renderer/server.js
+- stlai-video-renderer/README.md
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+- .bmad/video-pipeline.md
+
+O que foi feito:
+
+- O frontend dispara clipes 1 a 4 em AJAX separado, com 1 segundo de intervalo.
+- O polling de status deixou de iniciar clipes automaticamente.
+- URLs de mídia são normalizadas para remover barras escapadas.
+- Players pequenos usam `playsinline` e `controlsList` para evitar fullscreen acidental.
+- ElevenLabs recebe roteiro limpo, sem tags de emoção faláveis.
+- Prompt do Veo reforça vídeo comercial limpo, sem REC/HUD/glitter/partículas/overlays.
+- Renderer ganhou música de fundo opcional por env e fallback para voz pura.
+- Admin ganhou `imageQuality` com Auto/Alta/Média/Baixa.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-20 - Clipes incrementais e narração performática
 
 Arquivos alterados:
@@ -871,7 +906,7 @@ O que foi feito:
 - Cada clipe mantém status, tentativa, erro seguro, timestamps e URL final.
 - Retries automáticos por clipe foram mantidos em até 3 tentativas, com backoff 2s e 5s para falhas temporárias.
 - O frontend passou a exibir clipes prontos, placeholders e progresso por quantidade real de clipes prontos.
-- O roteiro foi separado em `script_public` limpo e `script_narration` interno com marcações de performance para ElevenLabs.
+- O roteiro foi separado em `script_public` limpo e `script_narration` interno também limpo de tags faláveis; emoção fica no texto natural em português.
 
 Status:
 

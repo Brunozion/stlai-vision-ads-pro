@@ -190,7 +190,12 @@ class STLAI_Video_Job_Service {
             return $job;
         }
 
-        return self::maybe_process_clip_pipeline( $job );
+        $job = self::prepare_clip_jobs_for_job( $job, array(), false );
+        if ( self::count_ready_clips( $job['clips'] ?? array() ) >= 4 ) {
+            return self::start_composition_if_ready( $job );
+        }
+
+        return $job;
     }
 
     public static function get_result( $job_id ) {
@@ -209,6 +214,64 @@ class STLAI_Video_Job_Service {
         }
 
         return STLAI_Veo_Provider::generate_test_clip( $validated );
+    }
+
+    public static function start_clip_job( $job_id, $clip_index ) {
+        $job = STLAI_Video_Storage::get_job( $job_id );
+        if ( ! $job ) {
+            return new WP_Error( 'stlai_video_job_not_found', 'Job de video nao encontrado.' );
+        }
+
+        $clip_index = (int) $clip_index;
+        if ( $clip_index < 1 || $clip_index > 4 ) {
+            return new WP_Error( 'stlai_video_invalid_clip_index', 'Clipe invalido para geração.' );
+        }
+
+        $job = self::maybe_refresh_composition_status( $job );
+        if ( is_wp_error( $job ) ) {
+            return $job;
+        }
+
+        if ( ! empty( $job['final_video_url'] ) || 'ready' === ( $job['status'] ?? '' ) ) {
+            return $job;
+        }
+
+        if ( empty( $job['audio_url'] ) ) {
+            return STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array(
+                    'status'        => 'generating_audio',
+                    'progress'      => max( 18, (int) ( $job['progress'] ?? 18 ) ),
+                    'progress_hint' => 24,
+                    'message'       => 'Aguardando narração antes de gerar os clipes.',
+                )
+            );
+        }
+
+        $job = self::prepare_clip_jobs_for_job( $job, array(), false );
+        $clips = self::normalize_clip_list( $job['clips'] ?? array() );
+        if ( self::has_ready_clip( $clips, $clip_index ) ) {
+            if ( self::count_ready_clips( $clips ) >= 4 ) {
+                return self::start_composition_if_ready( $job );
+            }
+
+            return $job;
+        }
+
+        $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $clips, false );
+        foreach ( $clip_jobs as $clip_job ) {
+            if ( (int) ( $clip_job['index'] ?? 0 ) !== $clip_index ) {
+                continue;
+            }
+
+            $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+            if ( in_array( $status, array( 'generating', 'retrying' ), true ) ) {
+                return $job;
+            }
+            break;
+        }
+
+        return self::process_single_clip_job( $job, $clip_index );
     }
 
     private static function maybe_process_clip_pipeline( array $job ) {
@@ -292,13 +355,13 @@ class STLAI_Video_Job_Service {
                 }
 
                 $status = sanitize_key( $clip_job['status'] ?? 'pending' );
-                if ( $reset_failed && in_array( $status, array( 'error', 'retrying', 'generating' ), true ) ) {
+                if ( $reset_failed && in_array( $status, array( 'error', 'retrying', 'generating', 'queued' ), true ) ) {
                     $status = 'pending';
                 }
 
                 $by_index[ $index ] = array(
                     'index'       => $index,
-                    'status'      => in_array( $status, array( 'pending', 'generating', 'retrying', 'ready', 'error' ), true ) ? $status : 'pending',
+                    'status'      => in_array( $status, array( 'pending', 'queued', 'generating', 'retrying', 'ready', 'error' ), true ) ? $status : 'pending',
                     'attempt'     => max( 0, (int) ( $clip_job['attempt'] ?? 0 ) ),
                     'url'         => esc_url_raw( $clip_job['url'] ?? '' ),
                     'error'       => $reset_failed ? '' : sanitize_text_field( $clip_job['error'] ?? '' ),
@@ -382,7 +445,7 @@ class STLAI_Video_Job_Service {
     private static function next_processable_clip_job( array $clip_jobs ) {
         foreach ( $clip_jobs as $clip_job ) {
             $status = sanitize_key( $clip_job['status'] ?? 'pending' );
-            if ( in_array( $status, array( 'pending', 'retrying' ), true ) ) {
+            if ( in_array( $status, array( 'pending', 'queued', 'retrying' ), true ) ) {
                 return $clip_job;
             }
         }
@@ -396,15 +459,16 @@ class STLAI_Video_Job_Service {
             return $job;
         }
 
-        $clips = self::normalize_clip_list( $job['clips'] ?? array() );
+        $latest_for_start = STLAI_Video_Storage::get_job( $job['job_id'] ) ?: $job;
+        $clips = self::normalize_clip_list( $latest_for_start['clips'] ?? array() );
         if ( self::has_ready_clip( $clips, $clip_index ) ) {
-            return self::prepare_clip_jobs_for_job( $job, array(), false );
+            return self::prepare_clip_jobs_for_job( $latest_for_start, array(), false );
         }
 
         $clip_roles = self::clip_roles();
         $role = $clip_roles[ $clip_index - 1 ] ?? array();
-        $selected_images = array_slice( self::sanitize_images( $job['selected_images'] ?? array() ), 0, 4 );
-        $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $clips, false );
+        $selected_images = array_slice( self::sanitize_images( $latest_for_start['selected_images'] ?? array() ), 0, 4 );
+        $clip_jobs = self::normalize_clip_jobs( $latest_for_start['clip_jobs'] ?? array(), $clips, false );
         $clip_jobs = self::replace_clip_job(
             $clip_jobs,
             $clip_index,
@@ -425,8 +489,6 @@ class STLAI_Video_Job_Service {
                     'progress'             => self::clip_jobs_progress( $clip_jobs ),
                     'progress_hint'        => self::clip_progress_hint( $clip_index ),
                     'message'              => 'Gerando clipe ' . $clip_index . ' de 4.',
-                    'clips'                => $clips,
-                    'partial_clips'        => $clips,
                     'current_clip_index'   => $clip_index,
                     'current_clip_attempt' => 1,
                     'clip_retry_count'     => 0,
@@ -457,6 +519,7 @@ class STLAI_Video_Job_Service {
         );
 
         $latest = STLAI_Video_Storage::get_job( $job['job_id'] ) ?: $job;
+        $clips = self::normalize_clip_list( $latest['clips'] ?? $clips );
         $clip_jobs = self::normalize_clip_jobs( $latest['clip_jobs'] ?? array(), $clips, false );
         $attempt = max( 1, (int) ( $latest['current_clip_attempt'] ?? 1 ) );
 
@@ -504,6 +567,10 @@ class STLAI_Video_Job_Service {
             );
         }
 
+        $latest = STLAI_Video_Storage::get_job( $job['job_id'] ) ?: $job;
+        $clips = self::normalize_clip_list( $latest['clips'] ?? array() );
+        $clip_jobs = self::normalize_clip_jobs( $latest['clip_jobs'] ?? array(), $clips, false );
+        $attempt = max( 1, (int) ( $latest['current_clip_attempt'] ?? $attempt ) );
         $clips[] = self::public_clip_data( $clip );
         $clips = self::normalize_clip_list( $clips );
         $clip_jobs = self::replace_clip_job(
@@ -747,6 +814,10 @@ class STLAI_Video_Job_Service {
                     'final_video_debug'    => $remote['debug'] ?? '',
                     'transition_used'      => $remote['transition_used'] ?? '',
                     'fallback_used'        => $remote['fallback_used'] ?? '',
+                    'render_time_seconds'  => $remote['render_time_seconds'] ?? 0,
+                    'background_music_used' => ! empty( $remote['background_music_used'] ),
+                    'background_music_volume' => $remote['background_music_volume'] ?? 0,
+                    'fast_compose'         => ! empty( $remote['fast_compose'] ),
                     'composer_mode'        => $remote['composer_mode'] ?? ( $job['composer_mode'] ?? '' ),
                     'composer_provider'    => $remote['composer_provider'] ?? ( $job['composer_provider'] ?? '' ),
                     'composed_at'          => $remote['composed_at'] ?? current_time( 'mysql' ),
@@ -1269,7 +1340,7 @@ class STLAI_Video_Job_Service {
 
     private static function strip_narration_directions( $text ) {
         $text = wp_strip_all_tags( (string) $text );
-        $text = preg_replace( '/\[(thoughtful|warmly|short pause|delighted|excited|softly|amazed|chuckles|sighs|confident|impressed)\]\s*/i', '', $text );
+        $text = preg_replace( '/\[[^\]\r\n]{1,80}\]\s*/u', '', $text );
         $text = preg_replace( '/\s+/', ' ', $text );
 
         return trim( (string) $text );
@@ -1286,11 +1357,6 @@ class STLAI_Video_Job_Service {
             return $clean;
         }
 
-        $voice_style = sanitize_key( $voice_style );
-        $markers = 'emocional' === $voice_style
-            ? array( '[thoughtful]', '[short pause]', '[warmly]', '[delighted]', '[softly]' )
-            : array( '[confident]', '[short pause]', '[excited]', '[impressed]', '[warmly]' );
-
         $parts = array();
         foreach ( array_values( $sentences ) as $index => $sentence ) {
             $sentence = trim( (string) $sentence );
@@ -1299,30 +1365,25 @@ class STLAI_Video_Job_Service {
             }
 
             if ( 0 === $index ) {
-                $parts[] = $markers[0] . ' ' . $sentence;
+                $parts[] = $sentence;
                 continue;
             }
 
             if ( 1 === $index ) {
-                $parts[] = $markers[1];
-                $parts[] = $markers[2] . ' ' . $sentence;
+                $parts[] = '';
+                $parts[] = $sentence;
                 continue;
             }
 
-            if ( 2 === $index ) {
-                $parts[] = $markers[3] . ' ' . $sentence;
-                continue;
-            }
-
-            $parts[] = $markers[4] . ' ' . $sentence;
+            $parts[] = $sentence;
         }
 
-        $script = trim( implode( "\n", array_filter( $parts ) ) );
+        $script = trim( preg_replace( "/\n{3,}/", "\n\n", implode( "\n", $parts ) ) );
         if ( strlen( wp_strip_all_tags( $script ) ) > STLAI_ElevenLabs_Provider::MAX_SCRIPT_LENGTH ) {
             return $clean;
         }
 
-        return $script;
+        return self::strip_narration_directions( $script );
     }
 
     private static function should_retry_audio_without_directions( WP_Error $error ) {
@@ -1499,8 +1560,10 @@ class STLAI_Video_Job_Service {
                 sleep( 2 === $attempt ? 2 : 5 );
             }
 
+            $latest_for_attempt = STLAI_Video_Storage::get_job( $job['job_id'] ) ?: $job;
+            $attempt_clips = self::normalize_clip_list( $latest_for_attempt['clips'] ?? $clips );
             $clip_jobs = self::replace_clip_job(
-                self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $clips, false ),
+                self::normalize_clip_jobs( $latest_for_attempt['clip_jobs'] ?? array(), $attempt_clips, false ),
                 $clip_index,
                 array(
                     'status'     => $is_retry ? 'retrying' : 'generating',
@@ -1521,8 +1584,6 @@ class STLAI_Video_Job_Service {
                     'message'              => $is_retry
                         ? 'Ajustando geração do clipe ' . $clip_index . '. Tentativa ' . $attempt . ' de ' . self::CLIP_MAX_ATTEMPTS . '.'
                         : 'Gerando clipe ' . $clip_index . ' de 4.',
-                    'clips'                => $clips,
-                    'partial_clips'        => $clips,
                     'current_clip_index'   => $clip_index,
                     'current_clip_attempt' => $attempt,
                     'clip_retry_count'     => $retry_count,
@@ -1566,8 +1627,6 @@ class STLAI_Video_Job_Service {
                     'progress'             => self::clip_progress( $clip_index ),
                     'progress_hint'        => self::clip_progress_hint( $clip_index ),
                     'message'              => 'Ajustando geração do clipe ' . $clip_index . '. Tentativa ' . ( $attempt + 1 ) . ' de ' . self::CLIP_MAX_ATTEMPTS . '.',
-                    'clips'                => $clips,
-                    'partial_clips'        => $clips,
                     'current_clip_index'   => $clip_index,
                     'current_clip_attempt' => $attempt + 1,
                     'clip_retry_count'     => $attempt,

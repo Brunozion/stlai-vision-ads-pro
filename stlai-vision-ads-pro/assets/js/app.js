@@ -62,8 +62,10 @@ const S = {
     testClipStatus: "idle",
     testClipMessage: "",
     pollTimer: null,
-    progressTimer: null,
-    visualStatus: "",
+	    progressTimer: null,
+	    clipLaunchTimers: [],
+	    clipLaunchStarted: false,
+	    visualStatus: "",
     visualProgress: 0,
     visualPhaseKey: "",
     visualPhaseStartedAt: 0
@@ -134,6 +136,31 @@ function go(n){
 function unlock(n){const b=document.getElementById(`nav-${n}`);if(b)b.classList.remove("locked");S[`ul${n}`]=true;}
 function dzEv(e,id,fn,cls){e.preventDefault();document.getElementById(id).classList[fn](cls);}
 function delay(ms){return new Promise(r=>setTimeout(r,ms))}
+
+function normalizeMediaUrl(url){
+  let value=String(url || "").trim();
+  value=value.replace(/^["']|["']$/g,"").replace(/\\\//g,"/");
+  if(!value) return "";
+  if(/^https?:\/\//i.test(value)) return value;
+  return "";
+}
+
+function normalizeVideoClipUrlData(clip){
+  if(!clip || typeof clip!=="object") return clip;
+  return {
+    ...clip,
+    url: normalizeMediaUrl(clip.url),
+    prepared_frame_url: normalizeMediaUrl(clip.prepared_frame_url)
+  };
+}
+
+function normalizeVideoFrameUrlData(frame){
+  if(!frame || typeof frame!=="object") return frame;
+  return {
+    ...frame,
+    url: normalizeMediaUrl(frame.url)
+  };
+}
 
 function onDrop(e){e.preventDefault();document.getElementById("dz").classList.remove("over");handleFiles(Array.from(e.dataTransfer.files));}
 function onFChange(e){
@@ -1130,7 +1157,12 @@ function renderVideoFormat(){
 }
 
 function normalizeVideoFormat(format){
-  return format==="16:9" ? "16:9" : "9:16";
+	  return format==="16:9" ? "16:9" : "9:16";
+	}
+
+function configuredImageQuality(){
+  const quality=String(S.cfg.imageQuality || S.cfg.imgQuality || "auto").toLowerCase();
+  return ["auto","high","medium","low"].includes(quality) ? quality : "auto";
 }
 
 function isVideoFormatVertical(){
@@ -1176,9 +1208,9 @@ function normalizeClipJobs(jobs, clips=S.video.clips){
       if(index>=1 && index<=4){
         byIndex[index]={
           index,
-          status:String(job.status || "pending"),
-          attempt:Number(job.attempt || 0),
-          url:String(job.url || ""),
+	          status:String(job.status || "pending"),
+	          attempt:Number(job.attempt || 0),
+	          url:normalizeMediaUrl(job.url),
           error:String(job.error || ""),
           started_at:String(job.started_at || ""),
           finished_at:String(job.finished_at || "")
@@ -1189,7 +1221,7 @@ function normalizeClipJobs(jobs, clips=S.video.clips){
   (Array.isArray(clips) ? clips : []).forEach((clip,idx)=>{
     const index=Number(clip?.index || idx + 1);
     if(index>=1 && index<=4 && clip?.url){
-      byIndex[index]={...(byIndex[index] || {index}), index, status:"ready", attempt:Math.max(1, Number(byIndex[index]?.attempt || 1)), url:String(clip.url || ""), error:""};
+	      byIndex[index]={...(byIndex[index] || {index}), index, status:"ready", attempt:Math.max(1, Number(byIndex[index]?.attempt || 1)), url:normalizeMediaUrl(clip.url), error:""};
     }
   });
   for(let index=1; index<=4; index++){
@@ -1204,10 +1236,25 @@ function applyVideoClipJobData(data={}){
   }else{
     S.video.clipJobs=normalizeClipJobs(S.video.clipJobs, S.video.clips);
   }
-  S.video.clipStatuses=data.clip_statuses && typeof data.clip_statuses==="object" ? data.clip_statuses : S.video.clipStatuses;
+	  S.video.clipStatuses=data.clip_statuses && typeof data.clip_statuses==="object" ? data.clip_statuses : S.video.clipStatuses;
   S.video.clipAttempts=data.clip_attempts && typeof data.clip_attempts==="object" ? data.clip_attempts : S.video.clipAttempts;
   S.video.clipErrors=data.clip_errors && typeof data.clip_errors==="object" ? data.clip_errors : S.video.clipErrors;
   S.video.missingClips=Array.isArray(data.missing_clips) ? data.missing_clips.map(Number).filter(Boolean) : S.video.clipJobs.filter(job=>job.status!=="ready").map(job=>job.index);
+	}
+
+function normalizeVideoJobPayload(data={}){
+  const next={...data};
+  next.audio_url=normalizeMediaUrl(next.audio_url);
+  next.final_video_url=normalizeMediaUrl(next.final_video_url);
+  next.thumbnail_url=normalizeMediaUrl(next.thumbnail_url);
+  next.test_clip_url=normalizeMediaUrl(next.test_clip_url);
+  if(Array.isArray(next.clips)) next.clips=next.clips.map(normalizeVideoClipUrlData);
+  if(Array.isArray(next.partial_clips)) next.partial_clips=next.partial_clips.map(normalizeVideoClipUrlData);
+  if(Array.isArray(next.video_frames)) next.video_frames=next.video_frames.map(normalizeVideoFrameUrlData);
+  if(Array.isArray(next.clip_jobs)){
+    next.clip_jobs=next.clip_jobs.map(job=>({...job,url:normalizeMediaUrl(job.url)}));
+  }
+  return next;
 }
 
 function readyVideoClipCount(){
@@ -1224,8 +1271,8 @@ function currentClipJob(){
     const failed=jobs.find(job=>job.status==="error");
     if(failed) return failed;
   }
-  return jobs.find(job=>job.status==="generating" || job.status==="retrying")
-    || jobs.find(job=>job.status==="pending")
+	  return jobs.find(job=>job.status==="generating" || job.status==="retrying")
+	    || jobs.find(job=>job.status==="queued" || job.status==="pending")
     || jobs.find(job=>job.status==="error")
     || null;
 }
@@ -1440,7 +1487,8 @@ async function mockGenerateVideo(){
     return;
   }
 
-  clearVideoPolling();
+	  clearVideoPolling();
+	  clearVideoClipLaunchers();
   const retryingPartial=(S.video.status==="clips_partial_error" || S.video.status==="clip_generation_error") && Boolean(S.video.jobId);
   const retryingComposition=(S.video.status==="ready_for_composition" || S.video.status==="composition_pending" || S.video.status==="composition_queued" || S.video.status==="composition_processing" || S.video.status==="composition_error") && Boolean(S.video.jobId) && S.video.clips.length>=4 && Boolean(S.video.audioUrl) && !S.video.finalVideoUrl;
   const retryingRecoverable=S.video.status==="error" && Boolean(S.video.jobId) && (S.video.clips.length || S.video.audioUrl);
@@ -1464,7 +1512,7 @@ async function mockGenerateVideo(){
   S.video.clipErrors={};
   S.video.missingClips=[];
   S.video.videoFrames=retryingReusable ? S.video.videoFrames : [];
-  S.video.currentClipIndex=0;
+	  S.video.currentClipIndex=0;
   S.video.currentClipAttempt=0;
   S.video.clipRetryCount=0;
   S.video.lastClipError="";
@@ -1472,8 +1520,9 @@ async function mockGenerateVideo(){
   S.video.failedClipRole="";
   S.video.errorCode="";
   S.video.compositionStatus="pending";
-  S.video.composerStatus="";
-  S.video.renderJobId="";
+	  S.video.composerStatus="";
+	  S.video.renderJobId="";
+	  S.video.clipLaunchStarted=false;
   S.video.message=retryingComposition
     ? "Tentando compor o vídeo final novamente..."
     : (retryingPartial ? "Tentando novamente a partir do clipe pendente..." : "Gerando narração e preparando pipeline...");
@@ -1516,15 +1565,20 @@ async function mockGenerateVideo(){
     S.video.renderJobId=data.render_job_id || "";
     renderVideoStatus();
     unlock(6);
-    renderSummaryVideo();
-    toast(S.video.finalVideoUrl ? "Vídeo final preparado com sucesso." : (S.video.renderJobId ? "Composição final iniciada." : (S.video.clips.length===4 ? "4 clipes gerados com sucesso." : (S.video.audioUrl ? "Narração gerada com sucesso." : "Job de vídeo criado com sucesso."))),"success");
-    if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
-      S.video.mockReady=true;
-      if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error") stopVideoProgressLoop();
+	    renderSummaryVideo();
+	    if(S.video.audioUrl && !S.video.finalVideoUrl && readyVideoClipCount()<4 && !recoverableVideoErrorStatus(S.video.status)){
+	      scheduleVideoClipStarts();
+	    }
+	    toast(S.video.finalVideoUrl ? "Vídeo final preparado com sucesso." : (S.video.renderJobId ? "Composição final iniciada." : (S.video.clips.length===4 ? "4 clipes gerados com sucesso." : (S.video.audioUrl ? "Narração gerada com sucesso." : "Job de vídeo criado com sucesso."))),"success");
+	    const activeClipJobs=hasActiveClipJobs();
+	    const terminalClipError=S.video.status==="clip_generation_error" && !activeClipJobs;
+	    if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || terminalClipError){
+	      S.video.mockReady=true;
+	      if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || terminalClipError) stopVideoProgressLoop();
       renderSummaryVideo();
       return;
     }
-    pollVideoStatus();
+	    pollVideoStatus();
   }catch(err){
     const data=err.data || {};
     console.warn("Video generation error", data || err);
@@ -1890,11 +1944,15 @@ function renderFinalVideo(){
   const box=document.getElementById("video-final-box");
   const player=document.getElementById("video-final-player");
   if(!box || !player) return;
-  if(S.video.finalVideoUrl){
-    if(player.getAttribute("src")!==S.video.finalVideoUrl) player.setAttribute("src", S.video.finalVideoUrl);
-    player.muted=false;
-    player.defaultMuted=false;
-    box.style.display="block";
+	  if(S.video.finalVideoUrl){
+	    if(player.getAttribute("src")!==S.video.finalVideoUrl) player.setAttribute("src", S.video.finalVideoUrl);
+	    player.muted=false;
+	    player.defaultMuted=false;
+	    player.setAttribute("playsinline","");
+	    player.setAttribute("webkit-playsinline","");
+	    box.classList.toggle("is-format-vertical", isVideoFormatVertical());
+	    box.classList.toggle("is-format-horizontal", !isVideoFormatVertical());
+	    box.style.display="block";
   }else{
     player.removeAttribute("src");
     box.style.display="none";
@@ -1902,9 +1960,9 @@ function renderFinalVideo(){
 }
 
 function activeVideoClipIndex(){
-  const activeJob=currentClipJob();
-  if(activeJob && (activeJob.status==="generating" || activeJob.status==="retrying")) return Number(activeJob.index || 0);
-  if(activeJob && activeJob.status==="pending" && (isVideoBusyStatus(S.video.status) || (S.video.jobId && S.video.audioUrl))) return Number(activeJob.index || 0);
+	  const activeJob=currentClipJob();
+	  if(activeJob && (activeJob.status==="generating" || activeJob.status==="retrying")) return Number(activeJob.index || 0);
+	  if(activeJob && (activeJob.status==="pending" || activeJob.status==="queued") && (isVideoBusyStatus(S.video.status) || (S.video.jobId && S.video.audioUrl))) return Number(activeJob.index || 0);
   const status=videoStatusForDisplay();
   const match=String(status || "").match(/^(?:generating|retrying)_clip_([1-4])$/);
   if(match) return Number(match[1]);
@@ -1932,7 +1990,7 @@ function renderVideoClipsGridMarkup(clips){
     if(clip && clip.url){
       cards.push(`<div class="video-clip-card">
         <div class="video-clip-title">Clipe ${index}</div>
-        <div class="video-clip-media"><video controls playsinline muted preload="metadata" src="${esc(clip.url || "")}"></video></div>
+	        <div class="video-clip-media"><video controls playsinline webkit-playsinline muted preload="metadata" controlsList="nofullscreen nodownload noplaybackrate" disablePictureInPicture src="${esc(clip.url || "")}"></video></div>
       </div>`);
       continue;
     }
@@ -1991,10 +2049,14 @@ function renderVideoClips(){
     grid.dataset.sig=signature;
   }
 
-  grid.querySelectorAll("video").forEach(video=>{
-    video.muted=true;
-    video.defaultMuted=true;
-  });
+	  grid.querySelectorAll("video").forEach(video=>{
+	    video.muted=true;
+	    video.defaultMuted=true;
+	    video.setAttribute("playsinline","");
+	    video.setAttribute("webkit-playsinline","");
+	    video.setAttribute("controlsList","nofullscreen nodownload noplaybackrate");
+	    video.setAttribute("disablePictureInPicture","");
+	  });
 }
 
 function videoFramesFromClips(clips){
@@ -2152,11 +2214,15 @@ function renderVideoTestClip(){
   const box=document.getElementById("video-test-clip-box");
   const player=document.getElementById("video-test-clip-player");
   if(!box || !player) return;
-  if(S.video.testClipUrl){
-    if(player.getAttribute("src")!==S.video.testClipUrl) player.setAttribute("src", S.video.testClipUrl);
-    player.muted=true;
-    player.defaultMuted=true;
-    box.style.display="block";
+	  if(S.video.testClipUrl){
+	    if(player.getAttribute("src")!==S.video.testClipUrl) player.setAttribute("src", S.video.testClipUrl);
+	    player.muted=true;
+	    player.defaultMuted=true;
+	    player.setAttribute("playsinline","");
+	    player.setAttribute("webkit-playsinline","");
+	    player.setAttribute("controlsList","nofullscreen nodownload noplaybackrate");
+	    player.setAttribute("disablePictureInPicture","");
+	    box.style.display="block";
   }else{
     player.removeAttribute("src");
     box.style.display="none";
@@ -2274,9 +2340,13 @@ function renderSummaryVideo(){
   note.textContent=noteText;
   badge.textContent=badgeText;
   if(finalWrap && finalPlayer){
-    if(hasFinal){
-      if(finalPlayer.getAttribute("src")!==S.video.finalVideoUrl) finalPlayer.setAttribute("src", S.video.finalVideoUrl);
-      finalWrap.style.display="block";
+	    if(hasFinal){
+	      if(finalPlayer.getAttribute("src")!==S.video.finalVideoUrl) finalPlayer.setAttribute("src", S.video.finalVideoUrl);
+	      finalPlayer.setAttribute("playsinline","");
+	      finalPlayer.setAttribute("webkit-playsinline","");
+	      finalWrap.classList.toggle("is-format-vertical", isVideoFormatVertical());
+	      finalWrap.classList.toggle("is-format-horizontal", !isVideoFormatVertical());
+	      finalWrap.style.display="block";
     }else{
       finalPlayer.removeAttribute("src");
       finalWrap.style.display="none";
@@ -2301,10 +2371,14 @@ function renderSummaryVideo(){
         clipsGrid.innerHTML=clipsHtml;
         clipsGrid.dataset.sig=clipsSig;
       }
-      clipsGrid.querySelectorAll("video").forEach(video=>{
-        video.muted=true;
-        video.defaultMuted=true;
-      });
+	      clipsGrid.querySelectorAll("video").forEach(video=>{
+	        video.muted=true;
+	        video.defaultMuted=true;
+	        video.setAttribute("playsinline","");
+	        video.setAttribute("webkit-playsinline","");
+	        video.setAttribute("controlsList","nofullscreen nodownload noplaybackrate");
+	        video.setAttribute("disablePictureInPicture","");
+	      });
     }else{
       clipsGrid.innerHTML="";
       clipsGrid.dataset.sig="";
@@ -2363,17 +2437,89 @@ async function videoAjaxRequest(action, payload={}){
       : {message, code:"VIDEO_AJAX_ERROR", debug:`HTTP ${response.status}`};
     throw err;
   }
-  return json.data || {};
+	  const data=json.data || {};
+	  return String(action || "").indexOf("stlai_")===0 ? normalizeVideoJobPayload(data) : data;
+	}
+
+	function clearVideoPolling(){
+	  if(S.video.pollTimer){
+	    clearTimeout(S.video.pollTimer);
+	    S.video.pollTimer=null;
+	  }
+	}
+
+function clearVideoClipLaunchers(){
+  if(Array.isArray(S.video.clipLaunchTimers)){
+    S.video.clipLaunchTimers.forEach(timer=>clearTimeout(timer));
+  }
+  S.video.clipLaunchTimers=[];
+  S.video.clipLaunchStarted=false;
 }
 
-function clearVideoPolling(){
-  if(S.video.pollTimer){
-    clearTimeout(S.video.pollTimer);
-    S.video.pollTimer=null;
+function hasActiveClipJobs(){
+  return normalizeClipJobs(S.video.clipJobs, S.video.clips).some(job=>["queued","generating","retrying"].includes(job.status));
+}
+
+function scheduleVideoClipStarts(){
+  if(!S.video.jobId || !S.video.audioUrl || S.video.finalVideoUrl) return;
+  const jobs=normalizeClipJobs(S.video.clipJobs, S.video.clips)
+    .filter(job=>job.status!=="ready" && job.status!=="generating" && job.status!=="retrying");
+  if(!jobs.length) return;
+
+  clearVideoClipLaunchers();
+  S.video.clipLaunchStarted=true;
+  jobs.forEach((job,idx)=>{
+    const timer=setTimeout(()=>startVideoClip(job.index), idx * 1000);
+    S.video.clipLaunchTimers.push(timer);
+  });
+}
+
+async function startVideoClip(index){
+  if(!S.video.jobId || S.video.finalVideoUrl) return;
+  try{
+    const data=await videoAjaxRequest("stlai_start_video_clip", {
+      job_id:S.video.jobId,
+      clip_index:index
+    });
+    S.video.status=data.status || S.video.status;
+    S.video.progress=Number(data.progress || S.video.progress || 0);
+    S.video.progressHint=Number(data.progress_hint || S.video.progressHint || S.video.progress || 0);
+    S.video.message=data.message || S.video.message;
+    S.video.audioUrl=data.audio_url || S.video.audioUrl || "";
+    S.video.clips=Array.isArray(data.clips) ? data.clips : (S.video.clips || []);
+    if(Array.isArray(data.partial_clips) && data.partial_clips.length) S.video.clips=data.partial_clips;
+    applyVideoClipJobData(data);
+    S.video.videoFrames=Array.isArray(data.video_frames) ? data.video_frames : videoFramesFromClips(S.video.clips);
+    S.video.currentClipIndex=Number(data.current_clip_index || S.video.currentClipIndex || 0);
+    S.video.currentClipAttempt=Number(data.current_clip_attempt || S.video.currentClipAttempt || 0);
+    S.video.clipRetryCount=Number(data.clip_retry_count || S.video.clipRetryCount || 0);
+    S.video.lastClipError=data.last_clip_error || S.video.lastClipError || "";
+    S.video.failedClipIndex=Number(data.failed_clip_index || S.video.failedClipIndex || 0);
+    S.video.errorCode=data.error_code || S.video.errorCode || "";
+    S.video.compositionStatus=data.composition_status || S.video.compositionStatus || "pending";
+    S.video.composerStatus=data.composer_status || S.video.composerStatus || "";
+    S.video.renderJobId=data.render_job_id || S.video.renderJobId || "";
+    S.video.finalVideoUrl=data.final_video_url || S.video.finalVideoUrl || "";
+    S.video.finalVideoDuration=Number(data.final_video_duration || S.video.finalVideoDuration || 0);
+    renderVideoStatus();
+    if(S.step>=6) renderSummaryVideo();
+  }catch(err){
+    const data=normalizeVideoJobPayload(err.data || {});
+    console.warn("Clip generation error", data || err);
+    if(Array.isArray(data.clips)) S.video.clips=data.clips;
+    if(Array.isArray(data.partial_clips) && data.partial_clips.length) S.video.clips=data.partial_clips;
+    applyVideoClipJobData(data);
+    S.video.videoFrames=Array.isArray(data.video_frames) ? data.video_frames : videoFramesFromClips(S.video.clips);
+    S.video.failedClipIndex=Number(data.failed_clip_index || data.failed_clip || index || 0);
+    S.video.errorCode=data.code || data.error_code || "";
+    S.video.status=data.status || "clip_generation_error";
+    S.video.message=data.message || partialClipFailureMessage(S.video.failedClipIndex, readyVideoClipCount());
+    renderVideoStatus();
+    if(S.step>=6) renderSummaryVideo();
   }
 }
 
-async function pollVideoStatus(){
+	async function pollVideoStatus(){
   if(!S.video.jobId) return;
   try{
     const data=await videoAjaxRequest("stlai_check_video_status", {job_id:S.video.jobId});
@@ -2404,7 +2550,7 @@ async function pollVideoStatus(){
       S.video.mockReady=true;
       if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error") stopVideoProgressLoop();
       renderVideoStatus();
-      if(S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
+	      if(S.video.status==="composition_error" || terminalClipError){
         toast(S.video.status==="composition_error" ? "Não foi possível concluir o vídeo final." : "Não foi possível gerar todos os clipes.","error");
       }else{
         toast(S.video.status==="ready" ? "Vídeo final preparado." : "Narração e clipes preparados.","success");
@@ -2929,9 +3075,10 @@ async function openAIImageEdit(prompt, imageUrl){
     n: 1,
     images: [{ image_url: imageUrl }]
   };
-  if (S.cfg.imgQuality) {
-     body.quality = S.cfg.imgQuality;
-  }
+	  const imageQuality=configuredImageQuality();
+	  if (imageQuality !== "auto") {
+	     body.quality = imageQuality;
+	  }
   
   const baseUrl = S.cfg.url || "https://api.openai.com/v1";
   const r = await fetch(`${baseUrl}/images/edits`, {
@@ -2954,9 +3101,10 @@ async function openAIImageGenerate(prompt){
     size: S.cfg.imgResolution || "1024x1024",
     n: 1
   };
-  if (S.cfg.imgQuality) {
-     body.quality = S.cfg.imgQuality;
-  }
+	  const imageQuality=configuredImageQuality();
+	  if (imageQuality !== "auto") {
+	     body.quality = imageQuality;
+	  }
 
   const baseUrl = S.cfg.url || "https://api.openai.com/v1";
   const r = await fetch(`${baseUrl}/images/generations`, {

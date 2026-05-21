@@ -15,7 +15,7 @@ class STLAI_ElevenLabs_Provider {
             return self::error( 'MISSING_ELEVENLABS_API_KEY', 'Configure a API key do ElevenLabs no painel.' );
         }
 
-        $script = trim( wp_strip_all_tags( (string) $text ) );
+        $script = self::strip_narration_directions( $text );
         if ( empty( $script ) ) {
             return self::error( 'EMPTY_NARRATION_TEXT', 'O roteiro da narração está vazio.' );
         }
@@ -116,6 +116,17 @@ class STLAI_ElevenLabs_Provider {
         }
 
         return sanitize_text_field( $voice_id );
+    }
+
+    private static function strip_narration_directions( $text ) {
+        $text = wp_strip_all_tags( (string) $text );
+        $text = preg_replace( '/\[[^\]\r\n]{1,80}\]\s*/u', '', $text );
+        $text = preg_replace( '/\b(thoughtful|warmly|short pause|delighted|excited|softly|amazed|chuckles|sighs|confident|impressed)\b\s*/iu', '', $text );
+        $text = preg_replace( '/[ \t]+/', ' ', $text );
+        $text = preg_replace( '/\s+([,.!?;:])/', '$1', $text );
+        $text = preg_replace( '/\s+/', ' ', $text );
+
+        return trim( (string) $text );
     }
 
     private static function voice_settings_for_type( $narration_type ) {

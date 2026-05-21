@@ -80,6 +80,34 @@ O painel admin passa a armazenar as credenciais e modelos futuros. Nenhuma chave
 
 Decidido
 
+## 2026-05-21 - Clipes semi-paralelos, URLs limpas, narração sem tags e música opcional
+
+### Decisao
+
+Ao iniciar o vídeo, o WordPress cria os 4 `clip_jobs` e o frontend dispara a geração dos 4 clipes em requisições AJAX independentes, com 1 segundo de diferença entre cada início. O polling acompanha estado, clipes prontos e composição final; ele não deve iniciar clipes implicitamente.
+
+URLs de mídia recebidas do renderer devem ser normalizadas antes de salvar/usar, removendo barras escapadas como `\/`.
+
+Nenhuma marcação de emoção entre colchetes deve ser enviada para o ElevenLabs. A emoção da narração deve vir de texto natural em português, pontuação, ritmo e frases humanas, sem tags como `thoughtful`, `warmly` ou `short pause`.
+
+Vídeos comerciais não podem ter REC, HUD, overlays, glitter, partículas, confete, texto, watermark, sujeira de lente, film grain artificial ou efeitos mágicos. O prompt do Veo deve negar esses elementos explicitamente.
+
+Música de fundo é responsabilidade do renderer, opcional e controlada por env: `ENABLE_BACKGROUND_MUSIC`, `BACKGROUND_MUSIC_URL` e `BACKGROUND_MUSIC_VOLUME`. Se a música falhar, o render continua com voz pura.
+
+O admin passa a ter `imageQuality` com opções `auto`, `high`, `medium`, `low`; quando suportado pelo provider de imagem, esse valor é enviado na geração.
+
+### Motivo
+
+Gerar 4 clipes em sequência alonga muito o tempo total. As tags emocionais estavam sendo faladas pela voz. URLs escapadas impediam o player de carregar o vídeo final. Música de fundo precisa ser mixada no FFmpeg, não no TTS.
+
+### Impacto
+
+O pipeline fica semi-paralelo no navegador, cada clipe aparece conforme termina, composição começa apenas com 4 clipes prontos, e o renderer pode mixar música em volume baixo sem quebrar o fluxo.
+
+### Status
+
+Decidido
+
 ## 2026-05-19 - Video mock exibido no resumo
 
 ### Decisao
@@ -770,7 +798,7 @@ A geração dos 4 clipes Veo não deve depender de uma única requisição PHP l
 
 Cada clipe deve tentar até 3 vezes antes de pedir ação do usuário. Falhas temporárias como HTTP 408, 409, 429, 500, 502, 503, 504, timeout, resposta vazia ou indisponibilidade temporária entram em retry automático com backoff. O botão "Tentar novamente" retoma do ponto de falha: preserva narração, frames e clipes prontos, tentando apenas clipes faltantes/erro ou, se os 4 já existirem, apenas composição.
 
-O roteiro público permanece limpo em `script_public`. A voz pode receber `script_narration`, uma versão interna com marcações discretas de performance, pausas e emoção. Essas marcações não aparecem no textarea nem na interface pública.
+O roteiro público permanece limpo em `script_public`. A voz recebe `script_narration` interno limpo de tags literais; emoção deve vir de português natural, pontuação, quebras de frase e ritmo humano, sem marcações entre colchetes que possam ser faladas.
 
 ### Motivo
 

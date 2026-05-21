@@ -1023,7 +1023,7 @@ Regras:
 - Falhas temporárias incluem HTTP 408, 409, 429, 500, 502, 503, 504, timeout, resposta vazia e indisponibilidade temporária.
 - O frontend deve exibir clipes `ready` imediatamente e placeholders para `pending`, `generating`, `retrying` e `error`.
 - O progresso visual deve usar clipes prontos: base 25%, clipe 1 35%, clipe 2 50%, clipe 3 65%, clipe 4 78%, composição 82-96%, pronto 100%.
-- `script_narration` pode conter marcações internas como `[thoughtful]`, `[short pause]`, `[warmly]`, `[excited]`, mas nunca deve aparecer na interface pública.
+- `script_narration` deve ser limpo de tags literais antes de ir para o ElevenLabs. Emoção deve ser escrita com português natural, pausas por pontuação e ritmo, sem marcações entre colchetes que possam ser faladas.
 
 ## 19. Renderer fast compose
 
@@ -1040,6 +1040,8 @@ O serviço externo de composição pode retornar campos de performance e transi�
   "render_time_seconds": 38.5,
   "transition_used": "cut",
   "fallback_used": "",
+  "background_music_used": false,
+  "background_music_volume": 0.06,
   "fast_compose": true,
   "message": "Vídeo final composto com sucesso."
 }
@@ -1050,6 +1052,8 @@ Campos:
 - `render_time_seconds`: tempo total da composição no renderer.
 - `transition_used`: `cut` no modo rápido/preview; `xfade` apenas quando explicitamente habilitado e suportado.
 - `fallback_used`: vazio quando não houve fallback; `cut_without_fade` quando o xfade falhou; `normalized_cut` quando o concat rápido precisou voltar para normalização.
+- `background_music_used`: indica se o renderer mixou música de fundo.
+- `background_music_volume`: volume aplicado à música, normalmente entre `0.05` e `0.12`.
 - `fast_compose`: booleano indicando que o renderer usou o caminho rápido.
 
 Health check:
@@ -1060,15 +1064,54 @@ Health check:
   "ffmpeg": true,
   "quality": "preview",
   "xfade": false,
-  "fast_compose": true
+  "fast_compose": true,
+  "background_music": false,
+  "background_music_volume": 0
 }
 ```
 
 Regras:
 
 - No Render Free, o padrão recomendado é `RENDER_OUTPUT_QUALITY=preview`, `FAST_COMPOSE=true`, `ENABLE_XFADE=false`.
-- Preview 9:16 usa `406x720` por padrão.
+- Preview 9:16 usa `720x1280` por padrão; Render Free pode usar `406x720` via env para máxima estabilidade.
 - Preview 16:9 usa `1280x720` por padrão.
 - O áudio original dos clipes deve ser ignorado; apenas a narração ElevenLabs é mapeada para o MP4 final.
+- Música de fundo é opcional no renderer com `ENABLE_BACKGROUND_MUSIC=true`, `BACKGROUND_MUSIC_URL` e `BACKGROUND_MUSIC_VOLUME`. Se falhar, o renderer retorna fallback e usa apenas narração.
 - O vídeo final deve repetir os 4 clipes até cobrir a duração da narração e cortar exatamente na duração do áudio.
 - Clipes Veo devem ser comerciais e limpos: sem REC, HUD, viewfinder, watermark, timestamp, texto, ícones, badges ou overlays.
+
+## 20. Clipes semi-paralelos e imageQuality
+
+Endpoint AJAX interno para iniciar um clipe específico:
+
+```http
+POST admin-ajax.php
+Content-Type: multipart/form-data
+
+action=stlai_start_video_clip
+job_id=stlai_video_xxx
+clip_index=1
+```
+
+Resposta:
+
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "stlai_video_xxx",
+    "status": "generating_clip_1",
+    "clip_jobs": [
+      {"index": 1, "status": "generating", "attempt": 1},
+      {"index": 2, "status": "pending", "attempt": 0}
+    ]
+  }
+}
+```
+
+Regras:
+
+- O frontend deve chamar `stlai_start_video_clip` para os clipes 1, 2, 3 e 4 com 1 segundo de diferença.
+- O polling `stlai_check_video_status` apenas acompanha estado e composição; ele não inicia novos clipes.
+- `final_video_url`, URLs de clipes e URLs de frames devem ser retornadas/consumidas limpas, sem `\/`.
+- Configuração admin `imageQuality`: `auto`, `high`, `medium`, `low`. Quando `auto`, o payload de imagem não envia `quality`.

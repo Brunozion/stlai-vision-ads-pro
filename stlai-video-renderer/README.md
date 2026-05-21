@@ -28,10 +28,13 @@ MAX_RENDER_SECONDS=300
 RENDER_OUTPUT_QUALITY=preview
 FAST_COMPOSE=true
 ENABLE_XFADE=false
-RENDER_PREVIEW_WIDTH_9_16=406
-RENDER_PREVIEW_HEIGHT_9_16=720
+RENDER_PREVIEW_WIDTH_9_16=720
+RENDER_PREVIEW_HEIGHT_9_16=1280
 RENDER_PREVIEW_WIDTH_16_9=1280
 RENDER_PREVIEW_HEIGHT_16_9=720
+ENABLE_BACKGROUND_MUSIC=false
+BACKGROUND_MUSIC_URL=
+BACKGROUND_MUSIC_VOLUME=0.06
 ```
 
 ## Rodar localmente
@@ -60,7 +63,9 @@ Resposta esperada:
   "ffmpeg": true,
   "quality": "preview",
   "xfade": false,
-  "fast_compose": true
+  "fast_compose": true,
+  "background_music": false,
+  "background_music_volume": 0
 }
 ```
 
@@ -180,10 +185,13 @@ MAX_RENDER_SECONDS=300
 RENDER_OUTPUT_QUALITY=preview
 FAST_COMPOSE=true
 ENABLE_XFADE=false
-RENDER_PREVIEW_WIDTH_9_16=406
-RENDER_PREVIEW_HEIGHT_9_16=720
+RENDER_PREVIEW_WIDTH_9_16=720
+RENDER_PREVIEW_HEIGHT_9_16=1280
 RENDER_PREVIEW_WIDTH_16_9=1280
 RENDER_PREVIEW_HEIGHT_16_9=720
+ENABLE_BACKGROUND_MUSIC=false
+BACKGROUND_MUSIC_URL=
+BACKGROUND_MUSIC_VOLUME=0.06
 ```
 
 4. Rode com PM2:
@@ -239,10 +247,12 @@ docker run --rm -p 3000:3000 \
   -e RENDER_OUTPUT_QUALITY=preview \
   -e FAST_COMPOSE=true \
   -e ENABLE_XFADE=false \
-  -e RENDER_PREVIEW_WIDTH_9_16=406 \
-  -e RENDER_PREVIEW_HEIGHT_9_16=720 \
+  -e RENDER_PREVIEW_WIDTH_9_16=720 \
+  -e RENDER_PREVIEW_HEIGHT_9_16=1280 \
   -e RENDER_PREVIEW_WIDTH_16_9=1280 \
   -e RENDER_PREVIEW_HEIGHT_16_9=720 \
+  -e ENABLE_BACKGROUND_MUSIC=false \
+  -e BACKGROUND_MUSIC_VOLUME=0.06 \
   stlai-video-renderer
 ```
 
@@ -255,8 +265,11 @@ Variáveis necessárias no serviço online:
 - `RENDER_OUTPUT_QUALITY`: `preview` para Render Free ou `full` para renderização maior.
 - `FAST_COMPOSE`: `true` por padrão. Usa concatenação rápida em uma passagem de FFmpeg, recomendado para Render Free.
 - `ENABLE_XFADE`: `false` por padrão. Use `true` apenas em instância maior e com `FAST_COMPOSE=false`.
-- `RENDER_PREVIEW_WIDTH_9_16` / `RENDER_PREVIEW_HEIGHT_9_16`: resolução do preview vertical. Padrão `406x720`.
+- `RENDER_PREVIEW_WIDTH_9_16` / `RENDER_PREVIEW_HEIGHT_9_16`: resolução do preview vertical. Padrão `720x1280`. Em Render Free com pouca memória, use `540x960` ou `406x720`.
 - `RENDER_PREVIEW_WIDTH_16_9` / `RENDER_PREVIEW_HEIGHT_16_9`: resolução do preview horizontal. Padrão `1280x720`.
+- `ENABLE_BACKGROUND_MUSIC`: `false` por padrão. Quando `true`, o renderer tenta mixar uma música de fundo configurada.
+- `BACKGROUND_MUSIC_URL`: URL `http`/`https` do arquivo de música. Se vazio, nenhuma música é adicionada.
+- `BACKGROUND_MUSIC_VOLUME`: volume da música de fundo. Padrão `0.06`; recomendado entre `0.05` e `0.12`.
 
 O container instala FFmpeg e FFprobe via `apt-get`, não copia `.env`, não copia `node_modules` e ignora arquivos gerados em `temp/` e `renders/` durante o build.
 
@@ -275,12 +288,13 @@ O container instala FFmpeg e FFprobe via `apt-get`, não copia `.env`, não copi
 
 - Em `RENDER_OUTPUT_QUALITY=preview`, a composição usa concatenação simples por padrão.
 - Em `FAST_COMPOSE=true`, o renderer concatena os clipes originais e aplica escala/corte, corte na duração da narração e áudio final em uma única passagem do FFmpeg. Se o concat direto falhar, faz fallback para normalização dos clipes e concatenação simples.
-- Em `preview`, `9:16` gera `406x720` por padrão e `16:9` gera `1280x720`.
+- Em `preview`, `9:16` gera `720x1280` por padrão e `16:9` gera `1280x720`. Para Render Free, `406x720` continua sendo o fallback mais leve via env.
 - Em `RENDER_OUTPUT_QUALITY=full`, `9:16` gera `1080x1920` e `16:9` gera `1920x1080`.
 - `transition_used` é `"cut"` por padrão no MVP preview.
 - `xfade` fica desligado por padrão. Para ativar fade com segurança, use `RENDER_OUTPUT_QUALITY=full`, `FAST_COMPOSE=false`, `ENABLE_XFADE=true` e envie `enable_fade: true` no POST. Se o xfade falhar, o job continua com corte simples e retorna `fallback_used: "cut_without_fade"`.
 - O vídeo é escalado com `force_original_aspect_ratio=increase` e `crop`, evitando distorção.
-- O áudio nativo dos clipes é ignorado; apenas o áudio ElevenLabs é mapeado no MP4 final, em AAC 128k no preview.
+- O áudio nativo dos clipes é ignorado; a narração ElevenLabs é sempre a faixa principal, em AAC 128k no preview.
+- Música de fundo é opcional e só entra se `ENABLE_BACKGROUND_MUSIC=true` e `BACKGROUND_MUSIC_URL` estiver configurada. Se o download ou mixagem falhar, o renderer não derruba o job: compõe com voz pura e retorna `fallback_used: "music_unavailable_voice_only"`.
 
 ## Render Free recomendado
 
@@ -294,6 +308,9 @@ RENDER_PREVIEW_WIDTH_9_16=406
 RENDER_PREVIEW_HEIGHT_9_16=720
 RENDER_PREVIEW_WIDTH_16_9=1280
 RENDER_PREVIEW_HEIGHT_16_9=720
+ENABLE_BACKGROUND_MUSIC=false
+BACKGROUND_MUSIC_URL=
+BACKGROUND_MUSIC_VOLUME=0.06
 ```
 
 Esse modo prioriza estabilidade: transição em corte simples, H.264 baseline no preview, `preset ultrafast`, `crf 28`, 30fps e áudio AAC 128k. O fade/xfade fica para instâncias maiores ou produção.

@@ -41,6 +41,7 @@ function stlai_vision_ads_pro_settings_init() {
     add_settings_field('url', 'OpenAI Endpoint URL', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_api_section', array('id' => 'url'));
     add_settings_field('textModel', 'OpenAI Modelo Texto', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_api_section', array('id' => 'textModel'));
     add_settings_field('imageModel', 'OpenAI Modelo Imagem', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_api_section', array('id' => 'imageModel'));
+    add_settings_field('imageQuality', 'Quality', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_api_section', array('id' => 'imageQuality', 'default' => 'auto', 'options' => array('auto' => 'Auto', 'high' => 'Alta', 'medium' => 'Média', 'low' => 'Baixa')));
     add_settings_field('imgQuality', 'Qualidade de Imagem OpenAI', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_api_section', array('id' => 'imgQuality'));
     add_settings_field('imgResolution', 'Resolução de Imagem (OpenAI/Gemini)', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_api_section', array('id' => 'imgResolution', 'placeholder' => 'ex: 1024x1024, 1k, 2k'));
 
@@ -122,6 +123,16 @@ function stlai_vision_ads_pro_sanitize_settings($input) {
     }
     if (is_array($input)) {
         foreach ($input as $key => $value) {
+            if ('imageQuality' === $key) {
+                $allowed = array('auto', 'high', 'medium', 'low');
+                $value = sanitize_key($value);
+                if (!in_array($value, $allowed, true)) {
+                    $value = 'auto';
+                }
+                $existing['imageQuality'] = $value;
+                $existing['imgQuality'] = $value;
+                continue;
+            }
             $existing[$key] = $value;
         }
     }

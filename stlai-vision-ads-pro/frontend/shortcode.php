@@ -566,7 +566,7 @@
 
   <div class="video-final-box mt" id="video-final-box" style="display:none">
     <div class="sl">Vídeo final</div>
-    <video id="video-final-player" controls playsinline preload="metadata"></video>
+    <video id="video-final-player" controls playsinline webkit-playsinline preload="metadata"></video>
   </div>
 
   <div class="video-clips-box mt" id="video-clips-box" style="display:none">
@@ -586,7 +586,7 @@
 
   <div class="video-test-clip-box mt" id="video-test-clip-box" style="display:none">
     <div class="sl">Clipe IA de teste</div>
-    <video id="video-test-clip-player" controls playsinline muted preload="metadata"></video>
+    <video id="video-test-clip-player" controls playsinline webkit-playsinline muted preload="metadata" controlsList="nofullscreen nodownload noplaybackrate" disablePictureInPicture></video>
   </div>
 
   <div class="arow" style="margin-top:24px">
@@ -691,7 +691,7 @@
       </div>
       <div class="sum-video-final-wrap" id="sum-video-final-wrap" style="display:none">
         <span>Vídeo final</span>
-        <video id="sum-video-final-player" controls playsinline preload="metadata"></video>
+        <video id="sum-video-final-player" controls playsinline webkit-playsinline preload="metadata"></video>
       </div>
       <div class="sum-video-motion-wrap" id="sum-video-motion-wrap" style="display:none"></div>
       <div class="sum-video-retry-wrap" id="sum-video-retry-wrap" style="display:none">

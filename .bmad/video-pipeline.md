@@ -19,6 +19,8 @@ A implementação inicial será focada em vídeo comercial automático com:
 - ElevenLabs para narração
 - composição final com repetição de clipes e fade
 
+Atualização 2026-05-21: no plugin atual, os 4 clipes são disparados por AJAX semi-paralelo, com 1 segundo de diferença entre cada início. O polling acompanha o job e a composição, mas não deve iniciar clipes automaticamente. A composição externa pode mixar música de fundo opcional via renderer, nunca via ElevenLabs.
+
 UGC com Seedance 2.0 / BytePlus ModelArk e MuAPI fica reservado para roadmap futuro.
 
 ## Escopo do MVP

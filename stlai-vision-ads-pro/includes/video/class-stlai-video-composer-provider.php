@@ -81,7 +81,7 @@ class STLAI_Video_Composer_Provider {
         }
 
         $status = sanitize_key( $json['status'] ?? 'processing' );
-        $final_video_url = esc_url_raw( $json['final_video_url'] ?? '' );
+        $final_video_url = self::normalize_media_url( $json['final_video_url'] ?? '' );
         if ( 'ready' === $status && empty( $final_video_url ) ) {
             return self::error( 'FINAL_VIDEO_URL_MISSING', 'O serviço de composição não retornou a URL do vídeo final.', 'status ready sem final_video_url.' );
         }
@@ -95,6 +95,10 @@ class STLAI_Video_Composer_Provider {
             'final_video_duration' => max( 0, (float) ( $json['duration'] ?? 0 ) ),
             'transition_used'       => sanitize_key( $json['transition_used'] ?? '' ),
             'fallback_used'         => sanitize_key( $json['fallback_used'] ?? '' ),
+            'render_time_seconds'   => max( 0, (float) ( $json['render_time_seconds'] ?? 0 ) ),
+            'background_music_used' => ! empty( $json['background_music_used'] ),
+            'background_music_volume' => max( 0, min( 1, (float) ( $json['background_music_volume'] ?? 0 ) ) ),
+            'fast_compose'          => ! empty( $json['fast_compose'] ),
             'composer_mode'        => $mode,
             'composer_provider'    => 'external_service',
             'composed_at'          => 'ready' === $status ? current_time( 'mysql' ) : '',
@@ -190,7 +194,7 @@ class STLAI_Video_Composer_Provider {
     }
 
     private static function external_payload( array $job ) {
-        $audio_url = esc_url_raw( $job['audio_url'] ?? '' );
+        $audio_url = self::normalize_media_url( $job['audio_url'] ?? '' );
         if ( empty( $audio_url ) ) {
             return self::error( 'COMPOSER_INVALID_RESPONSE', 'A narração não está disponível para composição.', 'audio_url ausente no job.' );
         }
@@ -200,7 +204,7 @@ class STLAI_Video_Composer_Provider {
             $clips[] = array(
                 'index' => (int) ( $clip['index'] ?? 0 ),
                 'role'  => sanitize_key( $clip['role'] ?? '' ),
-                'url'   => esc_url_raw( $clip['url'] ?? '' ),
+                'url'   => self::normalize_media_url( $clip['url'] ?? '' ),
             );
         }
 
@@ -234,7 +238,7 @@ class STLAI_Video_Composer_Provider {
             }
 
             $index = (int) ( $clip['index'] ?? 0 );
-            $url = esc_url_raw( $clip['url'] ?? '' );
+            $url = self::normalize_media_url( $clip['url'] ?? '' );
             if ( $index < 1 || $index > 4 || empty( $url ) ) {
                 continue;
             }
@@ -267,6 +271,14 @@ class STLAI_Video_Composer_Provider {
             'FFmpeg local não está disponível neste plano de hospedagem. Use o serviço externo de composição.',
             'tested=' . implode( ', ', $tested )
         );
+    }
+
+    private static function normalize_media_url( $url ) {
+        $url = trim( (string) $url );
+        $url = trim( $url, "\"' \t\n\r\0\x0B" );
+        $url = str_replace( '\\/', '/', $url );
+
+        return esc_url_raw( $url );
     }
 
     private static function settings() {
