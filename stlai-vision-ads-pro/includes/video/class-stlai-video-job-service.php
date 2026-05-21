@@ -643,8 +643,14 @@ class STLAI_Video_Job_Service {
         return self::normalize_clip_jobs( $clip_jobs, array(), false );
     }
 
-    private static function start_composition_if_ready( array $job ) {
-        $clips = self::normalize_clip_list( $job['clips'] ?? array() );
+	    private static function start_composition_if_ready( array $job ) {
+	        $latest_job = STLAI_Video_Storage::get_job( $job['job_id'] ) ?: $job;
+	        if ( ! empty( $latest_job['render_job_id'] ) || in_array( $latest_job['status'] ?? '', array( 'composition_queued', 'composition_processing', 'composing_final_video' ), true ) || in_array( $latest_job['composition_status'] ?? '', array( 'queued', 'processing' ), true ) ) {
+	            return self::maybe_refresh_composition_status( $latest_job );
+	        }
+
+	        $job = $latest_job;
+	        $clips = self::normalize_clip_list( $job['clips'] ?? array() );
         if ( count( $clips ) < 4 ) {
             return STLAI_Video_Storage::update_job(
                 $job['job_id'],
@@ -696,9 +702,10 @@ class STLAI_Video_Job_Service {
                 'progress'           => 82,
                 'progress_hint'      => 82,
                 'message'            => 'Compondo vídeo final...',
-                'composition_status' => 'processing',
-            )
-        );
+	                'composition_status' => 'processing',
+	                'composition_started_at' => current_time( 'mysql' ),
+	            )
+	        );
 
         $composer = STLAI_Video_Composer_Provider::start_composition( $job );
         if ( is_wp_error( $composer ) ) {

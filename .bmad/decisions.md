@@ -80,6 +80,28 @@ O painel admin passa a armazenar as credenciais e modelos futuros. Nenhuma chave
 
 Decidido
 
+## 2026-05-21 - Estado monotônico de vídeo e clipes
+
+### Decisao
+
+O estado de vídeo/clipes é monotônico. Um clipe que chegou a `ready` com `url` nunca pode voltar para `pending`, `queued`, `generating`, `retrying` ou desaparecer da UI.
+
+O backend deve fazer merge seguro de updates parciais antes de salvar o job: `clips` e `clip_jobs` são mesclados por `index`, respostas parciais não removem itens prontos, e `ready + url` tem prioridade máxima. O status geral deve ser derivado do estado real: vídeo final pronto, composição em andamento, 4 clipes prontos, clipes parciais, áudio pronto e narração.
+
+O frontend também deve fazer merge, não replace bruto. Respostas AJAX antigas podem acrescentar URLs novas, mas não podem reduzir progresso, apagar clipes, apagar `final_video_url` ou voltar o status visual para uma fase mais antiga.
+
+### Motivo
+
+Com geração semi-paralela, polling e múltiplos `admin-ajax`, respostas podem chegar fora de ordem. Sem merge monotônico, um response antigo pode sobrescrever um job mais novo e fazer players prontos sumirem.
+
+### Impacto
+
+O contrato público passa a expor `job_version`, `updated_at`, `clips_ready_count` e `missing_clips`. A composição final é tratada como idempotente: se já existe `render_job_id` ou composição em fila/processamento, não se inicia uma segunda composição.
+
+### Status
+
+Decidido
+
 ## 2026-05-21 - Clipes semi-paralelos, URLs limpas, narração sem tags e música opcional
 
 ### Decisao

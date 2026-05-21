@@ -36,6 +36,8 @@ const S = {
     renderJobId: "",
     progress: 0,
     progressHint: 0,
+    jobVersion: 0,
+    updatedAt: "",
     message: "",
     audioUrl: "",
     finalVideoUrl: "",
@@ -1230,16 +1232,91 @@ function normalizeClipJobs(jobs, clips=S.video.clips){
   return Object.keys(byIndex).sort((a,b)=>Number(a)-Number(b)).map(key=>byIndex[key]);
 }
 
-function applyVideoClipJobData(data={}){
-  if(Array.isArray(data.clip_jobs)){
-    S.video.clipJobs=normalizeClipJobs(data.clip_jobs, Array.isArray(data.clips) ? data.clips : S.video.clips);
-  }else{
-    S.video.clipJobs=normalizeClipJobs(S.video.clipJobs, S.video.clips);
+function clipStatusRank(status){
+  const rank={pending:1,queued:2,generating:3,retrying:4,error:5,ready:6};
+  return rank[String(status || "pending")] || 1;
+}
+
+function mergeVideoClips(existing=[], incoming=[]){
+  const byIndex={};
+  const push=clip=>{
+    if(!clip || typeof clip!=="object") return;
+    const normalized=normalizeVideoClipUrlData(clip);
+    const index=Number(normalized.index || 0);
+    if(index<1 || index>4 || !normalized.url) return;
+    if(byIndex[index] && byIndex[index].url){
+      byIndex[index]={...normalized, ...byIndex[index], index, url:byIndex[index].url};
+      return;
+    }
+    byIndex[index]={...(byIndex[index] || {}), ...normalized, index, url:normalized.url};
+  };
+  (Array.isArray(existing) ? existing : []).forEach(push);
+  (Array.isArray(incoming) ? incoming : []).forEach(push);
+  return Object.keys(byIndex).sort((a,b)=>Number(a)-Number(b)).map(key=>byIndex[key]);
+}
+
+function mergeVideoFrames(existing=[], incoming=[]){
+  const byIndex={};
+  const push=frame=>{
+    if(!frame || typeof frame!=="object") return;
+    const normalized=normalizeVideoFrameUrlData(frame);
+    const index=Number(normalized.index || 0);
+    if(index<1 || index>4 || !normalized.url) return;
+    byIndex[index]={...(byIndex[index] || {}), ...normalized, index, url:normalized.url};
+  };
+  (Array.isArray(existing) ? existing : []).forEach(push);
+  (Array.isArray(incoming) ? incoming : []).forEach(push);
+  return Object.keys(byIndex).sort((a,b)=>Number(a)-Number(b)).map(key=>byIndex[key]);
+}
+
+function strongerClipJob(existing={}, incoming={}){
+  const left={...existing};
+  const right={...incoming};
+  if(left.url) left.status="ready";
+  if(right.url) right.status="ready";
+  const winner=clipStatusRank(right.status)>=clipStatusRank(left.status) ? right : left;
+  const merged={...left, ...winner};
+  if(left.status==="ready" && left.url){
+    merged.status="ready";
+    merged.url=left.url;
+    merged.error="";
   }
+  if(right.status==="ready" && right.url){
+    merged.status="ready";
+    merged.url=right.url;
+    merged.error="";
+  }
+  merged.index=Number(merged.index || left.index || right.index || 0);
+  merged.url=normalizeMediaUrl(merged.url);
+  return merged;
+}
+
+function mergeVideoClipJobs(existingJobs=[], incomingJobs=[], clips=[]){
+  const byIndex={};
+  normalizeClipJobs(existingJobs, S.video.clips).forEach(job=>{
+    byIndex[job.index]=job;
+  });
+  normalizeClipJobs(incomingJobs, clips).forEach(job=>{
+    byIndex[job.index]=strongerClipJob(byIndex[job.index] || {index:job.index,status:"pending",attempt:0,url:"",error:""}, job);
+  });
+  normalizeClipJobs(Object.values(byIndex), clips).forEach(job=>{
+    byIndex[job.index]=strongerClipJob(byIndex[job.index] || {}, job);
+  });
+  return Object.keys(byIndex).sort((a,b)=>Number(a)-Number(b)).map(key=>byIndex[key]);
+}
+
+function applyVideoClipJobData(data={}){
+  const incomingClips=mergeVideoClips(Array.isArray(data.clips) ? data.clips : [], Array.isArray(data.partial_clips) ? data.partial_clips : []);
+  const mergedClips=mergeVideoClips(S.video.clips, incomingClips);
+  S.video.clipJobs=mergeVideoClipJobs(S.video.clipJobs, Array.isArray(data.clip_jobs) ? data.clip_jobs : [], mergedClips);
 	  S.video.clipStatuses=data.clip_statuses && typeof data.clip_statuses==="object" ? data.clip_statuses : S.video.clipStatuses;
   S.video.clipAttempts=data.clip_attempts && typeof data.clip_attempts==="object" ? data.clip_attempts : S.video.clipAttempts;
   S.video.clipErrors=data.clip_errors && typeof data.clip_errors==="object" ? data.clip_errors : S.video.clipErrors;
-  S.video.missingClips=Array.isArray(data.missing_clips) ? data.missing_clips.map(Number).filter(Boolean) : S.video.clipJobs.filter(job=>job.status!=="ready").map(job=>job.index);
+  const readyIndexes=S.video.clipJobs.filter(job=>job.status==="ready" || job.url).map(job=>Number(job.index));
+  const incomingMissing=Array.isArray(data.missing_clips)
+    ? data.missing_clips.map(Number).filter(index=>index>=1 && index<=4 && !readyIndexes.includes(index))
+    : [];
+  S.video.missingClips=incomingMissing.length ? incomingMissing : S.video.clipJobs.filter(job=>job.status!=="ready" && !job.url).map(job=>job.index);
 	}
 
 function normalizeVideoJobPayload(data={}){
@@ -1255,6 +1332,115 @@ function normalizeVideoJobPayload(data={}){
     next.clip_jobs=next.clip_jobs.map(job=>({...job,url:normalizeMediaUrl(job.url)}));
   }
   return next;
+}
+
+function videoStateRank(snapshot={}){
+  const clips=Array.isArray(snapshot.clips) ? snapshot.clips.filter(clip=>clip && clip.url).length : 0;
+  const status=String(snapshot.status || "");
+  const compositionStatus=String(snapshot.compositionStatus || snapshot.composition_status || "");
+  const composerStatus=String(snapshot.composerStatus || snapshot.composer_status || "");
+  if(snapshot.finalVideoUrl || snapshot.final_video_url || status==="ready") return 100;
+  if(status==="composition_processing" || compositionStatus==="processing" || composerStatus==="processing") return 90;
+  if(status==="composition_queued" || status==="composing_final_video" || status==="composition_pending" || compositionStatus==="queued" || composerStatus==="queued") return 80;
+  if(clips>=4 || status==="clips_ready" || status==="ready_for_composition") return 70;
+  if(clips>0) return 30 + clips;
+  if(snapshot.audioUrl || snapshot.audio_url) return 20;
+  if(isVideoBusyStatus(status)) return 10;
+  return 0;
+}
+
+function deriveMergedVideoStatus(previous, incoming, merged){
+  const incomingStatus=String(incoming.status || "");
+  const previousStatus=String(previous.status || "");
+  const clipsReady=Array.isArray(merged.clips) ? merged.clips.filter(clip=>clip && clip.url).length : 0;
+  const compositionStatus=String(merged.compositionStatus || "");
+  const composerStatus=String(merged.composerStatus || "");
+
+  if(merged.finalVideoUrl || incomingStatus==="ready" || previousStatus==="ready") return "ready";
+  if(incomingStatus==="composition_error" || previousStatus==="composition_error") return "composition_error";
+  if(incomingStatus==="clip_generation_error" || incomingStatus==="clips_partial_error") return incomingStatus;
+  if(previousStatus==="clip_generation_error" || previousStatus==="clips_partial_error"){
+    const active=normalizeClipJobs(merged.clipJobs, merged.clips).some(job=>["pending","queued","generating","retrying"].includes(job.status));
+    if(!active) return previousStatus;
+  }
+  if(compositionStatus==="processing" || composerStatus==="processing" || incomingStatus==="composition_processing" || previousStatus==="composition_processing" || previousStatus==="composing_final_video") return "composition_processing";
+  if(compositionStatus==="queued" || composerStatus==="queued" || incomingStatus==="composition_queued" || incomingStatus==="composition_pending" || previousStatus==="composition_queued" || previousStatus==="composition_pending") return "composition_queued";
+  if(clipsReady>=4) return "clips_ready";
+  if(clipsReady>0) return "generating_clips";
+  if(merged.audioUrl && (incomingStatus==="generating_narration" || previousStatus==="generating_narration" || isVideoBusyStatus(incomingStatus) || isVideoBusyStatus(previousStatus))) return "generating_clips";
+  return incomingStatus || previousStatus || "idle";
+}
+
+function applyVideoState(payload={}, options={}){
+  const incoming=normalizeVideoJobPayload(payload || {});
+  const previous={
+    status:S.video.status,
+    progress:S.video.progress,
+    progressHint:S.video.progressHint,
+    jobVersion:S.video.jobVersion,
+    updatedAt:S.video.updatedAt,
+    audioUrl:S.video.audioUrl,
+    finalVideoUrl:S.video.finalVideoUrl,
+    clips:Array.isArray(S.video.clips) ? S.video.clips : [],
+    clipJobs:Array.isArray(S.video.clipJobs) ? S.video.clipJobs : [],
+    videoFrames:Array.isArray(S.video.videoFrames) ? S.video.videoFrames : [],
+    compositionStatus:S.video.compositionStatus,
+    composerStatus:S.video.composerStatus
+  };
+  const incomingVersion=Number(incoming.job_version || incoming.revision || 0);
+  const previousVersion=Number(previous.jobVersion || 0);
+  const stale=incomingVersion > 0 && previousVersion > 0 && incomingVersion < previousVersion;
+  const incomingClips=mergeVideoClips(Array.isArray(incoming.clips) ? incoming.clips : [], Array.isArray(incoming.partial_clips) ? incoming.partial_clips : []);
+  const mergedClips=mergeVideoClips(previous.clips, incomingClips);
+  const mergedFrames=mergeVideoFrames(previous.videoFrames, Array.isArray(incoming.video_frames) ? incoming.video_frames : []);
+  const mergedClipJobs=mergeVideoClipJobs(previous.clipJobs, Array.isArray(incoming.clip_jobs) ? incoming.clip_jobs : [], mergedClips);
+  const merged={
+    clips:mergedClips,
+    clipJobs:mergedClipJobs,
+    audioUrl:incoming.audio_url || previous.audioUrl || "",
+    finalVideoUrl:incoming.final_video_url || previous.finalVideoUrl || "",
+    compositionStatus:incoming.composition_status || previous.compositionStatus || "pending",
+    composerStatus:incoming.composer_status || previous.composerStatus || ""
+  };
+  const previousRank=videoStateRank({...previous, clips:previous.clips});
+  const incomingRank=videoStateRank({...incoming, clips:incomingClips});
+  const mergedStatus=deriveMergedVideoStatus(previous, incoming, merged);
+  const canUseIncomingStatus=!stale || incomingRank>=previousRank || videoPhaseRank(incoming.status)>=videoPhaseRank(previous.status);
+
+  S.video.jobId=incoming.job_id || S.video.jobId || "";
+  S.video.status=canUseIncomingStatus ? mergedStatus : deriveMergedVideoStatus(previous, {}, merged);
+  S.video.progress=Math.max(Number(S.video.progress || 0), Number(incoming.progress || 0));
+  S.video.progressHint=Math.max(Number(S.video.progressHint || 0), Number(incoming.progress_hint || incoming.progress || 0), S.video.progress);
+  S.video.message=(!stale && incoming.message) ? incoming.message : (S.video.message || incoming.message || "");
+  S.video.audioUrl=merged.audioUrl;
+  S.video.finalVideoUrl=merged.finalVideoUrl;
+  S.video.finalVideoDuration=Number(incoming.final_video_duration || S.video.finalVideoDuration || 0);
+  S.video.thumbnailUrl=incoming.thumbnail_url || S.video.thumbnailUrl || "";
+  S.video.clips=mergedClips;
+  S.video.clipJobs=mergedClipJobs;
+  S.video.videoFrames=mergedFrames.length ? mergedFrames : videoFramesFromClips(mergedClips);
+  S.video.currentClipIndex=Number((!stale && incoming.current_clip_index) || S.video.currentClipIndex || 0);
+  S.video.currentClipAttempt=Number((!stale && incoming.current_clip_attempt) || S.video.currentClipAttempt || 0);
+  S.video.clipRetryCount=Number((!stale && incoming.clip_retry_count) || S.video.clipRetryCount || 0);
+  S.video.lastClipError=(!stale && incoming.last_clip_error) || S.video.lastClipError || "";
+  S.video.failedClipIndex=Number((!stale && (incoming.failed_clip_index || incoming.failed_clip)) || S.video.failedClipIndex || 0);
+  S.video.failedClipRole=(!stale && incoming.failed_clip_role) || S.video.failedClipRole || "";
+  S.video.errorCode=(!stale && (incoming.error_code || incoming.code)) || S.video.errorCode || "";
+  S.video.compositionStatus=merged.compositionStatus;
+  S.video.composerStatus=merged.composerStatus;
+  S.video.renderJobId=incoming.render_job_id || S.video.renderJobId || "";
+  S.video.jobVersion=Math.max(previousVersion, incomingVersion);
+  S.video.updatedAt=(!stale && incoming.updated_at) ? incoming.updated_at : (S.video.updatedAt || incoming.updated_at || "");
+  applyVideoClipJobData({...incoming, clips:mergedClips, partial_clips:mergedClips, clip_jobs:mergedClipJobs});
+  if(options.debug && S.cfg && S.cfg.debugVideo){
+    console.debug("stlai video merge", {
+      incoming_clips:incomingClips.length,
+      previous_clips:previous.clips.length,
+      merged_clips:mergedClips.length,
+      ignored_stale_update:stale && !canUseIncomingStatus,
+      job_version:S.video.jobVersion
+    });
+  }
 }
 
 function readyVideoClipCount(){
@@ -1500,6 +1686,8 @@ async function mockGenerateVideo(){
   S.video.mockReady=false;
   S.video.progress=0;
   S.video.progressHint=0;
+  S.video.jobVersion=retryingReusable ? S.video.jobVersion : 0;
+  S.video.updatedAt=retryingReusable ? S.video.updatedAt : "";
   S.video.jobId=retryingReusable ? existingJobId : "";
   S.video.audioUrl=retryingReusable ? existingAudioUrl : "";
   S.video.finalVideoUrl="";
@@ -1540,29 +1728,8 @@ async function mockGenerateVideo(){
       product_description: S.descTxt || S.desc
     });
 
-    S.video.jobId=data.job_id || "";
-    S.video.status=data.status || "queued";
-    S.video.progress=Number(data.progress || 10);
-    S.video.progressHint=Number(data.progress_hint || data.progress || 10);
-    S.video.message=data.message || "Job de vídeo criado.";
-    S.video.audioUrl=data.audio_url || "";
-    S.video.finalVideoUrl=data.final_video_url || "";
-    S.video.finalVideoDuration=Number(data.final_video_duration || 0);
-    S.video.thumbnailUrl=data.thumbnail_url || "";
-    S.video.clips=Array.isArray(data.clips) ? data.clips : [];
-    applyVideoClipJobData(data);
-    S.video.videoFrames=Array.isArray(data.video_frames) ? data.video_frames : videoFramesFromClips(S.video.clips);
+    applyVideoState({...data, status:data.status || "queued", progress:data.progress || 10, progress_hint:data.progress_hint || data.progress || 10, message:data.message || "Job de vídeo criado."}, {debug:true});
     if(data.script_public) S.video.script=String(data.script_public || S.video.script);
-    S.video.currentClipIndex=Number(data.current_clip_index || 0);
-    S.video.currentClipAttempt=Number(data.current_clip_attempt || 0);
-    S.video.clipRetryCount=Number(data.clip_retry_count || 0);
-    S.video.lastClipError=data.last_clip_error || "";
-    S.video.failedClipIndex=Number(data.failed_clip_index || 0);
-    S.video.failedClipRole=data.failed_clip_role || "";
-    S.video.errorCode=data.error_code || "";
-    S.video.compositionStatus=data.composition_status || "pending";
-    S.video.composerStatus=data.composer_status || "";
-    S.video.renderJobId=data.render_job_id || "";
     renderVideoStatus();
     unlock(6);
 	    renderSummaryVideo();
@@ -1582,25 +1749,7 @@ async function mockGenerateVideo(){
   }catch(err){
     const data=err.data || {};
     console.warn("Video generation error", data || err);
-    if(data.job_id) S.video.jobId=data.job_id;
-    if(data.audio_url) S.video.audioUrl=data.audio_url;
-    if(Array.isArray(data.partial_clips)) S.video.clips=data.partial_clips;
-    else if(Array.isArray(data.clips)) S.video.clips=data.clips;
-    applyVideoClipJobData(data);
-    if(Array.isArray(data.video_frames)) S.video.videoFrames=data.video_frames;
-    else S.video.videoFrames=videoFramesFromClips(S.video.clips);
-    S.video.progressHint=Number(data.progress_hint || S.video.progressHint || S.video.progress || 0);
-    S.video.currentClipIndex=Number(data.current_clip_index || 0);
-    S.video.currentClipAttempt=Number(data.current_clip_attempt || 0);
-    S.video.clipRetryCount=Number(data.clip_retry_count || 0);
-    S.video.lastClipError=data.last_clip_error || "";
-    S.video.failedClipIndex=Number(data.failed_clip_index || data.failed_clip || 0);
-    S.video.failedClipRole=data.failed_clip_role || "";
-    S.video.errorCode=data.code || data.error_code || "";
-    S.video.status=data.status || (S.video.failedClipIndex ? "clip_generation_error" : "error");
-    S.video.compositionStatus=data.composition_status || "pending";
-    S.video.composerStatus=data.composer_status || "";
-    S.video.renderJobId=data.render_job_id || "";
+    applyVideoState({...data, status:data.status || (data.failed_clip_index || data.failed_clip ? "clip_generation_error" : "error"), message:data.message || err.message}, {debug:true});
     S.video.message=isComposerPendingCode(S.video.errorCode) || S.video.status==="composition_pending"
       ? "Narração e clipes preparados. A composição final está pendente."
       : (S.video.status==="clips_partial_error" || S.video.status==="clip_generation_error"
@@ -2481,38 +2630,13 @@ async function startVideoClip(index){
       job_id:S.video.jobId,
       clip_index:index
     });
-    S.video.status=data.status || S.video.status;
-    S.video.progress=Number(data.progress || S.video.progress || 0);
-    S.video.progressHint=Number(data.progress_hint || S.video.progressHint || S.video.progress || 0);
-    S.video.message=data.message || S.video.message;
-    S.video.audioUrl=data.audio_url || S.video.audioUrl || "";
-    S.video.clips=Array.isArray(data.clips) ? data.clips : (S.video.clips || []);
-    if(Array.isArray(data.partial_clips) && data.partial_clips.length) S.video.clips=data.partial_clips;
-    applyVideoClipJobData(data);
-    S.video.videoFrames=Array.isArray(data.video_frames) ? data.video_frames : videoFramesFromClips(S.video.clips);
-    S.video.currentClipIndex=Number(data.current_clip_index || S.video.currentClipIndex || 0);
-    S.video.currentClipAttempt=Number(data.current_clip_attempt || S.video.currentClipAttempt || 0);
-    S.video.clipRetryCount=Number(data.clip_retry_count || S.video.clipRetryCount || 0);
-    S.video.lastClipError=data.last_clip_error || S.video.lastClipError || "";
-    S.video.failedClipIndex=Number(data.failed_clip_index || S.video.failedClipIndex || 0);
-    S.video.errorCode=data.error_code || S.video.errorCode || "";
-    S.video.compositionStatus=data.composition_status || S.video.compositionStatus || "pending";
-    S.video.composerStatus=data.composer_status || S.video.composerStatus || "";
-    S.video.renderJobId=data.render_job_id || S.video.renderJobId || "";
-    S.video.finalVideoUrl=data.final_video_url || S.video.finalVideoUrl || "";
-    S.video.finalVideoDuration=Number(data.final_video_duration || S.video.finalVideoDuration || 0);
+    applyVideoState(data, {debug:true});
     renderVideoStatus();
     if(S.step>=6) renderSummaryVideo();
   }catch(err){
     const data=normalizeVideoJobPayload(err.data || {});
     console.warn("Clip generation error", data || err);
-    if(Array.isArray(data.clips)) S.video.clips=data.clips;
-    if(Array.isArray(data.partial_clips) && data.partial_clips.length) S.video.clips=data.partial_clips;
-    applyVideoClipJobData(data);
-    S.video.videoFrames=Array.isArray(data.video_frames) ? data.video_frames : videoFramesFromClips(S.video.clips);
-    S.video.failedClipIndex=Number(data.failed_clip_index || data.failed_clip || index || 0);
-    S.video.errorCode=data.code || data.error_code || "";
-    S.video.status=data.status || "clip_generation_error";
+    applyVideoState({...data, status:data.status || "clip_generation_error", failed_clip_index:data.failed_clip_index || data.failed_clip || index || 0, code:data.code || data.error_code || ""}, {debug:true});
     S.video.message=data.message || partialClipFailureMessage(S.video.failedClipIndex, readyVideoClipCount());
     renderVideoStatus();
     if(S.step>=6) renderSummaryVideo();
@@ -2523,32 +2647,12 @@ async function startVideoClip(index){
   if(!S.video.jobId) return;
   try{
     const data=await videoAjaxRequest("stlai_check_video_status", {job_id:S.video.jobId});
-    S.video.status=data.status || S.video.status;
-    S.video.progress=Number(data.progress || S.video.progress || 0);
-    S.video.progressHint=Number(data.progress_hint || S.video.progressHint || S.video.progress || 0);
-    S.video.message=data.message || S.video.message;
-    S.video.audioUrl=data.audio_url || S.video.audioUrl || "";
-    S.video.clips=Array.isArray(data.clips) ? data.clips : (S.video.clips || []);
-    if(Array.isArray(data.partial_clips) && data.partial_clips.length) S.video.clips=data.partial_clips;
-    applyVideoClipJobData(data);
-    if(Array.isArray(data.video_frames)) S.video.videoFrames=data.video_frames;
-    else S.video.videoFrames=videoFramesFromClips(S.video.clips);
-    S.video.currentClipIndex=Number(data.current_clip_index || S.video.currentClipIndex || 0);
-    S.video.currentClipAttempt=Number(data.current_clip_attempt || S.video.currentClipAttempt || 0);
-    S.video.clipRetryCount=Number(data.clip_retry_count || S.video.clipRetryCount || 0);
-    S.video.lastClipError=data.last_clip_error || S.video.lastClipError || "";
-    S.video.failedClipIndex=Number(data.failed_clip_index || S.video.failedClipIndex || 0);
-    S.video.failedClipRole=data.failed_clip_role || S.video.failedClipRole || "";
-    S.video.errorCode=data.error_code || S.video.errorCode || "";
-    S.video.compositionStatus=data.composition_status || S.video.compositionStatus || "pending";
-    S.video.composerStatus=data.composer_status || S.video.composerStatus || "";
-    S.video.renderJobId=data.render_job_id || S.video.renderJobId || "";
-    S.video.finalVideoUrl=data.final_video_url || "";
-    S.video.finalVideoDuration=Number(data.final_video_duration || S.video.finalVideoDuration || 0);
-    S.video.thumbnailUrl=data.thumbnail_url || "";
+    applyVideoState(data, {debug:true});
+    const activeClipJobs=hasActiveClipJobs();
+    const terminalClipError=S.video.status==="clip_generation_error" && !activeClipJobs;
     if(S.video.status==="ready" || S.video.status==="ready_for_composition" || S.video.status==="clips_ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error"){
       S.video.mockReady=true;
-      if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || S.video.status==="clip_generation_error") stopVideoProgressLoop();
+      if(S.video.status==="ready" || S.video.status==="composition_pending" || S.video.status==="composition_error" || terminalClipError) stopVideoProgressLoop();
       renderVideoStatus();
 	      if(S.video.status==="composition_error" || terminalClipError){
         toast(S.video.status==="composition_error" ? "Não foi possível concluir o vídeo final." : "Não foi possível gerar todos os clipes.","error");
@@ -2567,23 +2671,7 @@ async function startVideoClip(index){
   }catch(err){
     const data=err.data || {};
     console.warn("Video generation error", data || err);
-    if(Array.isArray(data.partial_clips)) S.video.clips=data.partial_clips;
-    else if(Array.isArray(data.clips)) S.video.clips=data.clips;
-    applyVideoClipJobData(data);
-    if(Array.isArray(data.video_frames)) S.video.videoFrames=data.video_frames;
-    else S.video.videoFrames=videoFramesFromClips(S.video.clips);
-    S.video.progressHint=Number(data.progress_hint || S.video.progressHint || S.video.progress || 0);
-    S.video.currentClipIndex=Number(data.current_clip_index || S.video.currentClipIndex || 0);
-    S.video.currentClipAttempt=Number(data.current_clip_attempt || S.video.currentClipAttempt || 0);
-    S.video.clipRetryCount=Number(data.clip_retry_count || S.video.clipRetryCount || 0);
-    S.video.lastClipError=data.last_clip_error || S.video.lastClipError || "";
-    S.video.failedClipIndex=Number(data.failed_clip_index || data.failed_clip || 0);
-    S.video.failedClipRole=data.failed_clip_role || "";
-    S.video.errorCode=data.code || data.error_code || "";
-    S.video.status=data.status || (S.video.failedClipIndex ? "clip_generation_error" : "error");
-    S.video.compositionStatus=data.composition_status || S.video.compositionStatus || "pending";
-    S.video.composerStatus=data.composer_status || S.video.composerStatus || "";
-    S.video.renderJobId=data.render_job_id || S.video.renderJobId || "";
+    applyVideoState({...data, status:data.status || (data.failed_clip_index || data.failed_clip ? "clip_generation_error" : "error"), message:data.message || err.message}, {debug:true});
     S.video.message=isComposerPendingCode(S.video.errorCode) || S.video.status==="composition_pending"
       ? "Narração e clipes preparados. A composição final está pendente."
       : (S.video.status==="clips_partial_error" || S.video.status==="clip_generation_error"

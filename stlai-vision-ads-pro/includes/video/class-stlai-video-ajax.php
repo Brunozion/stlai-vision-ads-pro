@@ -113,8 +113,11 @@ class STLAI_Video_Ajax {
             'clip_statuses'   => self::public_assoc_response( $job['clip_statuses'] ?? array() ),
             'clip_attempts'   => self::public_int_assoc_response( $job['clip_attempts'] ?? array() ),
             'clip_errors'     => self::public_assoc_response( $job['clip_errors'] ?? array() ),
-            'missing_clips'   => array_values( array_map( 'intval', $job['missing_clips'] ?? array() ) ),
-            'final_video_url' => $job['final_video_url'] ?? '',
+	            'missing_clips'   => array_values( array_map( 'intval', $job['missing_clips'] ?? array() ) ),
+	            'clips_ready_count' => (int) ( $job['clips_ready_count'] ?? 0 ),
+	            'job_version'     => (int) ( $job['job_version'] ?? 0 ),
+	            'updated_at'      => sanitize_text_field( $job['updated_at'] ?? '' ),
+	            'final_video_url' => $job['final_video_url'] ?? '',
             'final_video_duration' => (float) ( $job['final_video_duration'] ?? 0 ),
             'transition_used' => sanitize_key( $job['transition_used'] ?? '' ),
             'fallback_used'   => sanitize_key( $job['fallback_used'] ?? '' ),
@@ -286,6 +289,18 @@ class STLAI_Video_Ajax {
 
             if ( isset( $data['progress_hint'] ) ) {
                 $response['progress_hint'] = (int) $data['progress_hint'];
+            }
+
+            if ( isset( $data['job_version'] ) ) {
+                $response['job_version'] = (int) $data['job_version'];
+            }
+
+            if ( isset( $data['clips_ready_count'] ) ) {
+                $response['clips_ready_count'] = (int) $data['clips_ready_count'];
+            }
+
+            if ( ! empty( $data['updated_at'] ) ) {
+                $response['updated_at'] = sanitize_text_field( $data['updated_at'] );
             }
 
             if ( ! empty( $data['last_clip_error'] ) ) {

@@ -851,6 +851,32 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-21 - Estado monotônico dos clipes de vídeo
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O storage passou a fazer merge seguro de updates parciais do job.
+- `clips` e `clip_jobs` são mesclados por índice, preservando clipes prontos.
+- `ready + url` virou estado terminal de maior prioridade para cada clipe.
+- O job ganhou `job_version`, `updated_at`, `clips_ready_count` e `missing_clips` derivados.
+- O status geral passa a ser derivado do estado real para não voltar para narração/clipe antigo quando já há clipes prontos.
+- O frontend passou a aplicar merge monotônico em `applyVideoState`, preservando clipes, vídeo final, áudio, frames e progresso contra respostas AJAX atrasadas.
+- A composição final ganhou proteção para não iniciar novamente quando `render_job_id`, `status`, `composition_status` ou `composer_status` já indicam composição em andamento.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Pipeline final: clipes semi-paralelos, player, narração e imageQuality
 
 Arquivos alterados:

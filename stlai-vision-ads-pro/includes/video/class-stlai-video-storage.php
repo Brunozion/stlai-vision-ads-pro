@@ -50,7 +50,8 @@ class STLAI_Video_Storage {
                 'composer_mode'   => '',
                 'composer_provider' => '',
                 'composer_status' => '',
-                'render_job_id'   => '',
+	                'render_job_id'   => '',
+	                'composition_started_at' => '',
                 'composed_at'     => '',
                 'thumbnail_url'   => '',
                 'composition_status' => 'pending',
@@ -63,10 +64,12 @@ class STLAI_Video_Storage {
                 'error_code'      => '',
                 'error_message'   => '',
                 'error_debug'     => '',
-                'poll_count'      => 0,
-                'created_at'      => $now,
-                'updated_at'      => $now,
-            ),
+	                'poll_count'      => 0,
+	                'job_version'     => 1,
+	                'clips_ready_count' => 0,
+	                'created_at'      => $now,
+	                'updated_at'      => $now,
+	            ),
             $data
         );
 
@@ -92,15 +95,253 @@ class STLAI_Video_Storage {
             return null;
         }
 
-        $job = array_merge( $job, $data );
-        $job['updated_at'] = current_time( 'mysql' );
+	        $job = self::merge_job_data( $job, $data );
+	        $job['updated_at'] = current_time( 'mysql' );
+	        $job['job_version'] = max( 1, (int) ( $job['job_version'] ?? 1 ) ) + 1;
+	        $job = self::refresh_derived_state( $job );
 
         set_transient( self::key( $job_id ), $job, self::TTL );
 
         return $job;
     }
 
-    private static function key( $job_id ) {
-        return self::TRANSIENT_PREFIX . sanitize_key( $job_id );
-    }
-}
+	    private static function key( $job_id ) {
+	        return self::TRANSIENT_PREFIX . sanitize_key( $job_id );
+	    }
+
+	    private static function merge_job_data( array $existing, array $incoming ) {
+	        $data = $incoming;
+
+	        $existing_clips = self::normalize_clips( $existing['clips'] ?? array() );
+	        $incoming_clips = self::normalize_clips( $incoming['clips'] ?? array() );
+	        $merged_clips = self::merge_clips( $existing_clips, $incoming_clips );
+
+	        if ( isset( $incoming['partial_clips'] ) ) {
+	            $merged_clips = self::merge_clips( $merged_clips, self::normalize_clips( $incoming['partial_clips'] ) );
+	        }
+
+	        $existing_jobs = self::normalize_clip_jobs( $existing['clip_jobs'] ?? array(), $existing_clips );
+	        $incoming_jobs = self::normalize_clip_jobs( $incoming['clip_jobs'] ?? array(), $incoming_clips );
+	        $merged_jobs = self::merge_clip_jobs( $existing_jobs, $incoming_jobs, $merged_clips );
+
+	        unset( $data['clips'], $data['partial_clips'], $data['clip_jobs'], $data['clip_statuses'], $data['clip_attempts'], $data['clip_errors'], $data['clip_started_at'], $data['clip_finished_at'], $data['missing_clips'] );
+
+	        $job = array_merge( $existing, $data );
+	        $job['clips'] = $merged_clips;
+	        $job['partial_clips'] = $merged_clips;
+	        $job['clip_jobs'] = $merged_jobs;
+
+	        if ( empty( $incoming['final_video_url'] ?? '' ) && ! empty( $existing['final_video_url'] ?? '' ) ) {
+	            $job['final_video_url'] = $existing['final_video_url'];
+	        }
+
+	        if ( empty( $incoming['audio_url'] ?? '' ) && ! empty( $existing['audio_url'] ?? '' ) ) {
+	            $job['audio_url'] = $existing['audio_url'];
+	        }
+
+	        if ( empty( $incoming['render_job_id'] ?? '' ) && ! empty( $existing['render_job_id'] ?? '' ) ) {
+	            $job['render_job_id'] = $existing['render_job_id'];
+	        }
+
+	        if ( empty( $incoming['composition_started_at'] ?? '' ) && ! empty( $existing['composition_started_at'] ?? '' ) ) {
+	            $job['composition_started_at'] = $existing['composition_started_at'];
+	        }
+
+	        $job['progress'] = max( (int) ( $existing['progress'] ?? 0 ), (int) ( $incoming['progress'] ?? 0 ) );
+	        $job['progress_hint'] = max( (int) ( $existing['progress_hint'] ?? 0 ), (int) ( $incoming['progress_hint'] ?? 0 ), (int) $job['progress'] );
+
+	        return $job;
+	    }
+
+	    private static function refresh_derived_state( array $job ) {
+	        $clips = self::normalize_clips( $job['clips'] ?? array() );
+	        $clip_jobs = self::normalize_clip_jobs( $job['clip_jobs'] ?? array(), $clips );
+	        $statuses = array();
+	        $attempts = array();
+	        $errors = array();
+	        $started = array();
+	        $finished = array();
+	        $missing = array();
+	        $ready = 0;
+
+	        foreach ( $clip_jobs as $clip_job ) {
+	            $index = (int) ( $clip_job['index'] ?? 0 );
+	            $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+	            $statuses[ $index ] = $status;
+	            $attempts[ $index ] = (int) ( $clip_job['attempt'] ?? 0 );
+	            $errors[ $index ] = sanitize_text_field( $clip_job['error'] ?? '' );
+	            $started[ $index ] = sanitize_text_field( $clip_job['started_at'] ?? '' );
+	            $finished[ $index ] = sanitize_text_field( $clip_job['finished_at'] ?? '' );
+	            if ( 'ready' === $status ) {
+	                $ready++;
+	            } else {
+	                $missing[] = $index;
+	            }
+	        }
+
+	        $job['clips'] = $clips;
+	        $job['partial_clips'] = $clips;
+	        $job['clip_jobs'] = $clip_jobs;
+	        $job['clip_statuses'] = $statuses;
+	        $job['clip_attempts'] = $attempts;
+	        $job['clip_errors'] = $errors;
+	        $job['clip_started_at'] = $started;
+	        $job['clip_finished_at'] = $finished;
+	        $job['missing_clips'] = $missing;
+	        $job['clips_ready_count'] = $ready;
+
+	        $current_status = sanitize_key( $job['status'] ?? '' );
+	        $composition_status = sanitize_key( $job['composition_status'] ?? '' );
+	        $composer_status = sanitize_key( $job['composer_status'] ?? '' );
+
+	        if ( ! empty( $job['final_video_url'] ) ) {
+	            $job['status'] = 'ready';
+	            $job['progress'] = max( (int) ( $job['progress'] ?? 0 ), 100 );
+	            $job['progress_hint'] = 100;
+	        } elseif ( in_array( $composition_status, array( 'processing' ), true ) || in_array( $composer_status, array( 'processing' ), true ) || in_array( $current_status, array( 'composition_processing', 'composing_final_video' ), true ) ) {
+	            $job['status'] = 'composition_processing';
+	            $job['progress'] = max( (int) ( $job['progress'] ?? 0 ), 82 );
+	        } elseif ( in_array( $composition_status, array( 'queued' ), true ) || in_array( $composer_status, array( 'queued' ), true ) || 'composition_queued' === $current_status ) {
+	            $job['status'] = 'composition_queued';
+	            $job['progress'] = max( (int) ( $job['progress'] ?? 0 ), 80 );
+	        } elseif ( $ready >= 4 && ! empty( $job['audio_url'] ) && ! in_array( $current_status, array( 'composition_error', 'composition_pending' ), true ) ) {
+	            $job['status'] = 'clips_ready';
+	            $job['progress'] = max( (int) ( $job['progress'] ?? 0 ), 78 );
+	        } elseif ( $ready > 0 && $ready < 4 && ! in_array( $current_status, array( 'clip_generation_error', 'clips_partial_error' ), true ) ) {
+	            $job['status'] = 'generating_clips';
+	            $job['progress'] = max( (int) ( $job['progress'] ?? 0 ), self::clip_progress_for_ready_count( $ready ) );
+	        } elseif ( ! empty( $job['audio_url'] ) && $ready <= 0 && in_array( $current_status, array( 'generating_audio', 'generating_narration', 'queued' ), true ) ) {
+	            $job['status'] = 'generating_clips';
+	            $job['progress'] = max( (int) ( $job['progress'] ?? 0 ), 25 );
+	        }
+
+	        return $job;
+	    }
+
+	    private static function merge_clips( array $existing, array $incoming ) {
+	        $by_index = array();
+	        foreach ( array_merge( $existing, $incoming ) as $clip ) {
+	            $index = (int) ( $clip['index'] ?? 0 );
+	            if ( $index < 1 || $index > 4 || empty( $clip['url'] ) ) {
+	                continue;
+	            }
+	            if ( ! empty( $by_index[ $index ]['url'] ) ) {
+	                $by_index[ $index ] = array_merge( $clip, $by_index[ $index ] );
+	                continue;
+	            }
+	            $by_index[ $index ] = $clip;
+	        }
+	        ksort( $by_index );
+	        return array_values( $by_index );
+	    }
+
+	    private static function normalize_clips( $clips ) {
+	        if ( ! is_array( $clips ) ) {
+	            return array();
+	        }
+	        $normalized = array();
+	        foreach ( $clips as $clip ) {
+	            if ( ! is_array( $clip ) ) {
+	                continue;
+	            }
+	            $index = (int) ( $clip['index'] ?? 0 );
+	            $url = esc_url_raw( $clip['url'] ?? '' );
+	            if ( $index < 1 || $index > 4 || empty( $url ) ) {
+	                continue;
+	            }
+	            $normalized[ $index ] = array_merge( $clip, array( 'index' => $index, 'url' => $url ) );
+	        }
+	        ksort( $normalized );
+	        return array_values( $normalized );
+	    }
+
+	    private static function normalize_clip_jobs( $clip_jobs, array $clips ) {
+	        $by_index = array();
+	        if ( is_array( $clip_jobs ) ) {
+	            foreach ( $clip_jobs as $clip_job ) {
+	                if ( ! is_array( $clip_job ) ) {
+	                    continue;
+	                }
+	                $index = (int) ( $clip_job['index'] ?? 0 );
+	                if ( $index < 1 || $index > 4 ) {
+	                    continue;
+	                }
+	                $status = sanitize_key( $clip_job['status'] ?? 'pending' );
+	                $by_index[ $index ] = array(
+	                    'index'       => $index,
+	                    'status'      => in_array( $status, array( 'pending', 'queued', 'generating', 'retrying', 'ready', 'error' ), true ) ? $status : 'pending',
+	                    'attempt'     => max( 0, (int) ( $clip_job['attempt'] ?? 0 ) ),
+	                    'url'         => esc_url_raw( $clip_job['url'] ?? '' ),
+	                    'error'       => sanitize_text_field( $clip_job['error'] ?? '' ),
+	                    'started_at'  => sanitize_text_field( $clip_job['started_at'] ?? '' ),
+	                    'finished_at' => sanitize_text_field( $clip_job['finished_at'] ?? '' ),
+	                );
+	            }
+	        }
+
+	        foreach ( $clips as $clip ) {
+	            $index = (int) ( $clip['index'] ?? 0 );
+	            if ( $index < 1 || $index > 4 || empty( $clip['url'] ) ) {
+	                continue;
+	            }
+	            $by_index[ $index ] = array_merge(
+	                $by_index[ $index ] ?? array( 'index' => $index, 'attempt' => 1, 'started_at' => '', 'finished_at' => '' ),
+	                array(
+	                    'status'      => 'ready',
+	                    'attempt'     => max( 1, (int) ( $by_index[ $index ]['attempt'] ?? 1 ) ),
+	                    'url'         => esc_url_raw( $clip['url'] ?? '' ),
+	                    'error'       => '',
+	                    'finished_at' => sanitize_text_field( $by_index[ $index ]['finished_at'] ?? current_time( 'mysql' ) ),
+	                )
+	            );
+	        }
+
+	        for ( $index = 1; $index <= 4; $index++ ) {
+	            if ( empty( $by_index[ $index ] ) ) {
+	                $by_index[ $index ] = array( 'index' => $index, 'status' => 'pending', 'attempt' => 0, 'url' => '', 'error' => '', 'started_at' => '', 'finished_at' => '' );
+	            }
+	        }
+	        ksort( $by_index );
+	        return array_values( $by_index );
+	    }
+
+	    private static function merge_clip_jobs( array $existing, array $incoming, array $clips ) {
+	        $by_index = array();
+	        foreach ( $existing as $job ) {
+	            $by_index[ (int) $job['index'] ] = $job;
+	        }
+	        foreach ( $incoming as $job ) {
+	            $index = (int) ( $job['index'] ?? 0 );
+	            if ( $index < 1 || $index > 4 ) {
+	                continue;
+	            }
+	            $by_index[ $index ] = self::stronger_clip_job( $by_index[ $index ] ?? array(), $job );
+	        }
+	        return self::normalize_clip_jobs( array_values( $by_index ), $clips );
+	    }
+
+	    private static function stronger_clip_job( array $existing, array $incoming ) {
+	        $rank = array( 'pending' => 1, 'queued' => 2, 'generating' => 3, 'retrying' => 4, 'error' => 5, 'ready' => 6 );
+	        $existing_status = sanitize_key( $existing['status'] ?? 'pending' );
+	        $incoming_status = sanitize_key( $incoming['status'] ?? 'pending' );
+	        if ( ! empty( $existing['url'] ) ) {
+	            $existing_status = 'ready';
+	        }
+	        if ( ! empty( $incoming['url'] ) ) {
+	            $incoming_status = 'ready';
+	        }
+	        $winner = ( $rank[ $incoming_status ] ?? 1 ) >= ( $rank[ $existing_status ] ?? 1 ) ? $incoming : $existing;
+	        if ( 'ready' === $existing_status && ! empty( $existing['url'] ) ) {
+	            $winner = array_merge( $winner, array( 'status' => 'ready', 'url' => $existing['url'], 'error' => '' ) );
+	        }
+	        if ( 'ready' === $incoming_status && ! empty( $incoming['url'] ) ) {
+	            $winner = array_merge( $winner, array( 'status' => 'ready', 'url' => $incoming['url'], 'error' => '' ) );
+	        }
+	        return $winner;
+	    }
+
+	    private static function clip_progress_for_ready_count( $ready ) {
+	        $map = array( 0 => 25, 1 => 35, 2 => 50, 3 => 65, 4 => 78 );
+	        return $map[ min( 4, max( 0, (int) $ready ) ) ];
+	    }
+	}

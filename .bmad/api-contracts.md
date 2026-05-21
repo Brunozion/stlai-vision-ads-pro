@@ -1115,3 +1115,38 @@ Regras:
 - O polling `stlai_check_video_status` apenas acompanha estado e composição; ele não inicia novos clipes.
 - `final_video_url`, URLs de clipes e URLs de frames devem ser retornadas/consumidas limpas, sem `\/`.
 - Configuração admin `imageQuality`: `auto`, `high`, `medium`, `low`. Quando `auto`, o payload de imagem não envia `quality`.
+
+## 21. Estado monotônico de clipes
+
+As respostas públicas dos endpoints de vídeo devem incluir metadados de versão/derivação quando disponíveis:
+
+```json
+{
+  "job_id": "stlai_video_xxx",
+  "job_version": 12,
+  "updated_at": "2026-05-21 14:30:00",
+  "status": "generating_clips",
+  "clips_ready_count": 2,
+  "missing_clips": [3, 4],
+  "clips": [
+    {"index": 1, "url": "https://.../clip-1.mp4"},
+    {"index": 2, "url": "https://.../clip-2.mp4"}
+  ],
+  "clip_jobs": [
+    {"index": 1, "status": "ready", "attempt": 1, "url": "https://.../clip-1.mp4"},
+    {"index": 2, "status": "ready", "attempt": 1, "url": "https://.../clip-2.mp4"},
+    {"index": 3, "status": "generating", "attempt": 1, "url": ""},
+    {"index": 4, "status": "pending", "attempt": 0, "url": ""}
+  ]
+}
+```
+
+Regras de monotonicidade:
+
+- `ready + url` é terminal para um clipe e tem prioridade máxima em merges.
+- Updates parciais não podem remover URLs já salvas em `clips`, `partial_clips` ou `clip_jobs`.
+- `clips_ready_count` e `missing_clips` são derivados do estado mesclado no backend.
+- O frontend deve aplicar merge monotônico por `index`, não substituir `S.video` inteiro.
+- `job_version` ajuda o frontend a detectar respostas atrasadas; uma resposta antiga não pode reduzir `progress`, apagar assets ou regredir status visual.
+- Se `final_video_url` existir, o status efetivo é `ready`.
+- Se `composition_status` ou `composer_status` for `queued`/`processing`, a composição não deve ser iniciada novamente.
