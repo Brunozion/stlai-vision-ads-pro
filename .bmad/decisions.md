@@ -1098,3 +1098,26 @@ O frontend renderiza botões consistentes de baixar, ampliar e copiar link no v�
 ### Status
 
 Decidido
+## 2026-05-22 - Idioma de narração e script TTS separado
+
+### Decisao
+
+A aba de vídeo deve permitir escolher o idioma da narração: Português (`pt-BR`), Inglês (`en-US`), Espanhol (`es-ES`) e Francês (`fr-FR`). O padrão é `pt-BR`.
+
+O roteiro público exibido ao usuário é `script_public`: texto limpo, editável e sem marcações de direção de voz. O texto interno de performance é `script_tts`/`script_narration`: pode conter marcações ocultas de emoção/pausa e deve ficar salvo no job, mas não aparece na UI pública.
+
+Como já houve regressão de tags faladas no áudio, o provider ElevenLabs deve remover tags literais antes de enviar o texto final à API. A emoção deve permanecer por pontuação, quebras de frase e cadência natural.
+
+Em `pt-BR`, termos importados como `topper`, `cake topper` e `Topper Personalizado` devem ser normalizados para "topo de bolo" ou "topo de bolo personalizado" quando estiverem em roteiro/copy, sem mexer em URLs, IDs ou nomes técnicos.
+
+### Motivo
+
+A narração precisa soar humana e localizada, sem inglês residual em anúncios brasileiros e sem expor tags técnicas ao usuário.
+
+### Impacto
+
+O payload de vídeo passa a carregar `video_language`, `narration_language`, `narration_style`, `script_public` e `script_tts`. Jobs antigos continuam válidos: ausência de idioma assume `pt-BR`; ausência de `script_tts` usa `script_public` como base.
+
+### Status
+
+Decidido

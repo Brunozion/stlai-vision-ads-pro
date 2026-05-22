@@ -525,6 +525,18 @@
   </div>
 
   <div class="card mt">
+    <div class="video-language-row">
+      <label for="video-language-select">
+        <span>Idioma da narração</span>
+        <select id="video-language-select" onchange="setVideoLanguage(this.value)">
+          <option value="pt-BR" selected>Português</option>
+          <option value="en-US">English</option>
+          <option value="es-ES">Español</option>
+          <option value="fr-FR">Français</option>
+        </select>
+      </label>
+      <p id="video-language-hint">O roteiro será preparado em Português.</p>
+    </div>
     <div class="video-panel-head">
       <div>
         <div class="sl">Roteiro da narração</div>

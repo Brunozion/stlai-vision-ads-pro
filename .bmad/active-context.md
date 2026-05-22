@@ -1511,3 +1511,27 @@ O que foi feito:
 Status:
 
 - Correção concluida.
+## 2026-05-22 - Idioma e roteiro TTS emocional oculto
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- Adicionado seletor de idioma da narração no passo de vídeo: pt-BR, en-US, es-ES e fr-FR.
+- `script_public` fica limpo e editável no textarea.
+- `script_tts`/`script_narration` fica separado no job com marcações ocultas e pausas para performance.
+- O provider ElevenLabs continua removendo marcações literais antes da chamada para impedir que tags sejam faladas.
+- Normalização de termos corrige `topper`/`cake topper` para "topo de bolo" em pt-BR e equivalentes em espanhol/francês.
+
+Status:
+
+- Correção concluida.

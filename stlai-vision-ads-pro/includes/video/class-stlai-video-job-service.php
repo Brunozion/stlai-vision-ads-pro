@@ -36,8 +36,12 @@ class STLAI_Video_Job_Service {
                         'progress'             => max( 10, (int) ( $existing_job['progress'] ?? 10 ) ),
                         'progress_hint'        => max( 10, (int) ( $existing_job['progress_hint'] ?? ( $existing_job['progress'] ?? 10 ) ) ),
                         'message'              => 'Retomando geração do vídeo.',
-                        'script_public'        => self::strip_narration_directions( $validated['script'] ),
-                        'script_narration'     => self::build_narration_script( $validated['script'], $validated['narration_type'] ),
+                        'video_language'       => $validated['video_language'],
+                        'narration_language'   => $validated['narration_language'],
+                        'narration_style'      => $validated['narration_style'],
+                        'script_public'        => self::normalize_script_terms( self::strip_narration_directions( $validated['script'] ), $validated['video_language'] ),
+                        'script_tts'           => self::build_narration_script( $validated['script'], $validated['narration_type'], $validated['video_language'] ),
+                        'script_narration'     => self::build_narration_script( $validated['script'], $validated['narration_type'], $validated['video_language'] ),
                         'audio_url'            => $existing_job['audio_url'] ?? '',
                         'audio_path'           => $existing_job['audio_path'] ?? '',
                         'audio_provider'       => $existing_job['audio_provider'] ?? '',
@@ -81,19 +85,24 @@ class STLAI_Video_Job_Service {
         } else {
             $create_data = $validated;
             unset( $create_data['job_id'] );
-            $create_data['script_public'] = self::strip_narration_directions( $validated['script'] );
-            $create_data['script_narration'] = self::build_narration_script( $validated['script'], $validated['narration_type'] );
+            $create_data['script_public'] = self::normalize_script_terms( self::strip_narration_directions( $validated['script'] ), $validated['video_language'] );
+            $create_data['script_tts'] = self::build_narration_script( $validated['script'], $validated['narration_type'], $validated['video_language'] );
+            $create_data['script_narration'] = $create_data['script_tts'];
             $job = STLAI_Video_Storage::create_job( $create_data );
         }
 
-        $script_public = self::strip_narration_directions( $validated['script'] );
-        $script_narration = self::build_narration_script( $script_public, $validated['narration_type'] );
+        $script_public = self::normalize_script_terms( self::strip_narration_directions( $validated['script'] ), $validated['video_language'] );
+        $script_narration = self::build_narration_script( $script_public, $validated['narration_type'], $validated['video_language'] );
         $job = STLAI_Video_Storage::update_job(
             $job['job_id'],
             array(
-                'script'           => $script_public,
-                'script_public'    => $script_public,
-                'script_narration' => $script_narration,
+                'script'             => $script_public,
+                'script_public'      => $script_public,
+                'script_tts'         => $script_narration,
+                'script_narration'   => $script_narration,
+                'video_language'     => $validated['video_language'],
+                'narration_language' => $validated['narration_language'],
+                'narration_style'    => $validated['narration_style'],
             )
         );
 
@@ -595,8 +604,13 @@ class STLAI_Video_Job_Service {
                     'video_frames'   => $video_frames,
                     'selected_images' => ! empty( $validated['selected_images'] ) ? $validated['selected_images'] : ( $job['selected_images'] ?? array() ),
                     'format'         => $validated['format'] ?? ( $job['format'] ?? '16:9' ),
-                    'script'         => self::strip_narration_directions( $validated['script'] ?? ( $job['script_public'] ?? ( $job['script'] ?? '' ) ) ),
-                    'script_public'  => self::strip_narration_directions( $validated['script'] ?? ( $job['script_public'] ?? ( $job['script'] ?? '' ) ) ),
+                    'script'         => self::normalize_script_terms( self::strip_narration_directions( $validated['script'] ?? ( $job['script_public'] ?? ( $job['script'] ?? '' ) ) ), $validated['video_language'] ?? ( $job['video_language'] ?? 'pt-BR' ) ),
+                    'script_public'  => self::normalize_script_terms( self::strip_narration_directions( $validated['script'] ?? ( $job['script_public'] ?? ( $job['script'] ?? '' ) ) ), $validated['video_language'] ?? ( $job['video_language'] ?? 'pt-BR' ) ),
+                    'script_tts'     => $validated['script_tts'] ?? ( $job['script_tts'] ?? ( $job['script_narration'] ?? '' ) ),
+                    'script_narration' => $validated['script_tts'] ?? ( $job['script_tts'] ?? ( $job['script_narration'] ?? '' ) ),
+                    'video_language' => $validated['video_language'] ?? ( $job['video_language'] ?? 'pt-BR' ),
+                    'narration_language' => $validated['narration_language'] ?? ( $job['narration_language'] ?? ( $job['video_language'] ?? 'pt-BR' ) ),
+                    'narration_style' => $validated['narration_style'] ?? ( $job['narration_style'] ?? ( $job['narration_type'] ?? 'persuasiva' ) ),
                     'product_name'   => $validated['product_name'] ?? ( $job['product_name'] ?? '' ),
                     'product_description' => $validated['product_description'] ?? ( $job['product_description'] ?? '' ),
                 )
@@ -2252,13 +2266,60 @@ class STLAI_Video_Job_Service {
     private static function strip_narration_directions( $text ) {
         $text = wp_strip_all_tags( (string) $text );
         $text = preg_replace( '/\[[^\]\r\n]{1,80}\]\s*/u', '', $text );
+        $text = preg_replace( '/\b(thoughtful|warmly|short pause|gentle pause|delighted|excited|softly|amazed|chuckles|sighs|confident|impressed)\b\s*/iu', '', $text );
+        $text = preg_replace( '/\s+([,.!?;:])/', '$1', $text );
         $text = preg_replace( '/\s+/', ' ', $text );
 
         return trim( (string) $text );
     }
 
-    private static function build_narration_script( $public_script, $voice_style = 'persuasiva' ) {
-        $clean = self::strip_narration_directions( $public_script );
+    private static function normalize_script_terms( $text, $language = 'pt-BR' ) {
+        $clean = self::strip_narration_directions( $text );
+        $language = self::sanitize_video_language( $language );
+
+        if ( 'pt-BR' === $language ) {
+            $replacements = array(
+                '/\bwedding topper\b/iu'       => 'topo de bolo de casamento',
+                '/\bcake topper\b/iu'          => 'topo de bolo',
+                '/\bpersonalized topper\b/iu'  => 'topo personalizado',
+                '/\bcustom topper\b/iu'        => 'topo personalizado',
+                '/\btopper personalizado\b/iu' => 'topo de bolo personalizado',
+                '/\btopper\b/iu'               => 'topo de bolo',
+            );
+        } elseif ( 'es-ES' === $language ) {
+            $replacements = array(
+                '/\bwedding topper\b/iu'      => 'decoración para pastel de boda',
+                '/\bcake topper\b/iu'         => 'decoración para pastel',
+                '/\bpersonalized topper\b/iu' => 'decoración personalizada para pastel',
+                '/\bcustom topper\b/iu'       => 'decoración personalizada para pastel',
+                '/\btopper\b/iu'              => 'decoración para pastel',
+            );
+        } elseif ( 'fr-FR' === $language ) {
+            $replacements = array(
+                '/\bwedding topper\b/iu'      => 'décoration de gâteau de mariage',
+                '/\bcake topper\b/iu'         => 'décoration de gâteau',
+                '/\bpersonalized topper\b/iu' => 'décoration de gâteau personnalisée',
+                '/\bcustom topper\b/iu'       => 'décoration de gâteau personnalisée',
+                '/\btopper\b/iu'              => 'décoration de gâteau',
+            );
+        } else {
+            $replacements = array();
+        }
+
+        foreach ( $replacements as $pattern => $replacement ) {
+            $clean = preg_replace( $pattern, $replacement, $clean );
+        }
+
+        return trim( preg_replace( '/\s+/', ' ', (string) $clean ) );
+    }
+
+    private static function sanitize_video_language( $language ) {
+        $language = sanitize_text_field( (string) $language );
+        return in_array( $language, array( 'pt-BR', 'en-US', 'es-ES', 'fr-FR' ), true ) ? $language : 'pt-BR';
+    }
+
+    private static function build_narration_script( $public_script, $voice_style = 'persuasiva', $language = 'pt-BR' ) {
+        $clean = self::normalize_script_terms( $public_script, $language );
         if ( empty( $clean ) ) {
             return '';
         }
@@ -2269,6 +2330,7 @@ class STLAI_Video_Job_Service {
         }
 
         $parts = array();
+        $emotional = 'emocional' === sanitize_key( $voice_style );
         foreach ( array_values( $sentences ) as $index => $sentence ) {
             $sentence = trim( (string) $sentence );
             if ( '' === $sentence ) {
@@ -2276,25 +2338,24 @@ class STLAI_Video_Job_Service {
             }
 
             if ( 0 === $index ) {
-                $parts[] = $sentence;
+                $parts[] = ( $emotional ? '[thoughtful] ' : '[confident] ' ) . $sentence;
                 continue;
             }
 
             if ( 1 === $index ) {
-                $parts[] = '';
-                $parts[] = $sentence;
+                $parts[] = '[short pause] ' . ( $emotional ? '[warmly] ' : '[excited] ' ) . $sentence;
                 continue;
             }
 
-            $parts[] = $sentence;
+            $parts[] = $index === count( $sentences ) - 1 ? ( $emotional ? '[softly] ' : '[warmly] ' ) . $sentence : $sentence;
         }
 
         $script = trim( preg_replace( "/\n{3,}/", "\n\n", implode( "\n", $parts ) ) );
-        if ( strlen( wp_strip_all_tags( $script ) ) > STLAI_ElevenLabs_Provider::MAX_SCRIPT_LENGTH ) {
+        if ( strlen( self::strip_narration_directions( $script ) ) > STLAI_ElevenLabs_Provider::MAX_SCRIPT_LENGTH ) {
             return $clean;
         }
 
-        return self::strip_narration_directions( $script );
+        return $script;
     }
 
     private static function should_retry_audio_without_directions( WP_Error $error ) {
@@ -2324,7 +2385,15 @@ class STLAI_Video_Job_Service {
             return new WP_Error( 'stlai_video_invalid_format', 'Formato de video invalido.' );
         }
 
-        $script = wp_kses_post( wp_unslash( $payload['script'] ?? '' ) );
+        $video_language = self::sanitize_video_language( wp_unslash( $payload['video_language'] ?? ( $payload['narration_language'] ?? 'pt-BR' ) ) );
+        $narration_language = self::sanitize_video_language( wp_unslash( $payload['narration_language'] ?? $video_language ) );
+        $narration_style = sanitize_key( $payload['narration_style'] ?? $narration_type );
+        if ( ! in_array( $narration_style, array( 'persuasiva', 'emocional' ), true ) ) {
+            $narration_style = $narration_type;
+        }
+
+        $script = wp_kses_post( wp_unslash( $payload['script_public'] ?? ( $payload['script'] ?? '' ) ) );
+        $script = self::normalize_script_terms( $script, $video_language );
         if ( empty( trim( wp_strip_all_tags( $script ) ) ) ) {
             return new WP_Error( 'EMPTY_NARRATION_TEXT', 'O roteiro da narração está vazio.' );
         }
@@ -2339,6 +2408,10 @@ class STLAI_Video_Job_Service {
             'narration_type'       => $narration_type,
             'format'               => $format,
             'script'               => $script,
+            'script_tts'           => wp_kses_post( wp_unslash( $payload['script_tts'] ?? '' ) ),
+            'video_language'       => $video_language,
+            'narration_language'   => $narration_language,
+            'narration_style'      => $narration_style,
             'product_name'         => sanitize_text_field( wp_unslash( $payload['product_name'] ?? '' ) ),
             'product_description'  => wp_kses_post( wp_unslash( $payload['product_description'] ?? '' ) ),
             'status'               => 'queued',

@@ -1453,3 +1453,42 @@ No nível do job:
 - `will_retry`: `true` quando o pipeline deve continuar automaticamente.
 
 Regra: `VEO_INVALID_RESPONSE` e mensagens como "O serviço de vídeo não retornou um vídeo válido" ou "URI do vídeo ausente" não podem virar `error_final` antes de `attempt >= max_attempts`.
+## Video narration language and scripts
+
+Video job payload may include:
+
+```json
+{
+  "video_language": "pt-BR",
+  "narration_language": "pt-BR",
+  "narration_style": "emocional",
+  "script_public": "Texto limpo exibido ao usuário.",
+  "script_tts": "[thoughtful] Texto interno otimizado para voz."
+}
+```
+
+Accepted languages:
+
+- `pt-BR`
+- `en-US`
+- `es-ES`
+- `fr-FR`
+
+Response fields:
+
+```json
+{
+  "script_public": "Texto limpo exibido ao usuário.",
+  "script_tts_exists": true,
+  "video_language": "pt-BR",
+  "narration_language": "pt-BR",
+  "narration_style": "emocional"
+}
+```
+
+Rules:
+
+- `script_public` is the only script text exposed in the public UI.
+- `script_tts`/`script_narration` is internal and must not be returned in full to the frontend.
+- Literal direction tags must not be spoken in the final audio; the ElevenLabs layer strips bracket tags before the API request.
+- Missing language defaults to `pt-BR`.

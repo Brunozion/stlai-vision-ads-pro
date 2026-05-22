@@ -28,10 +28,13 @@ const S = {
   video: {
     status: "idle",
     format: "16:9",
+    language: "pt-BR",
     mockReady: false,
     script: "",
+    scriptTts: "",
     scriptEdited: false,
     scriptVoiceStyle: "",
+    scriptLanguage: "pt-BR",
     jobId: "",
     renderJobId: "",
     progress: 0,
@@ -510,7 +513,7 @@ function fillTpl(str,map){
 }
 
 function languageLabel(){
-  return {"pt-BR":"português do Brasil","en-US":"English","es-ES":"español"}[S.lang] || "português do Brasil";
+  return {"pt-BR":"português do Brasil","en-US":"English","es-ES":"español","fr-FR":"français"}[S.lang] || "português do Brasil";
 }
 
 function dimsText(){
@@ -1146,11 +1149,15 @@ function popVid(){
   const row=document.getElementById("srow");
   const voiceLabel=document.getElementById("video-voice-label");
   if(voiceLabel) voiceLabel.textContent=voiceStyleLabel();
-  if(!S.video.script || (!S.video.scriptEdited && S.video.scriptVoiceStyle!==S.voiceStyle)){
+  S.video.language=normalizeVideoLanguage(S.video.language || "pt-BR");
+  if(!S.video.script || (!S.video.scriptEdited && (S.video.scriptVoiceStyle!==S.voiceStyle || S.video.scriptLanguage!==S.video.language))){
     S.video.script=buildVideoScript();
+    S.video.scriptTts=buildTtsScript(S.video.script);
     S.video.scriptEdited=false;
     S.video.scriptVoiceStyle=S.voiceStyle;
+    S.video.scriptLanguage=S.video.language;
   }
+  renderVideoLanguage();
   renderVideoScript();
   renderVideoStatus();
   renderVideoFormat();
@@ -1171,20 +1178,100 @@ function voiceStyleLabel(){
   return S.voiceStyle==="emocional" ? "Emocional" : "Persuasiva";
 }
 
+function normalizeVideoLanguage(value){
+  const lang=String(value || "pt-BR");
+  return ["pt-BR","en-US","es-ES","fr-FR"].includes(lang) ? lang : "pt-BR";
+}
+
+function videoLanguageLabel(lang=S.video.language){
+  return {"pt-BR":"Português","en-US":"English","es-ES":"Español","fr-FR":"Français"}[normalizeVideoLanguage(lang)] || "Português";
+}
+
 function cleanScriptPiece(value, fallback){
   const txt=String(value || "").replace(/\s+/g," ").trim();
   return txt || fallback;
 }
 
-function buildVideoScript(){
-  const name=cleanScriptPiece(S.name, "este produto");
-  const desc=cleanScriptPiece(S.descTxt || S.desc, "uma peça pensada para deixar a rotina mais prática e bonita");
-  const feat=cleanScriptPiece(S.feat, "acabamento cuidadoso, visual marcante e uso funcional");
-  const title=cleanScriptPiece((S.titles || []).find(t=>String(t || "").trim()), name);
-  if(S.voiceStyle==="emocional"){
-    return `Eu estava procurando um detalhe especial, daqueles que fazem a pessoa sorrir antes mesmo de usar. Foi isso que chamou atenção em ${name}: uma peça com presença, carinho e personalidade. ${desc} O acabamento, os detalhes e ${feat} dão aquela sensação de presente pensado com cuidado. É o tipo de produto que transforma um momento simples em uma lembrança bonita.`;
+function stripNarrationDirections(text){
+  return String(text || "")
+    .replace(/\[[^\]\r\n]{1,80}\]\s*/g, "")
+    .replace(/\b(thoughtful|warmly|short pause|gentle pause|delighted|excited|softly|amazed|chuckles|sighs|confident|impressed)\b\s*/gi, "")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeScriptTerms(text, lang=S.video.language){
+  let out=stripNarrationDirections(text);
+  const selected=normalizeVideoLanguage(lang);
+  if(selected==="pt-BR"){
+    out=out
+      .replace(/\bwedding topper\b/gi, "topo de bolo de casamento")
+      .replace(/\bcake topper\b/gi, "topo de bolo")
+      .replace(/\bpersonalized topper\b/gi, "topo personalizado")
+      .replace(/\bcustom topper\b/gi, "topo personalizado")
+      .replace(/\btopper personalizado\b/gi, "topo de bolo personalizado")
+      .replace(/\btopper\b/gi, "topo de bolo");
+  }else if(selected==="es-ES"){
+    out=out
+      .replace(/\bwedding topper\b/gi, "decoración para pastel de boda")
+      .replace(/\bcake topper\b/gi, "decoración para pastel")
+      .replace(/\bpersonalized topper\b/gi, "decoración personalizada para pastel")
+      .replace(/\bcustom topper\b/gi, "decoración personalizada para pastel")
+      .replace(/\btopper\b/gi, "decoración para pastel");
+  }else if(selected==="fr-FR"){
+    out=out
+      .replace(/\bwedding topper\b/gi, "décoration de gâteau de mariage")
+      .replace(/\bcake topper\b/gi, "décoration de gâteau")
+      .replace(/\bpersonalized topper\b/gi, "décoration de gâteau personnalisée")
+      .replace(/\bcustom topper\b/gi, "décoration de gâteau personnalisée")
+      .replace(/\btopper\b/gi, "décoration de gâteau");
   }
-  return `Sabe quando um produto parece simples, mas no detalhe ele conquista? ${name} foi feito para entregar visual, utilidade e personalidade sem complicar. ${desc} Com ${feat}, ele se destaca no uso, no presente e na apresentação. ${title} é uma escolha prática, bonita e com aquele toque que faz diferença na hora de comprar.`;
+  return out.replace(/\s+/g, " ").trim();
+}
+
+function buildVideoScript(){
+  const lang=normalizeVideoLanguage(S.video.language);
+  const name=normalizeScriptTerms(cleanScriptPiece(S.name, lang==="pt-BR" ? "este produto" : "this product"), lang);
+  const desc=normalizeScriptTerms(cleanScriptPiece(S.descTxt || S.desc, lang==="pt-BR" ? "uma peça pensada para deixar a rotina mais prática e bonita" : "a piece designed to make the moment feel more useful and memorable"), lang);
+  const feat=normalizeScriptTerms(cleanScriptPiece(S.feat, lang==="pt-BR" ? "acabamento cuidadoso, visual marcante e uso funcional" : "careful finishing, a distinctive look, and practical use"), lang);
+  const title=normalizeScriptTerms(cleanScriptPiece((S.titles || []).find(t=>String(t || "").trim()), name), lang);
+  let script="";
+  if(lang==="en-US"){
+    script=S.voiceStyle==="emocional"
+      ? `I was looking for a detail that felt personal, the kind that makes someone smile before they even use it. That is what stood out in ${name}: it feels thoughtful, well made, and full of personality. ${desc} The finish, the visual details, and ${feat} make it feel like a gift chosen with care. It is the kind of piece that turns a simple moment into something worth remembering.`
+      : `You know when a product looks simple, but the details make it memorable? ${name} brings together style, usefulness, and personality without overcomplicating things. ${desc} With ${feat}, it stands out in presentation, gifting, and everyday use. ${title} is a practical choice with the kind of detail that makes people want it.`;
+  }else if(lang==="es-ES"){
+    script=S.voiceStyle==="emocional"
+      ? `Estaba buscando un detalle especial, de esos que hacen sonreír a la persona antes de usarlo. Eso fue lo que me llamó la atención de ${name}: una pieza con presencia, cariño y personalidad. ${desc} El acabado, los detalles y ${feat} transmiten esa sensación de regalo pensado con cuidado. Es el tipo de producto que convierte un momento simple en un recuerdo bonito.`
+      : `¿Sabes cuando un producto parece simple, pero los detalles conquistan? ${name} combina presencia, utilidad y personalidad sin complicaciones. ${desc} Con ${feat}, destaca en el uso, en el regalo y en la presentación. ${title} es una elección práctica, bonita y con ese toque que marca la diferencia.`;
+  }else if(lang==="fr-FR"){
+    script=S.voiceStyle==="emocional"
+      ? `Je cherchais un détail spécial, le genre de détail qui fait sourire avant même de l'utiliser. C'est ce qui m'a touché avec ${name}: une pièce pleine de présence, de soin et de personnalité. ${desc} La finition, les détails et ${feat} donnent cette impression d'un cadeau choisi avec attention. C'est le genre de produit qui transforme un moment simple en joli souvenir.`
+      : `Vous savez, quand un produit semble simple, mais que les détails font toute la différence? ${name} réunit style, utilité et personnalité sans complication. ${desc} Avec ${feat}, il se distingue dans l'usage, le cadeau et la présentation. ${title} est un choix pratique, élégant, avec ce petit détail qui donne envie.`;
+  }else{
+    script=S.voiceStyle==="emocional"
+      ? `Eu estava procurando um detalhe especial, daqueles que fazem a pessoa sorrir antes mesmo de usar. Foi isso que me chamou atenção em ${name}: uma peça com presença, carinho e personalidade. ${desc} O acabamento, os detalhes e ${feat} dão aquela sensação de presente pensado com cuidado. É o tipo de produto que transforma um momento simples em uma lembrança bonita.`
+      : `Sabe quando um produto parece simples, mas no detalhe ele conquista? ${name} foi feito para entregar visual, utilidade e personalidade sem complicar. ${desc} Com ${feat}, ele se destaca no uso, no presente e na apresentação. ${title} é uma escolha prática, bonita e com aquele toque que faz diferença na hora de comprar.`;
+  }
+  return normalizeScriptTerms(script, lang);
+}
+
+function buildTtsScript(publicScript){
+  const clean=normalizeScriptTerms(publicScript, S.video.language);
+  if(!clean) return "";
+  const sentences=clean.split(/(?<=[.!?])\s+/).filter(Boolean);
+  if(!sentences.length) return clean;
+  const emotional=S.voiceStyle==="emocional";
+  const opening=emotional ? "[thoughtful]" : "[confident]";
+  const second=emotional ? "[warmly]" : "[excited]";
+  const parts=sentences.map((sentence, index)=>{
+    if(index===0) return `${opening} ${sentence}`;
+    if(index===1) return `[short pause] ${second} ${sentence}`;
+    if(index===sentences.length-1) return `${emotional ? "[softly]" : "[warmly]"} ${sentence}`;
+    return sentence;
+  });
+  return parts.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function renderVideoScript(){
@@ -1193,18 +1280,48 @@ function renderVideoScript(){
 }
 
 function updateVideoScript(value){
-  S.video.script=String(value || "");
+  S.video.script=normalizeScriptTerms(value, S.video.language);
+  S.video.scriptTts=buildTtsScript(S.video.script);
   S.video.scriptEdited=true;
   renderVideoStatus();
 }
 
 function regenerateVideoScript(){
   S.video.script=buildVideoScript();
+  S.video.scriptTts=buildTtsScript(S.video.script);
   S.video.scriptEdited=false;
   S.video.scriptVoiceStyle=S.voiceStyle;
+  S.video.scriptLanguage=S.video.language;
   renderVideoScript();
+  renderVideoLanguage();
   renderVideoStatus();
   toast("Roteiro regenerado localmente.","success");
+}
+
+function setVideoLanguage(value){
+  const previous=S.video.language;
+  S.video.language=normalizeVideoLanguage(value);
+  if(!S.video.scriptEdited || !S.video.script){
+    S.video.script=buildVideoScript();
+    S.video.scriptTts=buildTtsScript(S.video.script);
+    S.video.scriptEdited=false;
+    S.video.scriptVoiceStyle=S.voiceStyle;
+    S.video.scriptLanguage=S.video.language;
+    renderVideoScript();
+  }else if(previous!==S.video.language){
+    S.video.scriptTts=buildTtsScript(S.video.script);
+    toast("Idioma atualizado. Use Regenerar roteiro para recriar a copy nesse idioma.","info");
+  }
+  renderVideoLanguage();
+  renderVideoStatus();
+}
+
+function renderVideoLanguage(){
+  S.video.language=normalizeVideoLanguage(S.video.language);
+  const select=document.getElementById("video-language-select");
+  const hint=document.getElementById("video-language-hint");
+  if(select && select.value!==S.video.language) select.value=S.video.language;
+  if(hint) hint.textContent=`O roteiro será preparado em ${videoLanguageLabel(S.video.language)}.`;
 }
 
 function setVideoFormat(format){
@@ -1517,6 +1634,11 @@ function applyVideoState(payload={}, options={}){
   const canUseIncomingStatus=!stale || incomingRank>=previousRank || videoPhaseRank(incoming.status)>=videoPhaseRank(previous.status);
 
   S.video.jobId=incoming.job_id || S.video.jobId || "";
+  S.video.language=normalizeVideoLanguage((!stale && (incoming.video_language || incoming.narration_language)) || S.video.language || "pt-BR");
+  if(!stale && incoming.script_public){
+    S.video.script=normalizeScriptTerms(incoming.script_public, S.video.language);
+    S.video.scriptTts=S.video.scriptTts || buildTtsScript(S.video.script);
+  }
   S.video.status=canUseIncomingStatus ? mergedStatus : deriveMergedVideoStatus(previous, {}, merged);
   S.video.progress=Math.max(Number(S.video.progress || 0), Number(incoming.progress || 0));
   S.video.progressHint=Math.max(Number(S.video.progressHint || 0), Number(incoming.progress_hint || incoming.progress || 0), S.video.progress);
@@ -1852,6 +1974,10 @@ async function mockGenerateVideo(){
     toast("Revise o roteiro da narração antes de gerar o vídeo.","warn");
     return;
   }
+  S.video.language=normalizeVideoLanguage(S.video.language);
+  S.video.script=normalizeScriptTerms(S.video.script, S.video.language);
+  S.video.scriptTts=buildTtsScript(S.video.script);
+  renderVideoScript();
 
 	  clearVideoPolling();
 	  clearVideoClipLaunchers();
@@ -1902,14 +2028,23 @@ async function mockGenerateVideo(){
       job_id: retryingReusable ? existingJobId : "",
       selected_images: JSON.stringify(selected),
       narration_type: S.voiceStyle,
+      narration_style: S.voiceStyle,
+      video_language: S.video.language,
+      narration_language: S.video.language,
       format: S.video.format,
       script: S.video.script,
+      script_public: S.video.script,
+      script_tts: S.video.scriptTts,
       product_name: S.name,
       product_description: S.descTxt || S.desc
     });
 
     applyVideoState({...data, status:data.status || "queued", progress:data.progress || 10, progress_hint:data.progress_hint || data.progress || 10, message:data.message || "Job de vídeo criado."}, {debug:true});
-    if(data.script_public) S.video.script=String(data.script_public || S.video.script);
+    if(data.video_language || data.narration_language) S.video.language=normalizeVideoLanguage(data.video_language || data.narration_language);
+    if(data.script_public) S.video.script=normalizeScriptTerms(String(data.script_public || S.video.script), S.video.language);
+    if(data.script_tts_exists || data.script_tts) S.video.scriptTts=S.video.scriptTts || buildTtsScript(S.video.script);
+    renderVideoLanguage();
+    renderVideoScript();
     renderVideoStatus();
     unlock(6);
 	    renderSummaryVideo();
@@ -2571,6 +2706,7 @@ async function generateTestVeoClip(btn){
       selected_images: JSON.stringify(selected.slice(0, 1)),
       format: S.video.format,
       script: S.video.script || "",
+      video_language: S.video.language,
       product_name: S.name,
       product_description: S.descTxt || S.desc
     });
