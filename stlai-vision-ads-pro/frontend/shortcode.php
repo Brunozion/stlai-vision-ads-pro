@@ -571,6 +571,7 @@
     <div>
       <div class="video-status-title" id="video-status-title">Pronto para preparar o vídeo.</div>
       <p id="video-status-copy">As imagens selecionadas serão transformadas em clipes e compostas com a narração.</p>
+      <div id="video-status-composition-timer" style="display:none"></div>
     </div>
   </div>
 
@@ -797,7 +798,8 @@
 
 <div id="lightbox" onclick="closeLightbox(event)">
   <button id="lightbox-close" onclick="closeLightbox(event, true)">&times;</button>
-  <img id="lightbox-img" src="" alt="Zoom">
+  <img id="lightbox-img" alt="Imagem ampliada" style="display:none">
   <video id="lightbox-video" controls playsinline webkit-playsinline style="display:none"></video>
+  <div id="lightbox-fallback" class="lightbox-fallback" style="display:none">Imagem indisponível</div>
 </div>
 </div>

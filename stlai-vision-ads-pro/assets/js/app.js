@@ -27,6 +27,12 @@ const S = {
   imageComboJobs: [],
   imageDiagnostics: {},
   selVid: [],
+  videoCompositionTimer: {
+    jobId: "",
+    startedAtMs: 0,
+    intervalId: null,
+    active: false
+  },
   video: {
     status: "idle",
     format: "16:9",
@@ -1523,6 +1529,7 @@ function isVideoBusyStatus(status){
     || /^generating_clip_[1-4]$/.test(status)
     || /^retrying_clip_[1-4]$/.test(status)
     || status==="composing"
+    || status==="composing_final"
     || status==="composing_final_video"
     || status==="composition_queued"
     || status==="composition_processing"
@@ -1535,6 +1542,8 @@ function isVideoCompositionState(status=videoStatusForDisplay(), compositionStat
   return value==="composition_queued"
     || value==="composition_processing"
     || value==="composition_waiting"
+    || value==="composition_pending"
+    || value==="composing_final"
     || value==="composing_final_video"
     || value==="composing"
     || comp==="queued"
@@ -1608,6 +1617,30 @@ function compositionTimerSubtitle(seconds=compositionElapsedUiSeconds()){
   return "Montando clipes, narração e transições.";
 }
 
+function renderCompositionTimer(){
+  const elapsed=compositionElapsedUiSeconds();
+  return `<div class="stlai-composition-timer" data-stlai-composition-timer-wrap>
+    <span class="stlai-composition-timer__label">Tempo decorrido</span>
+    <strong class="stlai-composition-timer__value" data-stlai-composition-timer>${esc(formatElapsedTime(elapsed))}</strong>
+    <span class="stlai-composition-timer__hint" data-stlai-composition-timer-hint>${esc(compositionTimerSubtitle(elapsed))}</span>
+  </div>`;
+}
+
+function renderVideoStatusCompositionTimer(show){
+  const wrap=document.getElementById("video-status-composition-timer");
+  if(!wrap) return;
+  if(!show){
+    wrap.style.display="none";
+    wrap.innerHTML="";
+    return;
+  }
+  wrap.style.display="block";
+  wrap.innerHTML=renderCompositionTimer();
+  ensureCompositionTimerStartedAt();
+  updateCompositionTimerDom();
+  startCompositionTimerLoop();
+}
+
 function startCompositionTimerLoop(){
   if(S.video.compositionTimer || !isVideoCompositionState() || isCompositionTimerTerminalState()) return;
   ensureCompositionTimerStartedAt();
@@ -1619,6 +1652,10 @@ function startCompositionTimerLoop(){
     }
     updateCompositionTimerDom();
   }, 1000);
+  S.videoCompositionTimer.intervalId=S.video.compositionTimer;
+  S.videoCompositionTimer.jobId=String(S.video.jobId || S.video.renderJobId || "");
+  S.videoCompositionTimer.startedAtMs=Number(S.video.compositionTimerStartedAtMs || 0);
+  S.videoCompositionTimer.active=true;
 }
 
 function updateCompositionTimerDom(){
@@ -1629,9 +1666,13 @@ function updateCompositionTimerDom(){
   document.querySelectorAll("[data-stlai-composition-timer]").forEach(el=>{
     el.textContent=formatted;
   });
-  document.querySelectorAll("[data-stlai-composition-timer-note]").forEach(el=>{
+  document.querySelectorAll("[data-stlai-composition-timer-hint], [data-stlai-composition-timer-note]").forEach(el=>{
     el.textContent=note;
   });
+  S.videoCompositionTimer.jobId=String(S.video.jobId || S.video.renderJobId || "");
+  S.videoCompositionTimer.startedAtMs=Number(S.video.compositionTimerStartedAtMs || 0);
+  S.videoCompositionTimer.intervalId=S.video.compositionTimer;
+  S.videoCompositionTimer.active=Boolean(S.video.compositionTimer);
   S.video.diagnostics={
     ...(S.video.diagnostics || {}),
     composition_timer_started_at_ms:Number(S.video.compositionTimerStartedAtMs || 0),
@@ -1645,10 +1686,14 @@ function stopCompositionTimerLoop(clearLocal=true){
     clearInterval(S.video.compositionTimer);
     S.video.compositionTimer=null;
   }
+  S.videoCompositionTimer.intervalId=null;
+  S.videoCompositionTimer.active=false;
   if(clearLocal){
     S.video.localCompositionStartedAt=0;
     S.video.compositionTimerStartedAtMs=0;
     S.video.compositionTimerJobId="";
+    S.videoCompositionTimer.jobId="";
+    S.videoCompositionTimer.startedAtMs=0;
   }
 }
 
@@ -2429,6 +2474,7 @@ function renderVideoStatus(){
   renderVideoFrames();
   renderFinalVideo();
   renderVideoMotion();
+  renderVideoStatusCompositionTimer(false);
   if(S.video.testClipStatus==="generating"){
     title.textContent="Gerando clipe de teste...";
     copy.textContent="A primeira imagem selecionada está sendo enviada para uma geração isolada de prévia.";
@@ -2492,18 +2538,21 @@ function renderVideoStatus(){
   if(displayStatus==="composition_queued"){
     title.textContent="Vídeo na fila de composição";
     copy.textContent="Narração e clipes prontos. Seu vídeo entrará em processamento em instantes.";
+    renderVideoStatusCompositionTimer(true);
     renderVideoAudio();
     return;
   }
-  if(displayStatus==="composing" || displayStatus==="composing_final_video" || displayStatus==="composition_processing"){
+  if(displayStatus==="composing" || displayStatus==="composing_final" || displayStatus==="composing_final_video" || displayStatus==="composition_processing"){
     title.textContent="Compondo vídeo final";
     copy.textContent="Montando o vídeo completo com os clipes e a narração.";
+    renderVideoStatusCompositionTimer(true);
     renderVideoAudio();
     return;
   }
   if(displayStatus==="composition_waiting"){
     title.textContent="Composição ainda em andamento";
     copy.textContent="Seu vídeo final ainda está sendo composto. Isso pode levar alguns minutos.";
+    renderVideoStatusCompositionTimer(true);
     renderVideoAudio();
     return;
   }
@@ -2520,6 +2569,7 @@ function renderVideoStatus(){
     copy.textContent=S.video.status==="composition_error"
       ? "Os clipes foram preservados. Você pode tentar novamente."
       : "Narração e clipes prontos. Seu vídeo entrará em processamento em instantes.";
+    renderVideoStatusCompositionTimer(S.video.status==="composition_pending");
     renderVideoAudio();
     return;
   }
@@ -2595,7 +2645,7 @@ function videoMotionState(){
     progress=79;
     title="Clipes IA concluídos";
     subtitle="Narração e 4 clipes foram preparados. Iniciando composição final.";
-  }else if(status==="composition_pending" || status==="composition_queued" || status==="composing" || status==="composing_final_video"){
+  }else if(status==="composition_pending" || status==="composition_queued" || status==="composing" || status==="composing_final" || status==="composing_final_video"){
     stage=2;
     progress=status==="composition_pending" ? 80 : clamp(rawProgress || 80,80,84);
     title="Vídeo na fila de composição";
@@ -2642,7 +2692,7 @@ function videoMotionState(){
     stepStates=["done","active","pending","pending"];
   }else if(status==="clips_ready" || status==="ready_for_composition"){
     stepStates=["done","done","pending","pending"];
-  }else if(status==="composition_pending" || status==="composition_queued" || status==="composing" || status==="composing_final_video" || status==="composition_processing" || status==="composition_waiting"){
+  }else if(status==="composition_pending" || status==="composition_queued" || status==="composing" || status==="composing_final" || status==="composing_final_video" || status==="composition_processing" || status==="composition_waiting"){
     stepStates=["done","done","active","pending"];
   }else if(status==="composition_error"){
     stepStates=[S.video.audioUrl ? "done" : "pending", fourClipsReady ? "done" : "pending", "active", "pending"];
@@ -2669,9 +2719,7 @@ function renderMotionMarkup(state){
     return `<div class="video-motion-step ${cls}"><b>${esc(label)}</b></div>`;
   }).join("");
   const progress=Math.max(0,Math.min(100,Number(state.progress || 0)));
-  const timerHtml=state.timerActive
-    ? `<div class="video-motion-timer"><span>Tempo decorrido</span><strong data-stlai-composition-timer>${esc(formatElapsedTime(state.elapsedSeconds))}</strong><em data-stlai-composition-timer-note>${esc(state.timerNote)}</em></div>`
-    : "";
+  const timerHtml=state.timerActive ? renderCompositionTimer() : "";
   return `<div class="video-motion-box ${state.mode==="error" ? "error" : ""}">
     <div class="video-motion-inner">
       <div class="video-motion-preview">
@@ -4137,11 +4185,36 @@ function openLightbox(url, type="image") {
   const lb = document.getElementById('lightbox');
   const img=document.getElementById('lightbox-img');
   const video=document.getElementById('lightbox-video');
+  const fallback=document.getElementById('lightbox-fallback');
   const clean=normalizeMediaUrl(url);
   const isVideo=type==="video" || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(clean);
+  const showFallback=()=>{
+    if(img){
+      img.removeAttribute("src");
+      img.style.display="none";
+    }
+    if(video){
+      video.pause();
+      video.removeAttribute("src");
+      video.style.display="none";
+    }
+    if(fallback) fallback.style.display="flex";
+  };
+  if(!lb) return;
+  if(fallback) fallback.style.display="none";
+  if(!clean){
+    showFallback();
+    lb.classList.add('show');
+    return;
+  }
   if(img){
     img.style.display=isVideo ? "none" : "block";
-    img.src=isVideo ? "" : clean;
+    img.onerror=showFallback;
+    if(isVideo){
+      img.removeAttribute("src");
+    }else{
+      img.src=clean;
+    }
   }
   if(video){
     video.style.display=isVideo ? "block" : "none";
@@ -4158,7 +4231,15 @@ function openLightbox(url, type="image") {
 function closeLightbox(e, force=false) {
   if (force || e.target.id === 'lightbox') {
     const video=document.getElementById('lightbox-video');
+    const img=document.getElementById('lightbox-img');
+    const fallback=document.getElementById('lightbox-fallback');
     if(video) video.pause();
+    if(img){
+      img.removeAttribute("src");
+      img.style.display="none";
+      img.onerror=null;
+    }
+    if(fallback) fallback.style.display="none";
     document.getElementById('lightbox').classList.remove('show');
   }
 }

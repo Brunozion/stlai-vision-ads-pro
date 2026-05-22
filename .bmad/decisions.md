@@ -80,6 +80,26 @@ O painel admin passa a armazenar as credenciais e modelos futuros. Nenhuma chave
 
 Decidido
 
+## 2026-05-22 - Timer visível e zoom sem asset quebrado
+
+### Decisao
+
+A etapa de composição final deve exibir o timer visual ao vivo em todos os cards públicos que mostram estados de composição, incluindo o painel de status do passo 5, o card animado e o resumo.
+
+Botões de zoom/ampliar da galeria usam ícone inline/CSS, e o lightbox não depende de imagem/asset externo para representar o zoom.
+
+### Motivo
+
+O usuário via "Compondo vídeo final", mas o timer podia não aparecer quando apenas o painel de status estava visível. Na galeria, o lightbox podia exibir uma imagem quebrada com o texto alternativo "Zoom" quando a URL estava vazia ou inválida.
+
+### Impacto
+
+O frontend usa `renderCompositionTimer` como helper único para o bloco de tempo decorrido e atualiza o DOM por `data-stlai-composition-timer`. O lightbox agora esconde a imagem sem URL, limpa `src` ao fechar e mostra fallback elegante "Imagem indisponível" quando necessário.
+
+### Status
+
+Decidido
+
 ## 2026-05-22 - Timer de composição atualizado em tempo real
 
 ### Decisao

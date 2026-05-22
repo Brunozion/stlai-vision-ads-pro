@@ -851,6 +851,27 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-22 - Timer visível e zoom seguro da galeria
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- .bmad/active-context.md
+- .bmad/decisions.md
+
+O que foi feito:
+
+- O timer de composição agora também aparece no painel de status do passo 5, além do card animado e do resumo.
+- Todos os estados de composição (`composition_queued`, `composition_processing`, `composition_waiting`, `composition_pending`, `composing_final` e equivalentes) usam o mesmo helper `renderCompositionTimer`.
+- O lightbox deixou de usar `alt="Zoom"` em uma imagem vazia; imagens inválidas mostram fallback "Imagem indisponível".
+- O botão de ampliar/zoom usa SVG inline/CSS e não depende de asset externo.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Correção do timer de composição final
 
 Arquivos alterados:

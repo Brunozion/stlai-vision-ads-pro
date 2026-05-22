@@ -275,6 +275,11 @@ a{color:var(--stlai-link)}
 .video-motion-timer span{font-size:10px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--tx3)}
 .video-motion-timer strong{font-size:15px;font-weight:850;color:var(--stlai-accent);font-variant-numeric:tabular-nums;letter-spacing:.3px}
 .video-motion-timer em{grid-column:1/-1;font-style:normal;color:var(--tx2)}
+.stlai-composition-timer{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0;padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(155,81,230,.25);color:var(--tx2);line-height:1.35}
+.stlai-composition-timer__label{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;opacity:.7;color:var(--tx3)}
+.stlai-composition-timer__value{color:var(--stlai-accent);font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.3px}
+.stlai-composition-timer__hint{width:100%;opacity:.75;font-size:13px;color:var(--tx2)}
+#video-status-composition-timer .stlai-composition-timer{margin:10px 0 0}
 .video-motion-eq{display:flex;align-items:flex-end;gap:4px;height:26px}
 .video-motion-eq span{width:4px;border-radius:999px;background:linear-gradient(180deg,var(--mint),var(--acc-h));animation:videoEq 1s infinite ease-in-out;opacity:.9}
 .video-motion-eq span:nth-child(1){height:11px;animation-delay:0s}.video-motion-eq span:nth-child(2){height:22px;animation-delay:.1s}.video-motion-eq span:nth-child(3){height:15px;animation-delay:.2s}.video-motion-eq span:nth-child(4){height:25px;animation-delay:.3s}.video-motion-eq span:nth-child(5){height:13px;animation-delay:.4s}
@@ -412,6 +417,9 @@ a{color:var(--stlai-link)}
 #lightbox img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.5)}
 #lightbox video{max-width:min(92vw,980px);max-height:86vh;object-fit:contain;border-radius:12px;background:#000;box-shadow:0 14px 50px rgba(0,0,0,.55),0 0 30px rgba(45,212,191,.14)}
 #lightbox-close{position:absolute;top:20px;right:20px;font-size:36px;color:white;cursor:pointer;background:transparent;border:none;padding:10px;line-height:1}
+.lightbox-fallback{min-width:min(320px,90vw);min-height:180px;align-items:center;justify-content:center;text-align:center;padding:22px;border-radius:16px;border:1px solid rgba(155,81,230,.28);background:rgba(255,255,255,.05);color:#fff;font-size:14px;font-weight:700}
+.stlai-image-action svg,.img4-tile-ov svg,.combo-ov svg{width:16px;height:16px;display:block}
+.stlai-image-action img,.img4-tile-ov img,.combo-ov img{display:none}
 
 #vision-overlay{position:fixed;inset:0;background:#08080f;z-index:9999;display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff}
 #vision-overlay.show{display:flex}
