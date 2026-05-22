@@ -124,6 +124,28 @@ Diagnostics passam a expor `max_concurrent_clip_generations`, `clip_start_stagge
 
 Decidido
 
+## 2026-05-22 - Timer de composição e bônus de score do vídeo final
+
+### Decisao
+
+A etapa de composição final exibe um timer visual no frontend durante `composition_queued`, `composition_processing`, `composition_waiting` e estados equivalentes de composição.
+
+O timer usa `composer_started_at`/`composer_elapsed_seconds` quando vierem do backend; se esses campos não existirem, o frontend cria um timestamp local para a composição atual.
+
+O score do anúncio recebe um bônus único de 10 pontos quando o vídeo final é gerado com sucesso (`final_video_url`, `status=ready` ou `composition_status=complete`).
+
+### Motivo
+
+Renders externos podem levar alguns minutos, especialmente em infraestrutura free/cold start. O timer reduz incerteza para o usuário. O score deve refletir que um anúncio com vídeo final pronto está mais completo do que um anúncio apenas com imagens/texto.
+
+### Impacto
+
+O frontend mantém diagnostics locais seguros: `composition_elapsed_ui_seconds`, `composition_timer_active`, `final_video_score_bonus_applied`, `final_video_score_bonus_value`, `score_before_video_bonus` e `score_after_video_bonus`.
+
+### Status
+
+Decidido
+
 ## 2026-05-22 - Video Provider Hub e resolução comercial
 
 ### Decisao

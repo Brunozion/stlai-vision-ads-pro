@@ -64,6 +64,8 @@ const S = {
     errorCode: "",
     compositionStatus: "pending",
     composerStatus: "",
+    composerStartedAt: "",
+    localCompositionStartedAt: 0,
     composerEndpointConfigured: false,
     composerEndpointHost: "",
     composerEndpointPath: "",
@@ -100,6 +102,7 @@ const S = {
     testClipMessage: "",
     pollTimer: null,
 	    progressTimer: null,
+	    compositionTimer: null,
 	    clipLaunchTimers: [],
 	    clipLaunchStarted: false,
 	    clipRequestsInFlight: {},
@@ -110,6 +113,8 @@ const S = {
   },
   cfg: window.stlaiConfig || {}
 };
+
+const VIDEO_FINAL_SCORE_BONUS = 10;
 
 const CMSGS = [
   "Analisando produto...",
@@ -1522,6 +1527,73 @@ function isVideoBusyStatus(status){
     || status==="composition_waiting";
 }
 
+function isVideoCompositionState(status=videoStatusForDisplay(), compositionStatus=S.video.compositionStatus){
+  const value=String(status || "");
+  const comp=String(compositionStatus || "");
+  return value==="composition_queued"
+    || value==="composition_processing"
+    || value==="composition_waiting"
+    || value==="composing_final_video"
+    || value==="composing"
+    || comp==="queued"
+    || comp==="processing"
+    || comp==="waiting";
+}
+
+function formatElapsedTime(seconds){
+  const total=Math.max(0, Math.floor(Number(seconds || 0)));
+  const minutes=Math.floor(total / 60);
+  const secs=total % 60;
+  return `${String(minutes).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
+}
+
+function compositionElapsedUiSeconds(){
+  if(S.video.finalVideoUrl || videoStatusForDisplay()==="ready" || S.video.compositionStatus==="complete") return 0;
+  const backendElapsed=Number(S.video.composerElapsedSeconds || 0);
+  const startedAt=Date.parse(S.video.composerStartedAt || "");
+  if(startedAt && !Number.isNaN(startedAt)){
+    return Math.max(backendElapsed, Math.floor((Date.now() - startedAt) / 1000));
+  }
+  if(!S.video.localCompositionStartedAt && isVideoCompositionState()){
+    S.video.localCompositionStartedAt=Date.now() - (backendElapsed * 1000);
+  }
+  if(S.video.localCompositionStartedAt){
+    return Math.max(backendElapsed, Math.floor((Date.now() - S.video.localCompositionStartedAt) / 1000));
+  }
+  return backendElapsed;
+}
+
+function compositionTimerSubtitle(seconds=compositionElapsedUiSeconds()){
+  if(seconds >= 300) return "Ainda estamos processando. Você pode revisar as imagens e textos enquanto isso.";
+  if(seconds >= 180) return "Finalizando o processamento. Isso pode levar alguns minutos.";
+  return "Montando clipes, narração e transições.";
+}
+
+function startCompositionTimerLoop(){
+  if(S.video.compositionTimer || !isVideoCompositionState() || S.video.finalVideoUrl || videoStatusForDisplay()==="ready") return;
+  if(!S.video.localCompositionStartedAt && !S.video.composerStartedAt){
+    S.video.localCompositionStartedAt=Date.now() - (Number(S.video.composerElapsedSeconds || 0) * 1000);
+  }
+  S.video.compositionTimer=setInterval(()=>{
+    if(!isVideoCompositionState() || S.video.finalVideoUrl || videoStatusForDisplay()==="ready" || S.video.status==="composition_error"){
+      stopCompositionTimerLoop(false);
+      return;
+    }
+    renderVideoMotion();
+    if(S.step>=6) renderSummaryVideoMotion(Boolean(S.video.finalVideoUrl));
+  }, 1000);
+}
+
+function stopCompositionTimerLoop(clearLocal=true){
+  if(S.video.compositionTimer){
+    clearInterval(S.video.compositionTimer);
+    S.video.compositionTimer=null;
+  }
+  if(clearLocal){
+    S.video.localCompositionStartedAt=0;
+  }
+}
+
 function normalizeClipJobs(jobs, clips=S.video.clips){
   const byIndex={};
   if(Array.isArray(jobs)){
@@ -1823,6 +1895,7 @@ function applyVideoState(payload={}, options={}){
   S.video.compositionStatus=merged.compositionStatus;
   S.video.composerStatus=merged.composerStatus;
   S.video.renderJobId=incoming.render_job_id || S.video.renderJobId || "";
+  S.video.composerStartedAt=(!stale && incoming.composer_started_at) || incoming.diagnostics?.composer_started_at || S.video.composerStartedAt || "";
   S.video.composerEndpointConfigured=Boolean(incoming.composer_endpoint_configured ?? S.video.composerEndpointConfigured);
   S.video.composerEndpointHost=(!stale && incoming.composer_endpoint_host) || S.video.composerEndpointHost || "";
   S.video.composerEndpointPath=(!stale && incoming.composer_endpoint_path) || S.video.composerEndpointPath || "";
@@ -1853,6 +1926,9 @@ function applyVideoState(payload={}, options={}){
   S.video.willRetry=Boolean((!stale && incoming.will_retry) || incoming.diagnostics?.will_retry || false);
   S.video.errorFinalReason=(!stale && incoming.error_final_reason) || incoming.diagnostics?.error_final_reason || S.video.errorFinalReason || "";
   S.video.diagnostics=(!stale && incoming.diagnostics && typeof incoming.diagnostics==="object") ? incoming.diagnostics : (S.video.diagnostics || {});
+  if(isVideoCompositionState(merged.status, S.video.compositionStatus) && !S.video.localCompositionStartedAt && !S.video.composerStartedAt){
+    S.video.localCompositionStartedAt=Date.now() - (Number(S.video.composerElapsedSeconds || 0) * 1000);
+  }
   if(!S.video.errorCode && incoming.last_composer_error_code) S.video.errorCode=incoming.last_composer_error_code;
   S.video.jobVersion=Math.max(previousVersion, incomingVersion);
   S.video.updatedAt=(!stale && incoming.updated_at) ? incoming.updated_at : (S.video.updatedAt || incoming.updated_at || "");
@@ -1876,6 +1952,9 @@ function applyVideoState(payload={}, options={}){
     clearVideoPolling();
     clearVideoClipLaunchers();
     stopVideoProgressLoop();
+    stopCompositionTimerLoop();
+    S.video.finalVideoScoreBonusApplied=true;
+    if(document.getElementById("sum-score")) renderSummaryScore();
     if(!S.video.finalVideoUrl){
       console.warn("STLAI final video ready signal without renderable URL", {
         status:S.video.status,
@@ -1884,6 +1963,10 @@ function applyVideoState(payload={}, options={}){
         final_video_url_exists:Boolean(incoming.final_video_url_exists)
       });
     }
+  }else if(isVideoCompositionState()){
+    startCompositionTimerLoop();
+  }else if(S.video.status==="composition_error" || S.video.status==="clip_generation_error" || S.video.status==="error"){
+    stopCompositionTimerLoop(false);
   }
   if(options.debug && S.cfg && S.cfg.debugVideo){
     console.debug("stlai video merge", {
@@ -2194,9 +2277,12 @@ async function mockGenerateVideo(){
   S.video.errorCode="";
   S.video.compositionStatus="pending";
 	  S.video.composerStatus="";
+  S.video.composerStartedAt="";
+  S.video.localCompositionStartedAt=0;
 	  S.video.renderJobId="";
 	  S.video.clipLaunchStarted=false;
   S.video.clipRequestsInFlight={};
+  stopCompositionTimerLoop();
   S.video.message=retryingComposition
     ? "Tentando compor o vídeo final novamente..."
     : (retryingPartial ? "Tentando novamente a partir do clipe pendente..." : "Gerando narração e preparando pipeline...");
@@ -2410,6 +2496,9 @@ function videoMotionState(){
   let subtitle="";
   let mode="loading";
   let visible=true;
+  let timerActive=false;
+  let elapsedSeconds=0;
+  let timerNote="";
 
   if(status==="ready" && S.video.finalVideoUrl){
     visible=false;
@@ -2446,16 +2535,19 @@ function videoMotionState(){
     progress=status==="composition_pending" ? 80 : clamp(rawProgress || 80,80,84);
     title="Vídeo na fila de composição";
     subtitle="Narração e clipes prontos. Seu vídeo entrará em processamento em instantes.";
+    timerActive=true;
   }else if(status==="composition_processing"){
     stage=rawProgress >= 92 ? 3 : 2;
     progress=clamp(rawProgress || 88,85,96);
     title="Compondo vídeo final";
     subtitle="Montando o vídeo completo com os clipes e a narração.";
+    timerActive=true;
   }else if(status==="composition_waiting"){
     stage=3;
     progress=clamp(rawProgress || 94,92,98);
     title="Composição ainda em andamento";
     subtitle="Seu vídeo final ainda está sendo composto. Isso pode levar alguns minutos.";
+    timerActive=true;
   }else if(status==="composition_error"){
     stage=2;
     progress=clamp(rawProgress || S.video.progress || 88,80,96);
@@ -2495,7 +2587,12 @@ function videoMotionState(){
     stepStates=["done","done","done","done"];
   }
 
-  return {visible,stage,progress,title,subtitle,mode,stepStates};
+  if(timerActive){
+    elapsedSeconds=compositionElapsedUiSeconds();
+    timerNote=compositionTimerSubtitle(elapsedSeconds);
+  }
+
+  return {visible,stage,progress,title,subtitle,mode,stepStates,timerActive,elapsedSeconds,timerNote};
 }
 
 function renderMotionMarkup(state){
@@ -2507,6 +2604,9 @@ function renderMotionMarkup(state){
     return `<div class="video-motion-step ${cls}"><b>${esc(label)}</b></div>`;
   }).join("");
   const progress=Math.max(0,Math.min(100,Number(state.progress || 0)));
+  const timerHtml=state.timerActive
+    ? `<div class="video-motion-timer"><span>Tempo decorrido</span><strong>${esc(formatElapsedTime(state.elapsedSeconds))}</strong><em>${esc(state.timerNote)}</em></div>`
+    : "";
   return `<div class="video-motion-box ${state.mode==="error" ? "error" : ""}">
     <div class="video-motion-inner">
       <div class="video-motion-preview">
@@ -2517,6 +2617,7 @@ function renderMotionMarkup(state){
         <div class="video-motion-kicker"><span class="video-motion-orb"></span><span>${state.mode==="error" ? "Ação necessária" : "Processamento de vídeo"}</span></div>
         <h3 class="video-motion-title">${esc(state.title)}</h3>
         <p class="video-motion-subtitle">${esc(state.subtitle)}</p>
+        ${timerHtml}
         <div class="video-motion-eq"><span></span><span></span><span></span><span></span><span></span></div>
         <div class="video-motion-progress"><span style="width:${progress}%"></span></div>
         <div class="video-motion-steps">${stepHtml}</div>
@@ -2532,10 +2633,12 @@ function renderVideoMotion(){
   if(!state.visible){
     box.style.display="none";
     box.innerHTML="";
+    stopCompositionTimerLoop(false);
     return;
   }
   box.style.display="block";
   box.innerHTML=renderMotionMarkup(state);
+  if(state.timerActive) startCompositionTimerLoop();
 }
 
 function renderSummaryVideoMotion(hasFinal=false){
@@ -2545,10 +2648,12 @@ function renderSummaryVideoMotion(hasFinal=false){
   if(hasFinal || !state.visible){
     box.style.display="none";
     box.innerHTML="";
+    if(hasFinal) stopCompositionTimerLoop();
     return;
   }
   box.style.display="block";
   box.innerHTML=renderMotionMarkup(state);
+  if(state.timerActive) startCompositionTimerLoop();
 }
 
 function renderVideoActionButton(){
@@ -3358,6 +3463,7 @@ function calcScore() {
   if (S.imgs4.length >= 8) { score += 15; checks.push(`<div style="display:flex;gap:8px;align-items:center">${svgCheck} Alta diversidade de imagens (Plano Premium)</div>`); }
   else { score += 10; checks.push(`<div style="display:flex;gap:8px;align-items:center">${svgWarn} Boa diversidade de imagens (Básico)</div>`); }
 
+  const hasFinalVideo=Boolean(S.video.finalVideoUrl) || S.video.status==="ready" || S.video.compositionStatus==="complete" || S.video.composerStatus==="ready";
   if (S.video.status === "ready" || S.video.status === "ready_for_composition" || S.video.status === "clips_ready" || S.video.status === "composition_pending" || S.video.status === "composition_error" || S.video.finalVideoUrl) {
      score += 15; checks.push(`<div style="display:flex;gap:8px;align-items:center">${isComposerPendingCode(S.video.errorCode) || S.video.status === "composition_pending" || S.video.status === "composition_error" ? svgWarn : svgCheck} ${S.video.finalVideoUrl ? "Vídeo final preparado" : (isComposerPendingCode(S.video.errorCode) || S.video.status === "composition_pending" || S.video.status === "composition_error" ? "Composição final pendente" : "Vídeo preparado para composição")}</div>`);
   } else if (S.video.status === "clips_partial_error" || S.video.status === "clip_generation_error") {
@@ -3368,7 +3474,47 @@ function calcScore() {
      score += 15; checks.push(`<div style="display:flex;gap:8px;align-items:center">${svgWarn} Vídeo ainda não gerado</div>`);
   }
 
-  return { score, checks };
+  const scoreBeforeVideoBonus=score;
+  let finalVideoScoreBonusApplied=false;
+  if(hasFinalVideo){
+    score += VIDEO_FINAL_SCORE_BONUS;
+    finalVideoScoreBonusApplied=true;
+    checks.push(`<div style="display:flex;gap:8px;align-items:center">${svgCheck} Vídeo final gerado (+${VIDEO_FINAL_SCORE_BONUS} pontos)</div>`);
+  }
+  score=Math.min(100, score);
+  S.video.finalVideoScoreBonusApplied=finalVideoScoreBonusApplied;
+  S.video.finalVideoScoreBonusValue=VIDEO_FINAL_SCORE_BONUS;
+  S.video.scoreBeforeVideoBonus=scoreBeforeVideoBonus;
+  S.video.scoreAfterVideoBonus=score;
+  S.video.diagnostics={
+    ...(S.video.diagnostics || {}),
+    composition_elapsed_ui_seconds:compositionElapsedUiSeconds(),
+    composition_timer_active:Boolean(S.video.compositionTimer && isVideoCompositionState()),
+    final_video_score_bonus_applied:finalVideoScoreBonusApplied,
+    final_video_score_bonus_value:VIDEO_FINAL_SCORE_BONUS,
+    score_before_video_bonus:scoreBeforeVideoBonus,
+    score_after_video_bonus:score
+  };
+
+  return { score, checks, scoreBeforeVideoBonus, finalVideoScoreBonusApplied };
+}
+
+function renderSummaryScore(){
+  const scoreBox=document.getElementById("sum-score");
+  if(!scoreBox) return;
+  const { score, checks, finalVideoScoreBonusApplied } = calcScore();
+  let scoreColor = score >= 80 ? 'var(--mint)' : (score >= 60 ? 'var(--gold)' : 'var(--coral)');
+  let scoreHtml = `<div style="display:flex;align-items:center;gap:15px;margin-bottom:15px;">
+    <div style="font-size:36px;font-weight:800;color:${scoreColor};font-family:'Syne',sans-serif;">${score}/100</div>
+    <div style="font-size:13px;color:var(--tx2);">Sua nota baseada nas melhores práticas dos Marketplaces (Mercado Livre e Shopee).${finalVideoScoreBonusApplied ? "<br>Seu anúncio ganhou pontos extras por ter vídeo final pronto." : ""}</div>
+  </div>
+  <ul style="list-style:none;padding:0;margin:0;font-size:13px;color:var(--tx);line-height:1.8;">`;
+  checks.forEach(c => {
+    scoreHtml += `<li>${c}</li>`;
+  });
+  scoreHtml += `</ul>`;
+  scoreBox.innerHTML = scoreHtml;
+  scoreBox.style.borderColor = scoreColor;
 }
 
 function popSum(){
@@ -3393,22 +3539,7 @@ function popSum(){
     <div class="mt2"><div class="mt2-l">Créditos</div><div class="mt2-v" style="color:var(--coral)">${cr}</div></div>
     <div class="mt2"><div class="mt2-l">Data</div><div class="mt2-v" style="font-size:13px">${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})}</div></div>`;
 
-  const { score, checks } = calcScore();
-  let scoreColor = score >= 80 ? 'var(--mint)' : (score >= 60 ? 'var(--gold)' : 'var(--coral)');
-  
-  let scoreHtml = `<div style="display:flex;align-items:center;gap:15px;margin-bottom:15px;">
-    <div style="font-size:36px;font-weight:800;color:${scoreColor};font-family:'Syne',sans-serif;">${score}/100</div>
-    <div style="font-size:13px;color:var(--tx2);">Sua nota baseada nas melhores práticas dos Marketplaces (Mercado Livre e Shopee).</div>
-  </div>
-  <ul style="list-style:none;padding:0;margin:0;font-size:13px;color:var(--tx);line-height:1.8;">`;
-  
-  checks.forEach(c => {
-    scoreHtml += `<li>${c}</li>`;
-  });
-  scoreHtml += `</ul>`;
-  
-  document.getElementById("sum-score").innerHTML = scoreHtml;
-  document.getElementById("sum-score").style.borderColor = scoreColor;
+  renderSummaryScore();
   renderSummaryVideo();
 
   const tags=["SEO","Informativo","Benefício","Diferencial"];

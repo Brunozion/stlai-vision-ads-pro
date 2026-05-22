@@ -897,6 +897,27 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-22 - Timer de composição e bônus de score
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- .bmad/active-context.md
+- .bmad/decisions.md
+
+O que foi feito:
+
+- Adicionado timer visual no card/motion da composição final.
+- O timer usa `composer_started_at`/`composer_elapsed_seconds` do backend ou timestamp local quando necessário.
+- O timer para em `ready`, `final_video_url`, `composition_status=complete` ou erro final.
+- A nota do anúncio ganhou critério de bônus `Vídeo final gerado` com +10 pontos, limitado a 100.
+- O bônus é calculado por critério, não por soma acumulativa de polling, evitando duplicidade.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Story 11: Video Provider Hub e resolução de saída
 
 Arquivos alterados:
