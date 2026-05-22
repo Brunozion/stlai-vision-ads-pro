@@ -31,7 +31,7 @@ add_shortcode( 'stlai_vision_ads_pro', 'stlai_vision_ads_pro_render_shortcode' )
 
 function stlai_vision_ads_pro_render_shortcode( $atts ) {
     // Enqueue CSS
-    wp_enqueue_style( 'stlai-vision-ads-pro-fonts', 'https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap', array(), null );
+    wp_enqueue_style( 'stlai-vision-ads-pro-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap', array(), null );
     wp_enqueue_style( 'stlai-vision-ads-pro-style', STLAI_VISION_ADS_PRO_URL . 'assets/css/style.css', array(), STLAI_VISION_ADS_PRO_VERSION );
 
     // Enqueue JS

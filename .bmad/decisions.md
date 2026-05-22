@@ -80,6 +80,28 @@ O painel admin passa a armazenar as credenciais e modelos futuros. Nenhuma chave
 
 Decidido
 
+## 2026-05-22 - Identidade visual STLAI Seller
+
+### Decisao
+
+A identidade visual pública do plugin foi ajustada para o design system STLAI/STLFLIX.
+
+Tokens principais aplicados: `#9B51E6` como primary, `#ECF5FE` como secondary, `#5166E6` como accent/link, `#000000` como background, `#FFFFFF` como texto principal e Inter como fonte.
+
+O nome visual público da ferramenta foi atualizado de "Vision Ads" para "Seller", formando a marca de topo "STLAI Seller".
+
+### Motivo
+
+O produto público deve conversar com a identidade oficial STLFLIX/STLAI sem introduzir risco no pipeline antes da entrega.
+
+### Impacto
+
+A troca é visual. Slugs, classes, handles, opções de banco, nomes de pasta e nomes técnicos internos continuam iguais para compatibilidade.
+
+### Status
+
+Decidido
+
 ## 2026-05-22 - Video Provider Hub e resolução comercial
 
 ### Decisao

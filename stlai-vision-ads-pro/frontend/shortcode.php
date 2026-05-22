@@ -200,7 +200,7 @@
 <header class="topbar">
   <div class="tl" style="cursor:pointer" onclick="resetApp()">
     <img src="https://stlflix.negociosdobruno.com.br/wp-content/uploads/2026/04/stl-ai-logo-1.png" alt="STLAI" onerror="this.style.display='none'">
-    <div class="tl-txt"><span>Vision Ads</span></div>
+    <div class="tl-txt"><span>Seller</span></div>
   </div>
   <div class="tr">
     

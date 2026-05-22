@@ -851,6 +851,27 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-22 - Ajuste visual STLAI Seller
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/stlai-vision-ads-pro.php
+- stlai-vision-ads-pro/assets/css/style.css
+- .bmad/active-context.md
+- .bmad/decisions.md
+
+O que foi feito:
+
+- O topo público passou de "Vision Ads" para "Seller", compondo "STLAI Seller" com a logo atual.
+- A fonte pública enfileirada passou para Inter.
+- Tokens CSS oficiais STLAI/STLFLIX foram adicionados e mapeados para os tokens existentes do plugin.
+- Botões, surfaces, bordas, links, steps e textos passam a usar a paleta primary/accent/background/text oficial sem alterar estrutura ou pipeline.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Story 11: Video Provider Hub e resolução de saída
 
 Arquivos alterados:
