@@ -112,6 +112,7 @@ const S = {
 	    progressTimer: null,
 	    compositionTimer: null,
 	    clipLaunchTimers: [],
+	    clipLaunchTimersByIndex: {},
 	    clipLaunchStarted: false,
 	    clipRequestsInFlight: {},
 	    visualStatus: "",
@@ -2021,13 +2022,13 @@ function applyVideoState(payload={}, options={}){
   S.video.nextClipIndex=Number((!stale && incoming.next_clip_index) || incoming.diagnostics?.next_clip_index || S.video.nextClipIndex || 0);
   S.video.nextClipIndexes=Array.isArray(incoming.next_clip_indexes) ? incoming.next_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (Array.isArray(incoming.diagnostics?.next_clip_indexes) ? incoming.diagnostics.next_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (S.video.nextClipIndexes || []));
   S.video.nextClipReason=(!stale && incoming.next_clip_reason) || incoming.diagnostics?.next_clip_reason || S.video.nextClipReason || "";
-  S.video.startedClipIndexes=Array.isArray(incoming.started_clip_indexes) ? incoming.started_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (Array.isArray(incoming.diagnostics?.started_clip_indexes) ? incoming.diagnostics.started_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (S.video.startedClipIndexes || []));
+  S.video.startedClipIndexes=Array.isArray(incoming.started_clip_indexes) ? incoming.started_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (Array.isArray(incoming.started_clip_indexes_this_tick) ? incoming.started_clip_indexes_this_tick.map(Number).filter(index=>index>=1 && index<=4) : (Array.isArray(incoming.diagnostics?.started_clip_indexes_this_tick) ? incoming.diagnostics.started_clip_indexes_this_tick.map(Number).filter(index=>index>=1 && index<=4) : (Array.isArray(incoming.diagnostics?.started_clip_indexes) ? incoming.diagnostics.started_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (S.video.startedClipIndexes || []))));
   S.video.scheduledClipIndexes=Array.isArray(incoming.scheduled_clip_indexes) ? incoming.scheduled_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (Array.isArray(incoming.diagnostics?.scheduled_clip_indexes) ? incoming.diagnostics.scheduled_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (S.video.scheduledClipIndexes || []));
   S.video.autoClipGenerationTriggered=Boolean((!stale && incoming.auto_clip_generation_triggered) || incoming.diagnostics?.auto_clip_generation_triggered || false);
   S.video.autoClipGenerationResult=(!stale && incoming.auto_clip_generation_result) || incoming.diagnostics?.auto_clip_generation_result || S.video.autoClipGenerationResult || "";
   S.video.skippedReason=(!stale && incoming.skipped_reason) || incoming.diagnostics?.skipped_reason || S.video.skippedReason || "";
   S.video.maxClipAttempts=Number((!stale && incoming.max_clip_attempts) || incoming.diagnostics?.max_clip_attempts || S.video.maxClipAttempts || 3);
-  S.video.maxConcurrentClipGenerations=Number((!stale && incoming.max_concurrent_clip_generations) || incoming.diagnostics?.max_concurrent_clip_generations || S.video.maxConcurrentClipGenerations || 4);
+  S.video.maxConcurrentClipGenerations=Math.max(4, Number((!stale && incoming.max_concurrent_clip_generations) || incoming.diagnostics?.max_concurrent_clip_generations || S.video.maxConcurrentClipGenerations || 4));
   S.video.clipStartStaggerSeconds=Number((!stale && incoming.clip_start_stagger_seconds) || incoming.diagnostics?.clip_start_stagger_seconds || S.video.clipStartStaggerSeconds || 1);
   S.video.retryable=Boolean((!stale && incoming.retryable) || incoming.diagnostics?.retryable || false);
   S.video.retryReason=(!stale && incoming.retry_reason) || incoming.diagnostics?.retry_reason || S.video.retryReason || "";
@@ -2389,8 +2390,9 @@ async function mockGenerateVideo(){
   S.video.localCompositionStartedAt=0;
   S.video.compositionTimerStartedAtMs=0;
   S.video.compositionTimerJobId="";
-	  S.video.renderJobId="";
-	  S.video.clipLaunchStarted=false;
+  S.video.renderJobId="";
+  S.video.clipLaunchStarted=false;
+  S.video.clipLaunchTimersByIndex={};
   S.video.clipRequestsInFlight={};
   stopCompositionTimerLoop();
   S.video.message=retryingComposition
@@ -2918,7 +2920,7 @@ function renderVideoClipsGridMarkup(clips){
       const maxAttempts=Number(clipJob.max_attempts || clipJob.maxAttempts || S.video.maxClipAttempts || 3);
       const attempt=Number(clipJob.attempt || 0);
       const finalFailed=failed && !willRetry && attempt >= maxAttempts;
-      const label=finalFailed ? "Erro após tentativas" : (retrying || (willRetry && isActive) ? `Ajustando clipe ${index}` : (generating ? `Gerando clipe ${index}` : (scheduled ? "Agendado" : "Pendente")));
+      const label=finalFailed ? "Erro após tentativas" : (retrying || (willRetry && isActive) ? `Ajustando clipe ${index}` : (generating ? `Gerando clipe ${index}` : (scheduled ? "Aguardando envio" : "Pendente")));
       cards.push(`<div class="video-clip-card video-clip-card-placeholder ${isActive ? "active" : ""} ${failed ? "error" : ""}">
         <div class="video-clip-title">Clipe ${index}</div>
         <div class="video-clip-placeholder">
@@ -3407,6 +3409,10 @@ function clearVideoClipLaunchers(){
     S.video.clipLaunchTimers.forEach(timer=>clearTimeout(timer));
   }
   S.video.clipLaunchTimers=[];
+  if(S.video.clipLaunchTimersByIndex && typeof S.video.clipLaunchTimersByIndex==="object"){
+    Object.values(S.video.clipLaunchTimersByIndex).forEach(timer=>clearTimeout(timer));
+  }
+  S.video.clipLaunchTimersByIndex={};
   S.video.clipLaunchStarted=false;
 }
 
@@ -3416,7 +3422,7 @@ function hasActiveClipJobs(){
 
 function activeVideoClipJobCount(){
   return normalizeClipJobs(S.video.clipJobs, S.video.clips)
-    .filter(job=>["generating","retrying"].includes(job.status) && !job.url)
+    .filter(job=>["generating","retrying"].includes(job.status) && !job.url && (job.operation_id_exists || job.operation_id || isVideoClipRequestInFlight(job.index)))
     .length;
 }
 
@@ -3426,33 +3432,54 @@ function isVideoClipRequestInFlight(index){
 
 function scheduleVideoClipStarts(){
   if(!S.video.jobId || !S.video.audioUrl || S.video.finalVideoUrl) return;
-  const maxConcurrent=Math.max(1, Number(S.video.maxConcurrentClipGenerations || 4));
-  const openSlots=Math.max(0, maxConcurrent - activeVideoClipJobCount());
-  if(openSlots<=0) return;
+  const maxConcurrent=Math.max(4, Number(S.video.maxConcurrentClipGenerations || 4));
+  const activeCount=activeVideoClipJobCount();
+  const openSlots=Math.max(0, maxConcurrent - activeCount);
   const preferredIndexes=Array.isArray(S.video.nextClipIndexes) ? S.video.nextClipIndexes.map(Number).filter(index=>index>=1 && index<=4) : [];
   const jobsByIndex={};
   normalizeClipJobs(S.video.clipJobs, S.video.clips).forEach(job=>{ jobsByIndex[job.index]=job; });
-  const candidates=(preferredIndexes.length ? preferredIndexes.map(index=>jobsByIndex[index]).filter(Boolean) : Object.values(jobsByIndex))
-    .filter(job=>job.status!=="ready" && job.status!=="error_final" && !job.url && !isVideoClipRequestInFlight(job.index))
-    .filter(job=>!(["generating","retrying"].includes(job.status) && !job.operation_id_exists && !job.operation_id))
+  const orderedJobs=(preferredIndexes.length ? preferredIndexes.map(index=>jobsByIndex[index]).filter(Boolean) : Object.values(jobsByIndex))
+    .filter(job=>job && job.status!=="ready" && job.status!=="error_final" && !job.url && !isVideoClipRequestInFlight(job.index))
     .sort((a,b)=>{
       const aRetry=(a.will_retry || a.retryable || a.status==="retrying") ? 0 : 1;
       const bRetry=(b.will_retry || b.retryable || b.status==="retrying") ? 0 : 1;
       return aRetry-bRetry || Number(a.index)-Number(b.index);
     });
+
+  const liveOperationCandidates=orderedJobs.filter(job=>{
+    const hasOperation=Boolean(job.operation_id_exists || job.operation_id);
+    return hasOperation && ["generating","retrying","pending"].includes(job.status);
+  });
+  const startCandidates=orderedJobs.filter(job=>{
+    if(liveOperationCandidates.some(item=>Number(item.index)===Number(job.index))) return false;
+    if(job.status==="generating" && !(job.operation_id_exists || job.operation_id)) return false;
+    return ["scheduled","pending","queued","retrying"].includes(job.status);
+  });
   const jobs=[];
-  candidates.forEach(job=>{
-    if(jobs.length>=openSlots) return;
+  liveOperationCandidates.forEach(job=>{
+    if(jobs.some(item=>Number(item.index)===Number(job.index))) return;
+    jobs.push(job);
+  });
+  startCandidates.forEach(job=>{
+    if(jobs.filter(item=>!(item.operation_id_exists || item.operation_id)).length>=openSlots) return;
     if(jobs.some(item=>Number(item.index)===Number(job.index))) return;
     jobs.push(job);
   });
   if(!jobs.length) return;
 
-  clearVideoClipLaunchers();
   S.video.clipLaunchStarted=true;
   const staggerMs=Math.max(0, Number(S.video.clipStartStaggerSeconds || 1) * 1000);
   jobs.forEach((job,idx)=>{
-    const timer=setTimeout(()=>startVideoClip(job.index), idx * staggerMs);
+    const index=Number(job.index || 0);
+    if(index<1 || index>4 || S.video.clipLaunchTimersByIndex?.[index]) return;
+    const scheduledMs=parseCompositionDateMs(job.scheduled_start_at || "");
+    const fallbackDelay=idx * staggerMs;
+    const delayMs=scheduledMs ? Math.max(0, scheduledMs - Date.now()) : fallbackDelay;
+    const timer=setTimeout(()=>{
+      if(S.video.clipLaunchTimersByIndex) delete S.video.clipLaunchTimersByIndex[index];
+      startVideoClip(index);
+    }, delayMs);
+    S.video.clipLaunchTimersByIndex={...(S.video.clipLaunchTimersByIndex || {}), [index]:timer};
     S.video.clipLaunchTimers.push(timer);
   });
 }

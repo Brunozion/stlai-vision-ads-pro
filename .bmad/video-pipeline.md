@@ -19,7 +19,7 @@ A implementação inicial será focada em vídeo comercial automático com:
 - ElevenLabs para narração
 - composição final com repetição de clipes e fade
 
-Atualização 2026-05-21: no plugin atual, os 4 clipes são disparados por AJAX semi-paralelo, com 1 segundo de diferença entre cada início. O limite controlado do MVP é `max_concurrent_clip_generations = 2`: o frontend preenche até 2 slots ativos, e o backend bloqueia duplicação por índice. O polling acompanha o job e a composição, mas não deve iniciar clipes automaticamente. A composição externa pode mixar música de fundo opcional via renderer, nunca via ElevenLabs.
+Atualização 2026-05-22: no plugin atual, os 4 clipes comerciais são disparados por AJAX em modo `staggered_parallel`, com 1 segundo de diferença entre cada início. O limite correto do fluxo comercial é `max_concurrent_clip_generations = 4` e `clip_start_stagger_seconds = 1`, tanto para 9:16 quanto para 16:9. O backend agenda os 4 `clip_jobs` juntos com `scheduled_start_at`, preserva `operation_id` por índice e bloqueia apenas duplicação do mesmo clipe. O frontend mantém timers por índice e não cancela os clipes já agendados em novos pollings. A composição externa pode mixar música de fundo opcional via renderer, nunca via ElevenLabs.
 
 Atualização 2026-05-21: a composição final externa não pode ficar indefinidamente em fila. O `POST /render` pode responder `ready` com `final_video_url` ou responder `queued/processing` com `render_job_id`; nesse caso o WordPress consulta `GET /render/:render_job_id`. Timeouts viram `composition_error` recuperável, preservando narração, clipes e imagens no formato para tentar novamente só a composição.
 

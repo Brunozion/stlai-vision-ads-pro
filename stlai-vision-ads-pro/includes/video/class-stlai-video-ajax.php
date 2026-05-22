@@ -127,8 +127,8 @@ class STLAI_Video_Ajax {
         $auto_clip_generation_result = sanitize_key( $job['auto_clip_generation_result'] ?? '' );
         $skipped_reason = sanitize_key( $job['skipped_reason'] ?? '' );
         $active_generating_count = self::active_generating_count( $clip_summary );
-        $max_concurrent_clip_generations = (int) ( $job['max_concurrent_clip_generations'] ?? 4 );
-        $clip_start_stagger_seconds = (int) ( $job['clip_start_stagger_seconds'] ?? 1 );
+        $max_concurrent_clip_generations = max( 4, (int) ( $job['max_concurrent_clip_generations'] ?? 4 ) );
+        $clip_start_stagger_seconds = max( 1, (int) ( $job['clip_start_stagger_seconds'] ?? 1 ) );
         $concurrency_blocked = ! empty( $job['concurrency_blocked'] ) || $active_generating_count >= $max_concurrent_clip_generations;
         $next_clip_indexes = self::public_index_list( $job['next_clip_indexes'] ?? array() );
         if ( empty( $next_clip_indexes ) ) {
@@ -138,6 +138,7 @@ class STLAI_Video_Ajax {
             $next_clip_indexes = array( $next_clip_index );
         }
         $started_clip_indexes = self::public_index_list( $job['started_clip_indexes'] ?? array() );
+        $started_clip_indexes_this_tick = self::public_index_list( $job['started_clip_indexes_this_tick'] ?? ( $job['started_clip_indexes'] ?? array() ) );
         $stale_threshold_seconds = (int) ( $job['stale_threshold_seconds'] ?? self::CLIP_GENERATION_STALE_SECONDS );
         $summary_retryable = false;
         $summary_will_retry = false;
@@ -227,6 +228,7 @@ class STLAI_Video_Ajax {
             'narration_language'           => sanitize_text_field( $job['narration_language'] ?? ( $job['video_language'] ?? 'pt-BR' ) ),
             'video_provider'                => sanitize_key( $job['video_provider'] ?? 'gemini_veo' ),
             'video_model'                   => sanitize_text_field( $job['video_model'] ?? 'veo-3.1-lite-generate-preview' ),
+            'format'                        => sanitize_text_field( $job['format'] ?? '' ),
             'output_resolution'             => sanitize_key( $job['output_resolution'] ?? '720p' ),
             'requested_resolution'          => sanitize_key( $job['requested_resolution'] ?? ( $job['output_resolution'] ?? '720p' ) ),
             'effective_resolution'          => sanitize_key( $job['effective_resolution'] ?? ( $job['output_resolution'] ?? '720p' ) ),
@@ -234,11 +236,13 @@ class STLAI_Video_Ajax {
             'can_start_composition'        => ! empty( $composition_start['can_start_composition'] ),
             'composition_start_blocker'    => sanitize_key( $composition_start['composition_start_blocker'] ?? '' ),
             'clip_jobs_summary'            => $clip_summary,
+            'clip_generation_mode'          => sanitize_key( $job['clip_generation_mode'] ?? 'staggered_parallel' ),
             'next_clip_action'             => $next_clip_action,
             'next_clip_index'              => $next_clip_index,
             'next_clip_indexes'            => $next_clip_indexes,
             'next_clip_reason'             => $next_clip_reason,
             'started_clip_indexes'         => $started_clip_indexes,
+            'started_clip_indexes_this_tick' => $started_clip_indexes_this_tick,
             'scheduled_clip_indexes'       => self::public_index_list( $job['scheduled_clip_indexes'] ?? array() ),
             'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
             'auto_clip_generation_result'  => $auto_clip_generation_result,
@@ -335,7 +339,9 @@ class STLAI_Video_Ajax {
             'next_clip_indexes' => $next_clip_indexes,
             'next_clip_reason' => $next_clip_reason,
             'started_clip_indexes' => $started_clip_indexes,
+            'started_clip_indexes_this_tick' => $started_clip_indexes_this_tick,
             'scheduled_clip_indexes' => self::public_index_list( $job['scheduled_clip_indexes'] ?? array() ),
+            'clip_generation_mode' => sanitize_key( $job['clip_generation_mode'] ?? 'staggered_parallel' ),
             'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
             'auto_clip_generation_result' => $auto_clip_generation_result,
             'skipped_reason' => $skipped_reason,
@@ -530,6 +536,7 @@ class STLAI_Video_Ajax {
                 'url'         => esc_url_raw( $job['url'] ?? '' ),
                 'error'       => $error,
                 'error_code'  => self::clip_error_code_from_summary( $error ),
+                'last_error_code' => self::clip_error_code_from_summary( $error ),
                 'retryable'   => $retryable,
                 'will_retry'  => $retryable && $attempt > 0 && $attempt < 3,
                 'retry_reason' => $retryable ? self::clip_retry_reason_from_summary( $error ) : '',
@@ -725,6 +732,7 @@ class STLAI_Video_Ajax {
                 'max_attempts' => 3,
                 'has_url'     => ! empty( $clip_job['url'] ),
                 'error_code'  => $error_code,
+                'last_error_code' => $error_code,
                 'retryable'   => $retryable,
                 'will_retry'  => $will_retry,
                 'retry_reason' => $retryable ? self::clip_retry_reason_from_summary( $error ) : '',

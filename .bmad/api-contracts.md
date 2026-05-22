@@ -193,8 +193,13 @@ Resposta de sucesso:
       "next_clip_indexes": [1, 2, 3, 4],
       "scheduled_clip_indexes": [1, 2, 3, 4],
       "started_clip_indexes": [1],
+      "started_clip_indexes_this_tick": [1],
       "max_concurrent_clip_generations": 4,
       "clip_start_stagger_seconds": 1,
+      "clip_generation_mode": "staggered_parallel",
+      "format": "9:16",
+      "video_model": "veo-3.1-lite-generate-preview",
+      "output_resolution": "720p",
       "next_clip_reason": "pending_stale_retry",
       "stale_threshold_seconds": 75,
       "active_generating_count": 0,
@@ -248,7 +253,8 @@ Observações:
 - `ready` fica reservado para o fluxo final composto ou para compatibilidade com o mock anterior.
 - `cancelled` é status reservado para contrato futuro.
 - `scheduled` em `clip_jobs` significa que o clipe já foi reservado para geração com `scheduled_start_at`; o frontend deve iniciar o request quando chegar esse horário.
-- `max_concurrent_clip_generations` é `4` no fluxo comercial atual, com `clip_start_stagger_seconds = 1`.
+- `max_concurrent_clip_generations` é `4` no fluxo comercial atual, com `clip_start_stagger_seconds = 1` e `clip_generation_mode = "staggered_parallel"`.
+- `started_clip_indexes_this_tick` lista somente os clipes iniciados na rodada atual; `started_clip_indexes` pode ser preservado por compatibilidade.
 
 ### 4.3 `stlai_get_video_result`
 
@@ -1453,9 +1459,13 @@ Cada item de `diagnostics.clip_jobs_summary` deve expor:
 
 No nível do job:
 
-- `max_concurrent_clip_generations`: `1` no MVP.
+- `max_concurrent_clip_generations`: `4` no fluxo comercial atual, para 9:16 e 16:9.
+- `clip_start_stagger_seconds`: `1`.
+- `clip_generation_mode`: `"staggered_parallel"`.
+- `scheduled_clip_indexes`: clipes reservados com `scheduled_start_at`.
+- `started_clip_indexes_this_tick`: clipes disparados na rodada atual.
 - `active_generating_count`: clipes `generating` sem URL e não stale.
-- `concurrency_blocked`: `true` quando o backend não iniciou novo clipe porque já existe geração ativa.
+- `concurrency_blocked`: `true` quando o backend não iniciou novo clipe porque atingiu o limite de 4 operações ativas ou porque o próprio índice já tem operação ativa não stale.
 - `retryable`: `true` se qualquer clipe pendente/erro ainda pode tentar novamente.
 - `will_retry`: `true` quando o pipeline deve continuar automaticamente.
 

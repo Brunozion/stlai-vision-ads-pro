@@ -851,6 +851,31 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-22 - Clipes comerciais em stagger paralelo 4x
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+- .bmad/video-pipeline.md
+
+O que foi feito:
+
+- O fluxo comercial usa `MAX_CONCURRENT_CLIP_GENERATIONS = 4` e `CLIP_START_STAGGER_SECONDS = 1` para 9:16 e 16:9.
+- Os 4 `clip_jobs` são agendados juntos com `scheduled_start_at`: t=0s, t=1s, t=2s e t=3s.
+- O frontend mantém timers por índice (`clipLaunchTimersByIndex`) para que novos pollings não cancelem envios já planejados.
+- Diagnostics passam a expor `clip_generation_mode = staggered_parallel`, `started_clip_indexes_this_tick`, `scheduled_clip_indexes`, concorrência, formato, modelo e resolução.
+- Clipes prontos continuam preservados por merge monotônico; retries e `operation_id` seguem independentes por índice.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Timer visível e zoom seguro da galeria
 
 Arquivos alterados:
@@ -1033,7 +1058,7 @@ Status:
 
 - Correção concluida.
 
-## 2026-05-21 - Concorrência 2 clipes e player final vertical compacto
+## 2026-05-21 - Concorrência anterior e player final vertical compacto
 
 Arquivos alterados:
 
@@ -1047,10 +1072,10 @@ Arquivos alterados:
 
 O que foi feito:
 
-- `max_concurrent_clip_generations` passou de 1 para 2.
-- O frontend agenda no máximo 2 clipes ativos e preenche slots conforme clipes terminam.
-- O backend bloqueia novos clipes quando já existem 2 `generating/retrying` não stale e mantém proteção contra duplicar o mesmo índice.
-- Diagnostics passam a expor `next_clip_indexes` e `started_clip_indexes`.
+- Decisão de concorrência superseded em 2026-05-22: o fluxo comercial atual usa `max_concurrent_clip_generations = 4` com `clip_start_stagger_seconds = 1`.
+- O frontend atual agenda os 4 clipes por índice e mantém proteção para não duplicar o mesmo índice.
+- O backend atual bloqueia apenas duplicação do mesmo clipe ou limite de 4 operações ativas.
+- Diagnostics atuais expõem `clip_generation_mode`, `scheduled_clip_indexes`, `started_clip_indexes_this_tick`, `next_clip_indexes` e `started_clip_indexes`.
 - O player final 9:16 ficou centralizado em card menor, com vídeo em largura máxima de 360px no desktop.
 - O player final 16:9 ficou limitado a 800px.
 

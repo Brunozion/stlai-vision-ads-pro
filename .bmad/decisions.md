@@ -158,7 +158,9 @@ Gerar um clipe por vez deixava o fluxo lento. O Veo trabalha com operações ass
 
 ### Impacto
 
-Diagnostics passam a expor `max_concurrent_clip_generations`, `clip_start_stagger_seconds`, `scheduled_clip_indexes`, `started_clip_indexes`, `next_clip_indexes`, `active_generating_count`, `clips_ready_count` e `missing_clips`.
+Diagnostics passam a expor `max_concurrent_clip_generations`, `clip_start_stagger_seconds`, `clip_generation_mode`, `scheduled_clip_indexes`, `started_clip_indexes`, `started_clip_indexes_this_tick`, `next_clip_indexes`, `active_generating_count`, `clips_ready_count` e `missing_clips`.
+
+O frontend mantém timers por índice (`clipLaunchTimersByIndex`) para que um novo polling não cancele os envios já planejados dos clipes 2, 3 e 4.
 
 ### Status
 
@@ -1226,7 +1228,7 @@ Falhas de clipe Veo com `VEO_INVALID_RESPONSE`, URI de vídeo ausente, resposta 
 
 Jobs antigos que tenham `error_final` prematuro com `attempt < 3` e erro retryable devem ser recuperados automaticamente para `pending/retrying`, sem ação manual do usuário.
 
-Para estabilidade do MVP, `max_concurrent_clip_generations = 2`. Se já existem 2 clipes `generating` não stale, o backend não inicia outro e retorna diagnóstico `concurrency_blocked=true`.
+Atualização 2026-05-22: o fluxo comercial atual usa `max_concurrent_clip_generations = 4` com `clip_start_stagger_seconds = 1`. O backend ainda bloqueia duplicação por índice e operações não stale do mesmo clipe, mas não limita o fluxo comercial a 1 ou 2 clipes ativos.
 
 ### Motivo
 
@@ -1240,21 +1242,21 @@ O pipeline preserva clipes prontos, mantém `generating_clips` enquanto houver r
 
 Decidido
 
-## 2026-05-21 - Concorrência controlada 2 clipes e player vertical compacto
+## 2026-05-21 - Concorrência controlada anterior e player vertical compacto
 
 ### Decisao
 
-A geração Veo deve usar concorrência controlada de até 2 clipes ativos por job no MVP. O frontend dispara no máximo 2 requisições `start_clip` simultâneas e preenche novos slots conforme clipes terminam; o backend mantém trava por índice e bloqueia novas gerações quando `active_generating_count >= 2`.
+Decisão superseded em 2026-05-22 para clipes comerciais. O limite anterior de até 2 clipes ativos foi substituído por `MAX_CONCURRENT_CLIP_GENERATIONS = 4` com stagger de 1 segundo. O frontend agenda os 4 `start_clip` por índice e o backend mantém trava por índice para evitar duplicidade de `operation_id`.
 
 O player final 9:16 deve ser exibido como preview vertical compacto, com card centralizado e largura máxima de 360px para o vídeo no desktop. O player final 16:9 fica limitado a 800px.
 
 ### Motivo
 
-Um clipe por vez deixa o fluxo lento demais, mas 4 simultâneos aumentam risco de intermitência no Veo. O limite 2 reduz tempo total sem abrir demais o risco. O player vertical precisava deixar de parecer um canvas grande com laterais pretas.
+Um clipe por vez deixava o fluxo lento demais. A estratégia final adotada usa 4 operações comerciais assíncronas com stagger de 1 segundo para reduzir tempo total sem concentrar todos os requests no mesmo instante. O player vertical precisava deixar de parecer um canvas grande com laterais pretas.
 
 ### Impacto
 
-Diagnostics passam a refletir `max_concurrent_clip_generations=2`, `next_clip_indexes` e `started_clip_indexes`. A UI pode mostrar dois placeholders ativos. O player final vertical fica menor, centralizado e com `object-fit: cover` dentro de um container 9:16.
+Diagnostics atuais refletem `max_concurrent_clip_generations=4`, `clip_start_stagger_seconds=1`, `clip_generation_mode=staggered_parallel`, `scheduled_clip_indexes`, `started_clip_indexes_this_tick`, `next_clip_indexes` e `active_generating_count`. A UI pode mostrar os 4 placeholders agendados/gerando. O player final vertical fica menor, centralizado e com `object-fit: cover` dentro de um container 9:16.
 
 ### Status
 
