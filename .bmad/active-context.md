@@ -904,6 +904,28 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-22 - Otimização dos combos 2x2 de imagens
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+
+O que foi feito:
+
+- Confirmado que a galeria de 8 imagens é gerada por 2 combos 2x2, não por 8 requests independentes.
+- Adicionado `MAX_CONCURRENT_IMAGE_COMBO_GENERATIONS = 2`.
+- Combo 1 e combo 2 passam a iniciar em paralelo controlado.
+- Cada combo tem estado próprio em `S.imageComboJobs`.
+- Quando um combo termina, ele é recortado imediatamente em 4 imagens e renderiza no grid sem aguardar o outro combo.
+- Retentativas automáticas por combo continuam limitadas a 3 tentativas.
+- Diagnostics locais de imagem foram adicionados em `S.imageDiagnostics`.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Concorrência 2 clipes e player final vertical compacto
 
 Arquivos alterados:

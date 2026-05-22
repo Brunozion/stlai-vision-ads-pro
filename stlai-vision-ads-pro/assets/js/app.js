@@ -24,6 +24,8 @@ const S = {
   textApproved: false,
   imgs4: [],
   comboUrl: null,
+  imageComboJobs: [],
+  imageDiagnostics: {},
   selVid: [],
   video: {
     status: "idle",
@@ -643,7 +645,7 @@ async function startImgGen(){
   document.getElementById("i-ld-bottom").style.display="block";
   document.getElementById("i-out").style.display="block";
   document.getElementById("i-act").style.display="none";
-  S.imgs4=[]; S.comboUrl=null; S.selVid=[];
+  S.imgs4=[]; S.comboUrl=null; S.selVid=[]; S.imageComboJobs=[]; S.imageDiagnostics={};
   document.getElementById("vsc").textContent="0/8";
 
   const g=document.getElementById("grid4");g.innerHTML="";
@@ -672,71 +674,23 @@ async function startImgGen(){
   }
   if(pMsg) pMsg.textContent = "Gerando suas imagens...";
 
-  let prog = 0;
+  let prog = 8;
   const pbInterval = setInterval(() => {
-    if(prog < 90) prog += 2;
+    const ready = S.imageDiagnostics?.images_ready_count || S.imgs4.length || 0;
+    const total = S.imageDiagnostics?.images_total_count || imageTypes.length || 8;
+    const target = Math.min(94, 12 + Math.round((ready / Math.max(1,total)) * 76));
+    if(prog < target) prog += 2;
+    else if(prog < 90) prog += 1;
     if(pb) pb.style.width = prog + "%";
-    if(pMsg) pMsg.innerHTML = `Gerando suas imagens... <span>${prog}%</span>`;
+    if(pMsg) pMsg.innerHTML = `Gerando suas imagens... ${ready} de ${total} prontas <span>${prog}%</span>`;
   }, 1000);
 
   try{
-    let hasError = false;
-    
-    // --- BATCH 1 (Imagens 1 a 4) ---
-    const batch1 = imageTypes.slice(0, 4);
-    
-    
-    batch1.forEach(t => {
-      const tile=document.getElementById(`t4-${t.key}`);
-      if(tile) tile.innerHTML=`<div class="img-ph-pulse"></div><div class="img-ph"><div style="width:30px;height:30px;border:3px solid transparent;border-top-color:var(--acc);border-bottom-color:var(--acc);border-radius:50%;animation:sp 1s linear infinite;margin-bottom:8px"></div></div>`;
-    });
-    
-    try {
-        const masterUrl1 = await genBatchImage(1, ref);
-        const croppedUrls1 = await splitImageInto4(masterUrl1);
-        for(let i=0; i<batch1.length; i++){
-           const t = batch1[i];
-           const url = await resizeSquare(croppedUrls1[i], getSelectedSquarePx());
-           setTimeout(() => {
-             renderTile4(t, url);
-           }, i * 300);
-           S.imgs4.push({ key:t.key, label:t.label, url });
-        }
-        await delay(batch1.length * 300);
-    } catch(err) {
-        console.error("Erro no Bloco 1", err);
-        hasError = true;
-        batch1.forEach(t => renderTileError(t, err.message));
-    }
-
-    // --- BATCH 2 (Imagens 5 a 8, se Premium) ---
-    if (imageTypes.length > 4) {
-        const batch2 = imageTypes.slice(4, 8);
-        
-        
-        batch2.forEach(t => {
-          const tile=document.getElementById(`t4-${t.key}`);
-          if(tile) tile.innerHTML=`<div class="img-ph-pulse"></div><div class="img-ph"><div style="width:30px;height:30px;border:3px solid transparent;border-top-color:var(--acc);border-bottom-color:var(--acc);border-radius:50%;animation:sp 1s linear infinite;margin-bottom:8px"></div></div>`;
-        });
-        
-        try {
-            const masterUrl2 = await genBatchImage(2, ref);
-            const croppedUrls2 = await splitImageInto4(masterUrl2);
-            for(let i=0; i<batch2.length; i++){
-               const t = batch2[i];
-               const url = await resizeSquare(croppedUrls2[i], getSelectedSquarePx());
-               setTimeout(() => {
-                 renderTile4(t, url);
-               }, i * 300);
-               S.imgs4.push({ key:t.key, label:t.label, url });
-            }
-            await delay(batch2.length * 300);
-        } catch(err) {
-            console.error("Erro no Bloco 2", err);
-            hasError = true;
-            batch2.forEach(t => renderTileError(t, err.message));
-        }
-    }
+    const comboBatches = buildImageComboBatches(imageTypes);
+    S.imageComboJobs = comboBatches.map(combo => createImageComboJob(combo));
+    updateImageComboDiagnostics({images_total_count:imageTypes.length});
+    const comboResults = await runImageComboQueue(comboBatches, ref, imageTypes.length);
+    const hasError = comboResults.some(result => !result?.ok);
 
     if(S.imgs4.length >= 4) {
       msg.textContent = "Montando imagem combo 2×2...";
@@ -753,7 +707,7 @@ async function startImgGen(){
         clearInterval(pbInterval);
     if(pb) pb.style.width = "100%";
     if(pb) pb.classList.add("done");
-    if(pMsg) pMsg.innerHTML = hasError ? "Imagens geradas com avisos." : "Imagens prontas! <span>100%</span>";
+    if(pMsg) pMsg.innerHTML = hasError ? `Imagens geradas com avisos. ${S.imgs4.length} de ${imageTypes.length} prontas.` : "Imagens prontas! <span>100%</span>";
     setTimeout(() => { document.getElementById("i-ld-bottom").style.display="none"; }, 1500);
     document.getElementById("i-ld").style.display="none";
     document.getElementById("i-act").style.display="block";
@@ -765,6 +719,182 @@ async function startImgGen(){
     document.getElementById("i-ld").style.display="none";
     toast(`Erro crítico ao gerar imagens: ${e.message}`,"error");
   }
+}
+
+const MAX_CONCURRENT_IMAGE_COMBO_GENERATIONS = 2;
+const IMAGE_COMBO_MAX_ATTEMPTS = 3;
+const IMAGE_COMBO_STALE_SECONDS = 120;
+
+function buildImageComboBatches(imageTypes){
+  const batches=[];
+  for(let i=0; i<imageTypes.length; i+=4){
+    const items=imageTypes.slice(i, i+4);
+    if(items.length){
+      batches.push({combo_index:batches.length + 1, start_index:i + 1, items});
+    }
+  }
+  return batches;
+}
+
+function createImageComboJob(combo){
+  return {
+    combo_index:combo.combo_index,
+    prompt:"",
+    status:"pending",
+    attempt:0,
+    max_attempts:IMAGE_COMBO_MAX_ATTEMPTS,
+    source_combo_url:"",
+    cropped_image_indexes:combo.items.map((_,i)=>combo.start_index + i),
+    cropped_image_urls:[],
+    error:"",
+    started_at:"",
+    finished_at:""
+  };
+}
+
+function updateImageComboJob(comboIndex, changes={}){
+  const now=new Date().toISOString();
+  const existing=Array.isArray(S.imageComboJobs) ? S.imageComboJobs : [];
+  const idx=existing.findIndex(job=>Number(job.combo_index)===Number(comboIndex));
+  const current=idx>=0 ? existing[idx] : createImageComboJob({combo_index:comboIndex,start_index:(comboIndex-1)*4+1,items:[1,2,3,4]});
+  const next={...current,...changes,combo_index:Number(comboIndex)};
+  if(changes.status==="generating" || changes.status==="retrying") next.started_at=next.started_at || now;
+  if(["ready","cropped","error_final"].includes(changes.status)) next.finished_at=changes.finished_at || now;
+  if(idx>=0) S.imageComboJobs[idx]=next;
+  else S.imageComboJobs.push(next);
+  updateImageComboDiagnostics();
+  return next;
+}
+
+function imageComboAgeSeconds(job){
+  const ts=Date.parse(job?.started_at || "");
+  return ts ? Math.max(0, Math.floor((Date.now()-ts)/1000)) : 0;
+}
+
+function isImageComboStale(job){
+  const status=String(job?.status || "pending");
+  return ["generating","retrying"].includes(status) && !job?.source_combo_url && imageComboAgeSeconds(job)>=IMAGE_COMBO_STALE_SECONDS;
+}
+
+function updateImageComboDiagnostics(extra={}){
+  const jobs=Array.isArray(S.imageComboJobs) ? S.imageComboJobs : [];
+  const active=jobs.filter(job=>["generating","retrying","cropping"].includes(String(job.status)) && !isImageComboStale(job)).length;
+  const ready=jobs.filter(job=>["ready","cropped"].includes(String(job.status))).length;
+  const cropped=jobs.filter(job=>String(job.status)==="cropped").length;
+  S.imageDiagnostics={
+    image_combos_total_count:jobs.length,
+    image_combos_ready_count:ready,
+    image_combos_cropped_count:cropped,
+    active_image_combo_generations_count:active,
+    max_concurrent_image_combo_generations:MAX_CONCURRENT_IMAGE_COMBO_GENERATIONS,
+    started_combo_indexes:jobs.filter(job=>["generating","cropping"].includes(String(job.status))).map(job=>Number(job.combo_index)),
+    retry_combo_indexes:jobs.filter(job=>String(job.status)==="retrying").map(job=>Number(job.combo_index)),
+    combo_jobs_summary:jobs.map(job=>({
+      combo_index:Number(job.combo_index),
+      status:String(job.status || "pending"),
+      attempt:Number(job.attempt || 0),
+      max_attempts:Number(job.max_attempts || IMAGE_COMBO_MAX_ATTEMPTS),
+      has_source_combo_url:Boolean(job.source_combo_url),
+      cropped_image_indexes:Array.isArray(job.cropped_image_indexes) ? job.cropped_image_indexes : [],
+      cropped_image_urls_count:Array.isArray(job.cropped_image_urls) ? job.cropped_image_urls.filter(Boolean).length : 0,
+      error:String(job.error || ""),
+      age_seconds:imageComboAgeSeconds(job),
+      is_stale:isImageComboStale(job)
+    })),
+    images_ready_count:S.imgs4.length,
+    images_total_count:extra.images_total_count || S.imageDiagnostics?.images_total_count || currentImageTypes().length,
+    ...(extra || {})
+  };
+}
+
+function setComboTilesLoading(combo, text="Gerando imagem"){
+  combo.items.forEach((t,i)=>{
+    const tile=document.getElementById(`t4-${t.key}`);
+    if(tile && !tile.querySelector("img")){
+      tile.classList.add("gen");
+      tile.innerHTML=`<div class="img-ph-pulse"></div><div class="img-ph"><div style="width:30px;height:30px;border:3px solid transparent;border-top-color:var(--acc);border-bottom-color:var(--acc);border-radius:50%;animation:sp 1s linear infinite;margin-bottom:8px"></div><div class="ph-tx">${esc(text)} ${combo.start_index + i}</div></div>`;
+    }
+  });
+}
+
+function upsertGeneratedImage(t, url, absoluteIndex){
+  const existingIndex=S.imgs4.findIndex(img=>img.key===t.key);
+  const item={key:t.key,label:t.label,url,index:absoluteIndex};
+  if(existingIndex>=0) S.imgs4[existingIndex]={...S.imgs4[existingIndex],...item};
+  else S.imgs4.push(item);
+  S.imgs4.sort((a,b)=>(Number(a.index || 99)-Number(b.index || 99)));
+  updateImageComboDiagnostics();
+}
+
+async function runImageComboQueue(comboBatches, ref, totalImages){
+  const results=[];
+  let cursor=0;
+  async function worker(){
+    while(cursor<comboBatches.length){
+      const combo=comboBatches[cursor++];
+      results[combo.combo_index-1]=await runImageComboWithRetries(combo, ref, totalImages);
+    }
+  }
+  const workers=Array.from({length:Math.min(MAX_CONCURRENT_IMAGE_COMBO_GENERATIONS, comboBatches.length)}, worker);
+  await Promise.all(workers);
+  return results;
+}
+
+async function runImageComboWithRetries(combo, ref, totalImages){
+  for(let attempt=1; attempt<=IMAGE_COMBO_MAX_ATTEMPTS; attempt++){
+    const status=attempt>1 ? "retrying" : "generating";
+    updateImageComboJob(combo.combo_index,{status,attempt,error:""});
+    updateImageComboDiagnostics({
+      started_combo_indexes:S.imageComboJobs.filter(job=>["generating","retrying"].includes(job.status)).map(job=>job.combo_index),
+      retry_combo_indexes:S.imageComboJobs.filter(job=>job.status==="retrying").map(job=>job.combo_index),
+      images_total_count:totalImages
+    });
+    setComboTilesLoading(combo, attempt>1 ? "Tentando novamente" : "Gerando imagem");
+
+    try{
+      const scene=getBatchScene(combo.combo_index);
+      const prompt=fillTpl(S.cfg.imagePrompt, {
+        scene,
+        name:S.name || "não informado",
+        desc:S.desc || "não informado",
+        feat:S.feat || "não informado"
+      });
+      updateImageComboJob(combo.combo_index,{prompt});
+      const sourceUrl=await apiGenerateImage(prompt, ref);
+      updateImageComboJob(combo.combo_index,{status:"ready",source_combo_url:sourceUrl});
+      const urls=await cropImageCombo(combo, sourceUrl, totalImages);
+      updateImageComboJob(combo.combo_index,{status:"cropped",cropped_image_urls:urls,error:""});
+      return {ok:true,combo_index:combo.combo_index,urls};
+    }catch(err){
+      console.error(`Erro no combo ${combo.combo_index}`, err);
+      updateImageComboJob(combo.combo_index,{status:attempt>=IMAGE_COMBO_MAX_ATTEMPTS ? "error_final" : "pending",attempt,error:err.message || "Erro ao gerar combo"});
+      if(attempt>=IMAGE_COMBO_MAX_ATTEMPTS){
+        combo.items.forEach(t=>renderTileError(t, err.message || "Erro ao gerar imagem"));
+        return {ok:false,combo_index:combo.combo_index,error:err};
+      }
+      await delay(attempt===1 ? 2000 : 4000);
+    }
+  }
+  return {ok:false,combo_index:combo.combo_index};
+}
+
+async function cropImageCombo(combo, sourceUrl, totalImages){
+  updateImageComboJob(combo.combo_index,{status:"cropping"});
+  updateImageComboDiagnostics({images_total_count:totalImages});
+  const croppedUrls=await splitImageInto4(sourceUrl);
+  const urls=[];
+  for(let i=0; i<combo.items.length; i++){
+    const t=combo.items[i];
+    const absoluteIndex=combo.start_index + i;
+    const url=await resizeSquare(croppedUrls[i], getSelectedSquarePx());
+    urls.push(url);
+    upsertGeneratedImage(t, url, absoluteIndex);
+    renderTile4(t, url);
+    const pMsg=document.getElementById("i-msg");
+    if(pMsg) pMsg.innerHTML=`Gerando suas imagens... ${S.imgs4.length} de ${totalImages} prontas`;
+    await delay(180);
+  }
+  return urls;
 }
 
 async function genMoreImages(btn) {

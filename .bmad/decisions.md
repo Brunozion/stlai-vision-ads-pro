@@ -129,6 +129,34 @@ Veo em 1080p e modelos fast pode demorar mais que 10 polls internos. Tratar isso
 
 Decidido
 
+## 2026-05-22 - Geração paralela controlada dos combos 2x2 de imagem
+
+### Decisao
+
+A galeria de 8 imagens comerciais não deve ser tratada como 8 requests independentes. A arquitetura real gera combos 2x2 e recorta cada combo em 4 imagens individuais no frontend.
+
+O fluxo passa a disparar os combos 2x2 com concorrência controlada:
+
+- `MAX_CONCURRENT_IMAGE_COMBO_GENERATIONS = 2`.
+- Combo 1 gera imagens 1 a 4.
+- Combo 2 gera imagens 5 a 8.
+- No MVP, os dois combos podem começar juntos.
+- Assim que um combo termina, ele é recortado em 4 partes e essas imagens aparecem no grid sem esperar o outro combo.
+
+Cada combo tem estado próprio: `pending`, `generating`, `ready`, `cropping`, `cropped`, `retrying` e `error_final`, com até 3 tentativas.
+
+### Motivo
+
+O fluxo sequencial esperava o combo 1 terminar e ser recortado antes de iniciar o combo 2, aumentando o tempo total de geração premium. Como são apenas 2 requests reais, faz sentido rodá-los juntos com limite explícito.
+
+### Impacto
+
+O frontend mantém `imageComboJobs` e `imageDiagnostics` com resumo dos combos, imagens prontas e concorrência. Imagens já renderizadas são preservadas por `key/index` e não voltam para loading quando outro combo atualiza.
+
+### Status
+
+Decidido
+
 ## 2026-05-21 - Estado monotônico de vídeo e clipes
 
 ### Decisao
