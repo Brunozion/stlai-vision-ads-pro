@@ -572,7 +572,9 @@
       </div>
       <span>Pronto</span>
     </div>
-    <video id="video-final-player" controls playsinline webkit-playsinline preload="metadata"></video>
+    <div class="stlai-final-video-shell">
+      <video id="video-final-player" controls playsinline webkit-playsinline preload="metadata"></video>
+    </div>
     <div class="video-final-actions">
       <button class="btn bs bsm" type="button" onclick="downloadFinalVideo()">Baixar vídeo</button>
       <button class="btn bs bsm" type="button" onclick="openFinalVideo()">Ampliar</button>
@@ -708,7 +710,9 @@
           </div>
           <strong>Pronto</strong>
         </div>
-        <video id="sum-video-final-player" controls playsinline webkit-playsinline preload="metadata"></video>
+        <div class="stlai-final-video-shell">
+          <video id="sum-video-final-player" controls playsinline webkit-playsinline preload="metadata"></video>
+        </div>
         <div class="video-final-actions">
           <button class="btn bs bsm" type="button" onclick="downloadFinalVideo()">Baixar vídeo</button>
           <button class="btn bs bsm" type="button" onclick="openFinalVideo()">Ampliar</button>
