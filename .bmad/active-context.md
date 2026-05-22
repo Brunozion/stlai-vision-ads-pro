@@ -851,6 +851,33 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-22 - Story 11: Video Provider Hub e resolução de saída
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/admin/settings-page.php
+- stlai-vision-ads-pro/includes/video/class-stlai-veo-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- Adicionado `commercialVideoOutputResolution` com 720p/1080p, default 720p.
+- Adicionada seção "Provider de Vídeo Comercial" com provider, modelo Gemini Veo e campos custom.
+- Gemini Veo passa a validar allowlist de modelos e usar o modelo selecionado.
+- Jobs e diagnostics registram provider/model/resolution sem expor API keys.
+- Providers ainda não implementados retornam erro controlado `VIDEO_PROVIDER_NOT_IMPLEMENTED`.
+- Prompt visual dos clipes reforçado para vídeo comercial limpo, realista, sem glitter, partículas roxas, overlays, REC/HUD, texto, watermark, neon, purple tint ou funções inventadas.
+
+Status:
+
+- Implementação concluida.
+
 ## 2026-05-21 - Concorrência 2 clipes e player final vertical compacto
 
 Arquivos alterados:

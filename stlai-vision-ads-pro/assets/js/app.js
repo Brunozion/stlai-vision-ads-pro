@@ -1647,6 +1647,12 @@ function applyVideoState(payload={}, options={}){
 
   S.video.jobId=incoming.job_id || S.video.jobId || "";
   S.video.language=normalizeVideoLanguage((!stale && (incoming.video_language || incoming.narration_language)) || S.video.language || "pt-BR");
+  S.video.videoProvider=(!stale && incoming.video_provider) || incoming.diagnostics?.video_provider || S.video.videoProvider || "gemini_veo";
+  S.video.videoModel=(!stale && incoming.video_model) || incoming.diagnostics?.video_model || S.video.videoModel || "veo-3.1-lite-generate-preview";
+  S.video.outputResolution=(!stale && incoming.output_resolution) || incoming.diagnostics?.output_resolution || S.video.outputResolution || "720p";
+  S.video.requestedResolution=(!stale && incoming.requested_resolution) || incoming.diagnostics?.requested_resolution || S.video.requestedResolution || S.video.outputResolution;
+  S.video.effectiveResolution=(!stale && incoming.effective_resolution) || incoming.diagnostics?.effective_resolution || S.video.effectiveResolution || S.video.outputResolution;
+  S.video.resolutionFallbackReason=(!stale && incoming.resolution_fallback_reason) || incoming.diagnostics?.resolution_fallback_reason || S.video.resolutionFallbackReason || "";
   if(!stale && incoming.script_public){
     S.video.script=normalizeScriptTerms(incoming.script_public, S.video.language);
     S.video.scriptTts=S.video.scriptTts || buildTtsScript(S.video.script);

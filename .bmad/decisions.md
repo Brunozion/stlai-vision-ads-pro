@@ -80,6 +80,28 @@ O painel admin passa a armazenar as credenciais e modelos futuros. Nenhuma chave
 
 Decidido
 
+## 2026-05-22 - Video Provider Hub e resolução comercial
+
+### Decisao
+
+O admin passa a separar a configuração de vídeo comercial em um hub de provider: `commercialVideoProvider`, `commercialVideoModel`, `commercialVideoOutputResolution`, `commercialVideoCustomEndpoint`, `commercialVideoCustomApiKey` e `commercialVideoCustomModel`.
+
+O provider padrão do MVP é `gemini_veo`, modelo `veo-3.1-lite-generate-preview`, resolução `720p`. Valores inválidos voltam para defaults seguros. Fal.ai, Atlas Cloud, MuAPI e Custom podem ser salvos, mas ainda retornam erro controlado `VIDEO_PROVIDER_NOT_IMPLEMENTED` quando usados.
+
+Os prompts dos clipes comerciais devem ser realistas e limpos: sem glitter, partículas roxas, brilho mágico, overlays, texto, watermark, logo, REC, HUD, interface de câmera, lens dirt, partículas decorativas, fumaça, neon, color cast, purple tint, lens flare exagerado ou mudança de identidade/função do produto.
+
+### Motivo
+
+O pipeline já funciona, mas precisava de controle de custo/qualidade e de uma camada preparada para outros providers sem quebrar o Gemini Veo atual.
+
+### Impacto
+
+Jobs de vídeo passam a registrar `video_provider`, `video_model`, `output_resolution`, `requested_resolution`, `effective_resolution` e `resolution_fallback_reason`. Diagnostics AJAX expõem apenas esses campos seguros, nunca API keys.
+
+### Status
+
+Decidido
+
 ## 2026-05-21 - Estado monotônico de vídeo e clipes
 
 ### Decisao

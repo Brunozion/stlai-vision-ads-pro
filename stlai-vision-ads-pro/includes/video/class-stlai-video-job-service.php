@@ -15,6 +15,9 @@ class STLAI_Video_Job_Service {
     const CLIP_GENERATION_STALE_SECONDS = 75;
     const CLIP_STALE_SECONDS = 75;
     const HARD_COMPOSER_TIMEOUT_SECONDS = 1200;
+    const DEFAULT_VIDEO_PROVIDER = 'gemini_veo';
+    const DEFAULT_VIDEO_MODEL = 'veo-3.1-lite-generate-preview';
+    const DEFAULT_OUTPUT_RESOLUTION = '720p';
 
     public static function create_job( array $payload ) {
         $validated = self::validate_payload( $payload );
@@ -41,6 +44,12 @@ class STLAI_Video_Job_Service {
                         'video_language'       => $validated['video_language'],
                         'narration_language'   => $validated['narration_language'],
                         'narration_style'      => $validated['narration_style'],
+                        'video_provider'        => $validated['video_provider'],
+                        'video_model'           => $validated['video_model'],
+                        'output_resolution'     => $validated['output_resolution'],
+                        'requested_resolution'  => $validated['requested_resolution'],
+                        'effective_resolution'  => $validated['effective_resolution'],
+                        'resolution_fallback_reason' => $validated['resolution_fallback_reason'],
                         'script_public'        => $script_pair['script_public'],
                         'script_tts'           => $script_pair['script_tts'],
                         'script_narration'     => $script_pair['script_tts'],
@@ -109,6 +118,12 @@ class STLAI_Video_Job_Service {
                 'video_language'     => $validated['video_language'],
                 'narration_language' => $validated['narration_language'],
                 'narration_style'    => $validated['narration_style'],
+                'video_provider'      => $validated['video_provider'],
+                'video_model'         => $validated['video_model'],
+                'output_resolution'   => $validated['output_resolution'],
+                'requested_resolution' => $validated['requested_resolution'],
+                'effective_resolution' => $validated['effective_resolution'],
+                'resolution_fallback_reason' => $validated['resolution_fallback_reason'],
             )
         );
 
@@ -961,7 +976,7 @@ class STLAI_Video_Job_Service {
         $code = sanitize_key( (string) $code );
         $summary = strtolower( trim( (string) $code . ' ' . (string) $message . ' ' . (string) $debug ) );
 
-        if ( in_array( $code, array( 'missing_video_api_key', 'missing_video_model', 'missing_video_base_url', 'missing_selected_image', 'image_fetch_error', 'invalid_image_mime_type', 'invalid_video_format', 'image_preprocessor_unavailable', 'video_save_error' ), true ) ) {
+        if ( in_array( $code, array( 'video_provider_not_implemented', 'missing_video_api_key', 'missing_video_model', 'missing_video_base_url', 'missing_selected_image', 'image_fetch_error', 'invalid_image_mime_type', 'invalid_video_format', 'image_preprocessor_unavailable', 'video_save_error' ), true ) ) {
             return false;
         }
 
@@ -1128,6 +1143,9 @@ class STLAI_Video_Job_Service {
                 'role_label'           => $role['label'] ?? '',
                 'role_direction'       => $role['direction'] ?? '',
                 'start_attempt'        => $start_attempt,
+                'video_provider'       => $job['video_provider'] ?? self::DEFAULT_VIDEO_PROVIDER,
+                'video_model'          => $job['video_model'] ?? self::DEFAULT_VIDEO_MODEL,
+                'output_resolution'    => $job['output_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION,
             )
         );
 
@@ -2586,6 +2604,8 @@ class STLAI_Video_Job_Service {
             return new WP_Error( 'NARRATION_TOO_LONG', 'O roteiro está muito longo. Reduza o texto da narração.' );
         }
 
+        $video_config = self::commercial_video_config();
+
         return array(
             'job_id'               => sanitize_text_field( wp_unslash( $payload['job_id'] ?? '' ) ),
             'selected_images'      => $images,
@@ -2596,6 +2616,12 @@ class STLAI_Video_Job_Service {
             'video_language'       => $video_language,
             'narration_language'   => $narration_language,
             'narration_style'      => $narration_style,
+            'video_provider'        => $video_config['provider'],
+            'video_model'           => $video_config['model'],
+            'output_resolution'     => $video_config['effective_resolution'],
+            'requested_resolution'  => $video_config['requested_resolution'],
+            'effective_resolution'  => $video_config['effective_resolution'],
+            'resolution_fallback_reason' => $video_config['resolution_fallback_reason'],
             'product_name'         => sanitize_text_field( wp_unslash( $payload['product_name'] ?? '' ) ),
             'product_description'  => wp_kses_post( wp_unslash( $payload['product_description'] ?? '' ) ),
             'status'               => 'queued',
@@ -2605,6 +2631,48 @@ class STLAI_Video_Job_Service {
             'composition_status'    => 'pending',
             'error_code'           => '',
             'error_message'        => '',
+        );
+    }
+
+    private static function commercial_video_config() {
+        $settings = get_option( 'stlai_vision_ads_pro_settings', array() );
+        if ( ! is_array( $settings ) ) {
+            $settings = array();
+        }
+
+        $provider = sanitize_key( (string) ( $settings['commercialVideoProvider'] ?? '' ) );
+        if ( empty( $provider ) ) {
+            $legacy_provider = sanitize_key( (string) ( $settings['videoProvider'] ?? '' ) );
+            $provider = in_array( $legacy_provider, array( 'veo', 'gemini_veo' ), true ) ? self::DEFAULT_VIDEO_PROVIDER : $legacy_provider;
+        }
+        if ( ! in_array( $provider, array( 'gemini_veo', 'fal_ai', 'atlas_cloud', 'muapi', 'custom' ), true ) ) {
+            $provider = self::DEFAULT_VIDEO_PROVIDER;
+        }
+
+        $model = sanitize_text_field( (string) ( $settings['commercialVideoModel'] ?? ( $settings['videoModel'] ?? '' ) ) );
+        $allowed_models = array(
+            'veo-3.1-lite-generate-preview',
+            'veo-3.1-fast-generate-preview',
+            'veo-3.1-generate-preview',
+            'veo-2.0-generate-001',
+        );
+        if ( ! in_array( $model, $allowed_models, true ) ) {
+            $model = self::DEFAULT_VIDEO_MODEL;
+        }
+
+        $requested_resolution = sanitize_key( (string) ( $settings['commercialVideoOutputResolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ) );
+        $fallback_reason = '';
+        if ( ! in_array( $requested_resolution, array( '720p', '1080p' ), true ) ) {
+            $requested_resolution = self::DEFAULT_OUTPUT_RESOLUTION;
+            $fallback_reason = 'invalid_resolution_fallback_to_720p';
+        }
+
+        return array(
+            'provider'                   => $provider,
+            'model'                      => $model,
+            'requested_resolution'       => $requested_resolution,
+            'effective_resolution'       => $requested_resolution,
+            'resolution_fallback_reason' => $fallback_reason,
         );
     }
 

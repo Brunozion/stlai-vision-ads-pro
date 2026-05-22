@@ -1545,3 +1545,57 @@ Rules:
 - `script_tts`/`script_narration` is internal and must not be returned in full to the frontend.
 - Literal direction tags must not be spoken in the final audio; the ElevenLabs layer strips bracket tags before the API request.
 - Missing language defaults to `pt-BR`.
+
+## Commercial Video Provider Hub
+
+Admin settings:
+
+```json
+{
+  "commercialVideoProvider": "gemini_veo",
+  "commercialVideoModel": "veo-3.1-lite-generate-preview",
+  "commercialVideoOutputResolution": "720p",
+  "commercialVideoCustomEndpoint": "",
+  "commercialVideoCustomModel": ""
+}
+```
+
+Allowed providers:
+
+- `gemini_veo`
+- `fal_ai`
+- `atlas_cloud`
+- `muapi`
+- `custom`
+
+Allowed Gemini Veo models:
+
+- `veo-3.1-lite-generate-preview`
+- `veo-3.1-fast-generate-preview`
+- `veo-3.1-generate-preview`
+- `veo-2.0-generate-001`
+
+Allowed commercial output resolutions:
+
+- `720p`
+- `1080p`
+
+Video job response diagnostics expose safe provider fields:
+
+```json
+{
+  "video_provider": "gemini_veo",
+  "video_model": "veo-3.1-lite-generate-preview",
+  "output_resolution": "720p",
+  "requested_resolution": "720p",
+  "effective_resolution": "720p",
+  "resolution_fallback_reason": ""
+}
+```
+
+Rules:
+
+- API keys are never returned in AJAX responses.
+- Providers other than `gemini_veo` may be configured, but return `VIDEO_PROVIDER_NOT_IMPLEMENTED` until implemented.
+- Invalid provider/model/resolution values fall back to `gemini_veo`, `veo-3.1-lite-generate-preview` and `720p`.
+- Commercial video prompts must explicitly block glitter, purple particles, overlays, REC/HUD/camera UI, text, watermark, artificial visual effects and invented product functions.

@@ -5,6 +5,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class STLAI_Veo_Provider {
     const DEFAULT_MODEL = 'veo-3.1-lite-generate-preview';
+    const DEFAULT_PROVIDER = 'gemini_veo';
+    const DEFAULT_OUTPUT_RESOLUTION = '720p';
     const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
     const MAX_IMAGE_BYTES = 15728640;
     const POLL_ATTEMPTS = 10;
@@ -76,10 +78,11 @@ class STLAI_Veo_Provider {
             'parameters' => array(
                 'durationSeconds' => 8,
                 'aspectRatio'     => $aspect_ratio['value'],
+                'resolution'      => $config['effective_resolution'],
             ),
         );
 
-        $safe_debug = self::payload_debug( $config['model'], $aspect_ratio['value'], $prepared_frame, $payload );
+        $safe_debug = self::payload_debug( $config, $aspect_ratio['value'], $prepared_frame, $payload );
 
         $operation = self::create_operation( $config, $body, $safe_debug );
         if ( is_wp_error( $operation ) ) {
@@ -138,8 +141,12 @@ class STLAI_Veo_Provider {
             'prepared_frame_width' => (int) ( $prepared_frame['prepared_width'] ?? 0 ),
             'prepared_frame_height' => (int) ( $prepared_frame['prepared_height'] ?? 0 ),
             'aspect_ratio'   => $aspect_ratio['value'],
-            'provider'       => 'veo',
+            'provider'       => $config['provider'],
             'model'          => $config['model'],
+            'output_resolution' => $config['effective_resolution'],
+            'requested_resolution' => $config['requested_resolution'],
+            'effective_resolution' => $config['effective_resolution'],
+            'resolution_fallback_reason' => $config['resolution_fallback_reason'],
             'operation_id'   => $operation_name,
             'operation_name' => $operation_name,
             'status'         => 'ready',
@@ -148,19 +155,41 @@ class STLAI_Veo_Provider {
     }
 
     private static function validate_config( array $settings ) {
+        $provider = sanitize_key( (string) ( $settings['commercialVideoProvider'] ?? '' ) );
+        if ( empty( $provider ) ) {
+            $legacy_provider = sanitize_key( (string) ( $settings['videoProvider'] ?? '' ) );
+            $provider = in_array( $legacy_provider, array( 'veo', 'gemini_veo' ), true ) ? self::DEFAULT_PROVIDER : $legacy_provider;
+        }
+        if ( empty( $provider ) ) {
+            $provider = self::DEFAULT_PROVIDER;
+        }
+
+        if ( self::DEFAULT_PROVIDER !== $provider ) {
+            return self::error( 'VIDEO_PROVIDER_NOT_IMPLEMENTED', 'Provider selecionado ainda não está implementado no MVP.', 'provider=' . $provider );
+        }
+
         $api_key = trim( (string) ( $settings['videoApiKey'] ?? '' ) );
         if ( empty( $api_key ) ) {
             return self::error( 'MISSING_VIDEO_API_KEY', 'Configure a Video API Key no painel.' );
         }
 
-        $model = trim( (string) ( $settings['videoModel'] ?? '' ) );
-        if ( empty( $model ) ) {
-            return self::error( 'MISSING_VIDEO_MODEL', 'Configure o modelo de vídeo no painel.' );
+        $model = trim( (string) ( $settings['commercialVideoModel'] ?? ( $settings['videoModel'] ?? '' ) ) );
+        $allowed_models = self::allowed_models();
+        if ( empty( $model ) || ! in_array( $model, $allowed_models, true ) ) {
+            $model = self::DEFAULT_MODEL;
         }
 
-        $base_url = trim( (string) ( $settings['videoBaseUrl'] ?? '' ) );
+        $requested_resolution = sanitize_key( (string) ( $settings['commercialVideoOutputResolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ) );
+        $resolution_fallback_reason = '';
+        if ( ! in_array( $requested_resolution, array( '720p', '1080p' ), true ) ) {
+            $resolution_fallback_reason = 'invalid_resolution_fallback_to_720p';
+            $requested_resolution = self::DEFAULT_OUTPUT_RESOLUTION;
+        }
+        $effective_resolution = $requested_resolution;
+
+        $base_url = trim( (string) ( $settings['videoBaseUrl'] ?? self::DEFAULT_BASE_URL ) );
         if ( empty( $base_url ) ) {
-            return self::error( 'MISSING_VIDEO_BASE_URL', 'Configure a Video Base URL no painel.' );
+            $base_url = self::DEFAULT_BASE_URL;
         }
 
         $base_url = esc_url_raw( untrailingslashit( $base_url ) );
@@ -169,9 +198,22 @@ class STLAI_Veo_Provider {
         }
 
         return array(
-            'api_key'  => $api_key,
-            'model'    => sanitize_text_field( $model ),
-            'base_url' => $base_url,
+            'api_key'                    => $api_key,
+            'provider'                   => self::DEFAULT_PROVIDER,
+            'model'                      => sanitize_text_field( $model ),
+            'base_url'                   => $base_url,
+            'requested_resolution'       => $requested_resolution,
+            'effective_resolution'       => $effective_resolution,
+            'resolution_fallback_reason' => $resolution_fallback_reason,
+        );
+    }
+
+    private static function allowed_models() {
+        return array(
+            'veo-3.1-lite-generate-preview',
+            'veo-3.1-fast-generate-preview',
+            'veo-3.1-generate-preview',
+            'veo-2.0-generate-001',
         );
     }
 
@@ -296,12 +338,12 @@ class STLAI_Veo_Provider {
             $format_direction = 'For 9:16 vertical output, keep the product centered vertically with safe space at the top and base. Use only a light natural zoom or slight parallax and never crop the product top, base, ring, support or display position.';
         }
 
-        $product_line = $product_name ?: 'Decorative 3D printed keychain.';
+        $product_line = $product_name ?: 'Commercial product shown in the reference image.';
         if ( ! empty( $product_description ) ) {
             $product_line .= ' Reference context: ' . $product_description;
         }
 
-        $purpose_line = 'Used as a decorative keychain accessory for keys, bags or backpacks. If the product name or description says keychain, always treat it as a keychain only. If any term is ambiguous, prioritize decorative keychain accessory.';
+        $purpose_line = 'Preserve the original product and its real purpose from the product name, description and reference image. If the purpose is ambiguous, do not invent a new function. Treat the script only as marketing context and keep the product usage visually neutral and faithful to the reference.';
         if ( ! empty( $script_context ) ) {
             $purpose_line .= ' Marketing context only: ' . $script_context;
         }
@@ -324,9 +366,9 @@ class STLAI_Veo_Provider {
                 'Product anchoring rules:',
                 'Preserve the exact product presentation from the reference image. Do not detach the product from its support or display position. Do not show a hand picking it up, removing it, lifting it, hanging it, placing it, or transforming its usage. Keep the product anchored exactly as shown in the reference image. No interaction action unless already clearly present in the source image.',
                 'Overlay restrictions:',
-                'Clean commercial product video only. Product focused, natural lighting, no overlays, no text, no visual effects. No REC icon. No recording overlay. No camera HUD. No viewfinder overlay. No timestamp. No watermark. No subtitles. No captions. No text. No labels. No badges. No icons. No UI elements. No camera screen graphics. No phone camera interface. No fake recording indicators. No red dot. No frame counter. No focus box. No battery icon. No interface chrome. No glitter overlay. No sparkle overlay. No particles. No dust overlay. No snow overlay. No confetti overlay. No bokeh particles crossing the product. No excessive cinematic filter. No fake lens dirt. No fake film grain. No decorative overlay. No magical effects. Do not add any graphic overlay or visual effect of any kind.',
+                'Clean commercial product video only. Realistic premium marketplace style. Product focused, natural lighting, neutral color balance, no overlays, no text, no visual effects. No artificial glitter. No purple particles. No magical sparkles. No fantasy glow. No animated overlays. No REC icon. No recording overlay. No camera HUD. No viewfinder overlay. No timestamp. No watermark. No logo. No subtitles. No captions. No text. No labels. No badges. No icons. No UI elements. No camera screen graphics. No phone camera interface. No fake recording indicators. No red dot. No frame counter. No focus box. No battery icon. No interface chrome. No glitter overlay. No sparkle overlay. No particles. No dust overlay. No snow overlay. No confetti overlay. No smoke. No neon effects. No color cast. No purple tint. No excessive lens flare. No artificial bokeh particles crossing the product. No excessive cinematic filter. No fake lens dirt. No fake film grain. No decorative overlay. No magical effects. Do not add any graphic overlay or visual effect of any kind.',
                 'Strict restrictions:',
-                'Keep the exact object from the reference image. Preserve exact product identity, shape, color, material, texture and proportions. Preserve the exact product presentation from the reference image. Preserve the exact support, base, hook, display stand, surface, attachment point, and display position if present. Keep the product anchored exactly as shown in the reference image. Do not detach the product from its support or display position. Do not show a hand picking it up, removing it, lifting it, pulling it, hanging it, placing it, attaching it, fitting it, or transforming its usage. No interaction action unless already clearly present in the source image. Do not change the product. Do not change the product purpose. Do not introduce new objects. Do not create a new product. Do not transform the product. Do not invent any new function. If the reference image shows a keychain, it must remain only a decorative keychain. It is a keychain/accessory only. It is not a cake topper. It is not a bottle opener. It is not a tool. It is not a toy. It is not a figurine for decoration unless the original product context says so. Keep the keychain ring/hole as part of the keychain design only. No spinning product. No moving body parts. No changing pose. No changing expression. No cinematic transition. No fade to another shot. No logos, no captions, no text, no watermarks, no people, no hands unless already present in the reference image, no voiceover, no speech, no music, no sound effects, no REC, no HUD, no camera overlay, no viewfinder, no timestamp, no UI, no glitter, no sparkles, no particles, no confetti, no fake dust, no film grain, no lens dirt, no magical effects.',
+                'Keep the exact object from the reference image. Preserve exact product identity, shape, color, material, texture and proportions. Preserve the exact product presentation from the reference image. Preserve the exact support, base, hook, display stand, surface, attachment point, and display position if present. Keep the product anchored exactly as shown in the reference image. Do not detach the product from its support or display position. Do not show a hand picking it up, removing it, lifting it, pulling it, hanging it, placing it, attaching it, fitting it, removing it, opening it, using it as a tool, or transforming its usage. No interaction action unless already clearly present in the source image and explicitly needed. Do not change the product. Do not change the product purpose. Do not introduce new objects, extra accessories, extra props or invented functions. Do not create a new product. Do not transform the product. Do not hallucinate bottle opener, tool, hardware, toy, keychain, cake topper, figurine or other usage unless the original product context explicitly says so. No spinning product. No moving body parts. No changing pose. No changing expression. No cinematic transition. No fade to another shot. No logos, no captions, no text, no watermarks, no people, no hands unless already present in the reference image, no voiceover, no speech, no music, no sound effects, no REC, no HUD, no camera overlay, no viewfinder, no timestamp, no UI, no glitter, no sparkles, no particles, no purple tint, no neon, no confetti, no smoke, no fake dust, no film grain, no lens dirt, no magical effects.',
             )
         );
     }
@@ -847,10 +889,14 @@ class STLAI_Veo_Provider {
         );
     }
 
-    private static function payload_debug( $model, $aspect_ratio, array $prepared_frame, array $payload = array() ) {
+    private static function payload_debug( array $config, $aspect_ratio, array $prepared_frame, array $payload = array() ) {
         return sprintf(
-            'model=%s; role=%s; aspectRatio=%s; mimeType=%s; imagePayload=image.bytesBase64Encoded; prepared_frame_url=%s; prepared_frame_path=%s; prepared_width=%d; prepared_height=%d; prepared_processor=%s',
-            sanitize_text_field( (string) $model ),
+            'provider=%s; model=%s; requested_resolution=%s; effective_resolution=%s; resolution_fallback_reason=%s; role=%s; aspectRatio=%s; mimeType=%s; imagePayload=image.bytesBase64Encoded; prepared_frame_url=%s; prepared_frame_path=%s; prepared_width=%d; prepared_height=%d; prepared_processor=%s',
+            sanitize_key( (string) ( $config['provider'] ?? self::DEFAULT_PROVIDER ) ),
+            sanitize_text_field( (string) ( $config['model'] ?? self::DEFAULT_MODEL ) ),
+            sanitize_key( (string) ( $config['requested_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ) ),
+            sanitize_key( (string) ( $config['effective_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ) ),
+            sanitize_key( (string) ( $config['resolution_fallback_reason'] ?? '' ) ),
             sanitize_key( (string) ( $payload['role'] ?? '' ) ),
             sanitize_text_field( (string) $aspect_ratio ),
             sanitize_text_field( (string) ( $prepared_frame['mime_type'] ?? '' ) ),

@@ -58,11 +58,17 @@ function stlai_vision_ads_pro_settings_init() {
 
     // ======== PAGINA: CONFIG DE IA (VIDEO COMERCIAL) ========
     add_settings_section('stlai_config_video_section', 'Configuracoes de Video Comercial', '__return_empty_string', 'stlai_config_ia_page');
-    add_settings_field('videoProvider', 'Provider de Video', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_video_section', array('id' => 'videoProvider', 'default' => 'veo', 'options' => array('veo' => 'Veo 3.1 Lite')));
-    add_settings_field('videoModel', 'Modelo de Video', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_video_section', array('id' => 'videoModel', 'default' => 'veo-3.1-lite-generate-preview'));
+    add_settings_field('commercialVideoOutputResolution', 'Resolução de saída dos vídeos comerciais', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_video_section', array('id' => 'commercialVideoOutputResolution', 'default' => '720p', 'options' => array('720p' => '720p', '1080p' => '1080p'), 'description' => '720p é mais rápido e econômico. 1080p melhora qualidade, mas pode demorar mais e custar mais.'));
     add_settings_field('videoApiKey', 'Video API Key', 'stlai_render_password_field', 'stlai_config_ia_page', 'stlai_config_video_section', array('id' => 'videoApiKey'));
     add_settings_field('videoBaseUrl', 'Video Base URL', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_video_section', array('id' => 'videoBaseUrl', 'placeholder' => 'Endpoint/base URL da API de video'));
     add_settings_field('ffmpegPath', 'Caminho do FFmpeg', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_video_section', array('id' => 'ffmpegPath', 'placeholder' => 'Auto detectar, /usr/bin/ffmpeg ou /usr/local/bin/ffmpeg', 'description' => 'Necessário para compor o vídeo final com clipes, fade e narração. Se vazio, o plugin tentará detectar automaticamente.'));
+
+    add_settings_section('stlai_config_commercial_video_provider_section', 'Provider de Vídeo Comercial', '__return_empty_string', 'stlai_config_ia_page');
+    add_settings_field('commercialVideoProvider', 'Provider', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_commercial_video_provider_section', array('id' => 'commercialVideoProvider', 'default' => 'gemini_veo', 'options' => array('gemini_veo' => 'Gemini Veo', 'fal_ai' => 'Fal.ai', 'atlas_cloud' => 'Atlas Cloud', 'muapi' => 'MuAPI', 'custom' => 'Custom'), 'description' => 'No MVP, Gemini Veo está funcional. Os demais providers ficam salvos para uso futuro.'));
+    add_settings_field('commercialVideoModel', 'Modelo', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_commercial_video_provider_section', array('id' => 'commercialVideoModel', 'default' => 'veo-3.1-lite-generate-preview', 'options' => array('veo-3.1-lite-generate-preview' => 'veo-3.1-lite-generate-preview (Lite)', 'veo-3.1-fast-generate-preview' => 'veo-3.1-fast-generate-preview (Fast)', 'veo-3.1-generate-preview' => 'veo-3.1-generate-preview', 'veo-2.0-generate-001' => 'veo-2.0-generate-001'), 'description' => 'Lite é mais barato/rápido; Fast é equilíbrio; Generate tende a maior qualidade/custo.'));
+    add_settings_field('commercialVideoCustomEndpoint', 'Custom Endpoint', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_commercial_video_provider_section', array('id' => 'commercialVideoCustomEndpoint', 'placeholder' => 'https://api.seuprovedor.com/video'));
+    add_settings_field('commercialVideoCustomApiKey', 'Custom API Key', 'stlai_render_password_field', 'stlai_config_ia_page', 'stlai_config_commercial_video_provider_section', array('id' => 'commercialVideoCustomApiKey', 'description' => 'Usado apenas quando o provider customizado estiver implementado.'));
+    add_settings_field('commercialVideoCustomModel', 'Custom Model', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_commercial_video_provider_section', array('id' => 'commercialVideoCustomModel', 'placeholder' => 'modelo-custom'));
 
     // ======== PAGINA: CONFIG DE IA (COMPOSICAO DE VIDEO) ========
     add_settings_section('stlai_config_video_composer_section', 'Configuração de Composição de Vídeo', '__return_empty_string', 'stlai_config_ia_page');
@@ -131,6 +137,31 @@ function stlai_vision_ads_pro_sanitize_settings($input) {
                 }
                 $existing['imageQuality'] = $value;
                 $existing['imgQuality'] = $value;
+                continue;
+            }
+            if ('commercialVideoOutputResolution' === $key) {
+                $value = sanitize_key($value);
+                $existing[$key] = in_array($value, array('720p', '1080p'), true) ? $value : '720p';
+                continue;
+            }
+            if ('commercialVideoProvider' === $key) {
+                $value = sanitize_key($value);
+                $existing[$key] = in_array($value, array('gemini_veo', 'fal_ai', 'atlas_cloud', 'muapi', 'custom'), true) ? $value : 'gemini_veo';
+                continue;
+            }
+            if ('commercialVideoModel' === $key) {
+                $allowed = array('veo-3.1-lite-generate-preview', 'veo-3.1-fast-generate-preview', 'veo-3.1-generate-preview', 'veo-2.0-generate-001');
+                $value = sanitize_text_field($value);
+                $existing[$key] = in_array($value, $allowed, true) ? $value : 'veo-3.1-lite-generate-preview';
+                $existing['videoModel'] = $existing[$key];
+                continue;
+            }
+            if ('commercialVideoCustomEndpoint' === $key) {
+                $existing[$key] = esc_url_raw($value);
+                continue;
+            }
+            if (in_array($key, array('commercialVideoCustomApiKey', 'commercialVideoCustomModel'), true)) {
+                $existing[$key] = sanitize_text_field($value);
                 continue;
             }
             $existing[$key] = $value;
