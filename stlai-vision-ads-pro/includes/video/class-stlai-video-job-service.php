@@ -14,6 +14,7 @@ class STLAI_Video_Job_Service {
     const CLIP_MAX_CONCURRENT = 2;
     const CLIP_GENERATION_STALE_SECONDS = 75;
     const CLIP_STALE_SECONDS = 75;
+    const HARD_COMPOSER_TIMEOUT_SECONDS = 1200;
 
     public static function create_job( array $payload ) {
         $validated = self::validate_payload( $payload );
@@ -1252,11 +1253,29 @@ class STLAI_Video_Job_Service {
             ) ?: $job;
         }
 
+        if ( ! empty( $job['render_job_id'] ) && empty( $job['final_video_url'] ) && ( 'timeout' === sanitize_key( $job['composition_status'] ?? '' ) || ( 'composition_error' === sanitize_key( $job['status'] ?? '' ) && 'COMPOSER_TIMEOUT' === strtoupper( (string) ( $job['error_code'] ?? $job['last_composer_error_code'] ?? '' ) ) ) ) ) {
+            $job = STLAI_Video_Storage::update_job(
+                $job['job_id'],
+                array(
+                    'status'             => 'composition_waiting',
+                    'composition_status' => 'waiting',
+                    'composer_status'    => 'waiting',
+                    'message'            => 'Seu vídeo final ainda está sendo composto. Isso pode levar alguns minutos.',
+                    'progress'           => max( 92, min( 98, (int) ( $job['progress'] ?? 92 ) ) ),
+                    'progress_hint'      => max( 92, min( 98, (int) ( $job['progress_hint'] ?? ( $job['progress'] ?? 92 ) ) ) ),
+                    'error_code'         => '',
+                    'error_message'      => '',
+                    'error_debug'        => '',
+                )
+            ) ?: $job;
+            return self::maybe_refresh_composition_status( $job );
+        }
+
         if ( in_array( sanitize_key( $job['composition_status'] ?? '' ), array( 'error', 'timeout' ), true ) || 'composition_error' === sanitize_key( $job['status'] ?? '' ) ) {
             return $job;
         }
 
-        if ( ! empty( $job['render_job_id'] ) || in_array( sanitize_key( $job['status'] ?? '' ), array( 'composition_queued', 'composition_processing', 'composing_final_video' ), true ) ) {
+        if ( ! empty( $job['render_job_id'] ) || in_array( sanitize_key( $job['status'] ?? '' ), array( 'composition_queued', 'composition_processing', 'composition_waiting', 'composing_final_video' ), true ) ) {
             return self::maybe_refresh_composition_status( $job );
         }
 
@@ -1269,7 +1288,7 @@ class STLAI_Video_Job_Service {
 
 	    private static function start_composition_if_ready( array $job ) {
 	        $latest_job = STLAI_Video_Storage::get_job( $job['job_id'] ) ?: $job;
-	        if ( ! empty( $latest_job['render_job_id'] ) || in_array( $latest_job['composition_status'] ?? '', array( 'processing' ), true ) ) {
+	        if ( ! empty( $latest_job['render_job_id'] ) || in_array( $latest_job['composition_status'] ?? '', array( 'queued', 'processing', 'waiting' ), true ) ) {
 	            return self::maybe_refresh_composition_status( $latest_job );
 	        }
 
@@ -1463,7 +1482,7 @@ class STLAI_Video_Job_Service {
 
     private static function maybe_refresh_composition_status( array $job ) {
         $status = $job['status'] ?? '';
-        if ( ! in_array( $status, array( 'composition_queued', 'composition_processing', 'composing_final_video' ), true ) ) {
+        if ( ! in_array( $status, array( 'composition_queued', 'composition_processing', 'composition_waiting', 'composing_final_video' ), true ) ) {
             return $job;
         }
 
@@ -1501,12 +1520,16 @@ class STLAI_Video_Job_Service {
             return self::start_composition_if_ready( $recovered ?: $job );
         }
 
-        if ( self::composition_elapsed_seconds( $job ) > self::composer_timeout_seconds() ) {
-                return self::composition_timeout_error(
-                    $job,
-                    'COMPOSER_TIMEOUT',
-                    'composition_processing excedeu videoComposerTimeout.'
-                );
+        $elapsed = self::composition_elapsed_seconds( $job );
+        $soft_timeout = self::soft_composer_timeout_seconds();
+        $hard_timeout = self::hard_composer_timeout_seconds();
+        $soft_reached = $elapsed > $soft_timeout;
+        if ( $elapsed > $hard_timeout ) {
+            return self::composition_timeout_error(
+                $job,
+                'COMPOSER_TIMEOUT',
+                'composition_processing excedeu HARD_COMPOSER_TIMEOUT_SECONDS.'
+            );
         }
 
         $remote = STLAI_Video_Composer_Provider::get_composition_status( $render_job_id );
@@ -1521,19 +1544,26 @@ class STLAI_Video_Job_Service {
                     'message'       => $remote->get_error_message(),
                 )
             );
-            if ( 'COMPOSER_STATUS_ERROR' === $remote->get_error_code() && self::composition_elapsed_seconds( $job ) <= self::composer_timeout_seconds() ) {
+            if ( 'COMPOSER_STATUS_ERROR' === $remote->get_error_code() && $elapsed <= $hard_timeout ) {
                 return STLAI_Video_Storage::update_job(
                     $job['job_id'],
                     array(
-                        'status'             => 'composition_processing',
-                        'progress'           => max( 82, (int) ( $job['progress'] ?? 82 ) ),
-                        'progress_hint'      => max( 82, (int) ( $job['progress_hint'] ?? ( $job['progress'] ?? 82 ) ) ),
-                        'message'            => 'Composição final em andamento...',
-                        'composition_status' => 'processing',
-                    'composer_status'    => 'processing',
+                        'status'             => $soft_reached ? 'composition_waiting' : 'composition_processing',
+                        'progress'           => $soft_reached ? max( 92, min( 98, (int) ( $job['progress'] ?? 92 ) ) ) : max( 82, (int) ( $job['progress'] ?? 82 ) ),
+                        'progress_hint'      => $soft_reached ? max( 92, min( 98, (int) ( $job['progress_hint'] ?? ( $job['progress'] ?? 92 ) ) ) ) : max( 82, (int) ( $job['progress_hint'] ?? ( $job['progress'] ?? 82 ) ) ),
+                        'message'            => $soft_reached ? 'Seu vídeo final ainda está sendo composto. Isso pode levar alguns minutos.' : 'Composição final em andamento...',
+                        'composition_status' => $soft_reached ? 'waiting' : 'processing',
+                        'composer_status'    => $soft_reached ? 'waiting' : 'processing',
                         'poll_count'         => (int) ( $job['poll_count'] ?? 0 ) + 1,
                         'last_composer_error_code' => $remote->get_error_code(),
                         'last_composer_error_message' => $remote->get_error_message(),
+                        'soft_timeout_seconds' => $soft_timeout,
+                        'soft_timeout_reached' => $soft_reached,
+                        'hard_timeout_seconds' => $hard_timeout,
+                        'hard_timeout_reached' => false,
+                        'next_poll_seconds' => self::next_composer_poll_seconds( $elapsed ),
+                        'external_render_status' => 'status_request_error',
+                        'external_render_checked_at' => current_time( 'mysql' ),
                         'error_code'         => '',
                         'error_message'      => '',
                         'error_debug'        => is_array( $error_data ) ? ( $error_data['debug'] ?? '' ) : '',
@@ -1561,6 +1591,7 @@ class STLAI_Video_Job_Service {
         }
 
         $remote_status = sanitize_key( $remote['status'] ?? 'processing' );
+        $is_waiting = $soft_reached && in_array( $remote_status, array( 'queued', 'processing' ), true );
         self::log_composition(
             'status_update',
             array(
@@ -1598,6 +1629,13 @@ class STLAI_Video_Job_Service {
                     'error_debug'          => '',
                     'last_composer_error_code' => '',
                     'last_composer_error_message' => '',
+                    'soft_timeout_seconds' => $soft_timeout,
+                    'soft_timeout_reached' => $soft_reached,
+                    'hard_timeout_seconds' => $hard_timeout,
+                    'hard_timeout_reached' => false,
+                    'next_poll_seconds'    => 0,
+                    'external_render_status' => 'ready',
+                    'external_render_checked_at' => current_time( 'mysql' ),
                 )
             );
         }
@@ -1618,6 +1656,13 @@ class STLAI_Video_Job_Service {
                     'poll_count'         => (int) ( $job['poll_count'] ?? 0 ) + 1,
                     'last_composer_error_code' => $remote_error_code,
                     'last_composer_error_message' => $remote_error_message,
+                    'soft_timeout_seconds' => $soft_timeout,
+                    'soft_timeout_reached' => $soft_reached,
+                    'hard_timeout_seconds' => $hard_timeout,
+                    'hard_timeout_reached' => false,
+                    'next_poll_seconds' => 0,
+                    'external_render_status' => 'error',
+                    'external_render_checked_at' => current_time( 'mysql' ),
                     'error_code'         => $remote_error_code,
                     'error_message'      => $remote_error_message,
                     'error_debug'        => $remote['debug'] ?? '',
@@ -1628,15 +1673,22 @@ class STLAI_Video_Job_Service {
         return STLAI_Video_Storage::update_job(
             $job['job_id'],
             array(
-                'status'             => 'queued' === $remote_status ? 'composition_queued' : 'composition_processing',
-                'progress'           => self::composition_progress( $remote_status, $remote['progress'] ?? 0, $job['progress'] ?? 80 ),
-                'progress_hint'      => self::composition_progress( $remote_status, $remote['progress'] ?? 0, $job['progress_hint'] ?? ( $job['progress'] ?? 80 ) ),
-                'message'            => $remote['message'] ?? 'Composição final em andamento...',
-                'composition_status' => 'queued' === $remote_status ? 'queued' : 'processing',
+                'status'             => $is_waiting ? 'composition_waiting' : ( 'queued' === $remote_status ? 'composition_queued' : 'composition_processing' ),
+                'progress'           => $is_waiting ? max( 92, min( 98, self::composition_progress( $remote_status, $remote['progress'] ?? 0, $job['progress'] ?? 92 ) ) ) : self::composition_progress( $remote_status, $remote['progress'] ?? 0, $job['progress'] ?? 80 ),
+                'progress_hint'      => $is_waiting ? max( 92, min( 98, self::composition_progress( $remote_status, $remote['progress'] ?? 0, $job['progress_hint'] ?? ( $job['progress'] ?? 92 ) ) ) ) : self::composition_progress( $remote_status, $remote['progress'] ?? 0, $job['progress_hint'] ?? ( $job['progress'] ?? 80 ) ),
+                'message'            => $is_waiting ? 'Seu vídeo final ainda está sendo composto. Isso pode levar alguns minutos.' : ( $remote['message'] ?? 'Composição final em andamento...' ),
+                'composition_status' => $is_waiting ? 'waiting' : ( 'queued' === $remote_status ? 'queued' : 'processing' ),
                 'composer_status'    => $remote_status,
                 'poll_count'         => (int) ( $job['poll_count'] ?? 0 ) + 1,
                 'composer_mode'      => $remote['composer_mode'] ?? ( $job['composer_mode'] ?? '' ),
                 'composer_provider'  => $remote['composer_provider'] ?? ( $job['composer_provider'] ?? '' ),
+                'soft_timeout_seconds' => $soft_timeout,
+                'soft_timeout_reached' => $soft_reached,
+                'hard_timeout_seconds' => $hard_timeout,
+                'hard_timeout_reached' => false,
+                'next_poll_seconds' => self::next_composer_poll_seconds( $elapsed ),
+                'external_render_status' => $remote_status,
+                'external_render_checked_at' => current_time( 'mysql' ),
             )
         );
     }
@@ -1666,6 +1718,13 @@ class STLAI_Video_Job_Service {
                 'composer_status'    => 'timeout',
                 'last_composer_error_code' => strtoupper( preg_replace( '/[^A-Z0-9_]/i', '_', (string) $code ) ),
                 'last_composer_error_message' => $message,
+                'soft_timeout_seconds' => self::soft_composer_timeout_seconds(),
+                'soft_timeout_reached' => true,
+                'hard_timeout_seconds' => self::hard_composer_timeout_seconds(),
+                'hard_timeout_reached' => true,
+                'next_poll_seconds' => 0,
+                'external_render_status' => 'timeout',
+                'external_render_checked_at' => current_time( 'mysql' ),
                 'error_code'         => strtoupper( preg_replace( '/[^A-Z0-9_]/i', '_', (string) $code ) ),
                 'error_message'      => $message,
                 'error_debug'        => sanitize_text_field( $debug ),
@@ -1685,8 +1744,20 @@ class STLAI_Video_Job_Service {
         return max( 0, current_time( 'timestamp' ) - $timestamp );
     }
 
-    private static function composer_timeout_seconds() {
+    private static function soft_composer_timeout_seconds() {
         return STLAI_Video_Composer_Provider::configured_timeout();
+    }
+
+    private static function hard_composer_timeout_seconds() {
+        return self::HARD_COMPOSER_TIMEOUT_SECONDS;
+    }
+
+    private static function next_composer_poll_seconds( $elapsed ) {
+        $elapsed = max( 0, (int) $elapsed );
+        if ( $elapsed >= 300 ) {
+            return 10;
+        }
+        return 5;
     }
 
     private static function composer_endpoint_configured() {

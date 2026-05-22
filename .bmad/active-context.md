@@ -1511,6 +1511,32 @@ O que foi feito:
 Status:
 
 - Correção concluida.
+## 2026-05-22 - Soft timeout e polling mais lento da composição
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-video-renderer/server.js
+- stlai-video-renderer/README.md
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- `videoComposerTimeout` passou a ser soft timeout quando existe `render_job_id`.
+- Jobs acima do soft timeout entram em `composition_waiting`, preservando clipes, áudio e `render_job_id`.
+- Hard timeout definido em 1200s.
+- Frontend usa polling mais lento na composição: 5s e depois 10s após 5 minutos.
+- Diagnostics agora incluem campos de soft/hard timeout e próxima consulta.
+- Renderer consegue retornar `ready` se o JSON do job sumiu, mas o arquivo final existe em `renders/`.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Idioma e roteiro TTS emocional oculto
 
 Arquivos alterados:

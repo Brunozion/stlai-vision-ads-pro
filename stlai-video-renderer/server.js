@@ -213,7 +213,20 @@ async function readJob(renderJobId) {
   try {
     return JSON.parse(await fsp.readFile(jobPath(safeId), "utf8"));
   } catch (err) {
-    return null;
+    const outputName = `stlai-final-${safeId}.mp4`;
+    try {
+      await fsp.access(path.join(RENDERS_DIR, outputName));
+      return {
+        success: true,
+        render_job_id: safeId,
+        status: "ready",
+        progress: 100,
+        final_video_url: `${PUBLIC_BASE_URL}/renders/${outputName}`,
+        message: "Vídeo final composto com sucesso."
+      };
+    } catch (fileErr) {
+      return null;
+    }
   }
 }
 

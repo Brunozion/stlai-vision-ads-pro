@@ -284,7 +284,7 @@ O container instala FFmpeg e FFprobe via `apt-get`, não copia `.env`, não copi
 - O MP4 final fica em `renders/`.
 - A API key não é logada nem retornada.
 - Erros retornam mensagem, código e debug resumido, sem stack trace completo.
-- Jobs assíncronos são salvos em `temp/jobs/{render_job_id}.json`.
+- Jobs assíncronos são salvos em `temp/jobs/{render_job_id}.json`. Se o JSON não estiver disponível mas o arquivo final `renders/stlai-final-{render_job_id}.mp4` existir, `GET /render/:render_job_id` retorna `ready` com a URL final.
 - Os logs seguros mostram `render_job_id`, quantidade de clipes, presença de áudio, duração detectada, início/fim do FFmpeg, `render_time_seconds`, `final_video_url` e erro resumido. A API key não é logada.
 
 ## Observações técnicas
@@ -298,7 +298,7 @@ O container instala FFmpeg e FFprobe via `apt-get`, não copia `.env`, não copi
 - O vídeo é escalado com `force_original_aspect_ratio=increase` e `crop`, evitando distorção.
 - O áudio nativo dos clipes é ignorado; a narração ElevenLabs é sempre a faixa principal, em AAC 128k no preview.
 - Música de fundo é opcional e só entra se `ENABLE_BACKGROUND_MUSIC=true` e `BACKGROUND_MUSIC_URL` estiver configurada. Se o download ou mixagem falhar, o renderer não derruba o job: compõe com voz pura e retorna `fallback_used: "music_unavailable_voice_only"`.
-- Se o WordPress ficar muito tempo em `composition_queued` ou `composition_processing`, verifique os logs do renderer pelo `render_job_id` e consulte `GET /render/:render_job_id`. O plugin deve transformar timeout em `composition_error` recuperável, preservando áudio e clipes para tentar novamente.
+- Se o WordPress ficar muito tempo em `composition_queued`, `composition_processing` ou `composition_waiting`, verifique os logs do renderer pelo `render_job_id` e consulte `GET /render/:render_job_id`. O plugin deve manter polling em soft timeout e só transformar em erro no hard timeout ou em erro explícito do renderer, preservando áudio e clipes.
 
 ## Render Free recomendado
 

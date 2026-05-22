@@ -1453,6 +1453,37 @@ No nível do job:
 - `will_retry`: `true` quando o pipeline deve continuar automaticamente.
 
 Regra: `VEO_INVALID_RESPONSE` e mensagens como "O serviço de vídeo não retornou um vídeo válido" ou "URI do vídeo ausente" não podem virar `error_final` antes de `attempt >= max_attempts`.
+## Composer timeout diagnostics
+
+Video job status responses may include:
+
+```json
+{
+  "status": "composition_waiting",
+  "composition_status": "waiting",
+  "composer_status": "processing",
+  "render_job_id": "render_xxx",
+  "composer_elapsed_seconds": 301,
+  "composer_poll_count": 64,
+  "soft_timeout_seconds": 300,
+  "soft_timeout_reached": true,
+  "hard_timeout_seconds": 1200,
+  "hard_timeout_reached": false,
+  "next_poll_seconds": 10,
+  "external_render_status": "processing",
+  "external_render_checked_at": "2026-05-22 03:01:36",
+  "render_job_id_exists": true,
+  "final_video_url_exists": false
+}
+```
+
+Rules:
+
+- Soft timeout does not mean final failure when `render_job_id` exists.
+- `composition_waiting` means WordPress must keep polling the renderer.
+- Hard timeout or explicit renderer error may become `composition_error`.
+- If a later renderer status returns `ready + final_video_url`, WordPress must save the final URL and mark the job `ready`.
+
 ## Video narration language and scripts
 
 Video job payload may include:

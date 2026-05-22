@@ -156,6 +156,12 @@ class STLAI_Video_Ajax {
         }
         $error_final_reason = sanitize_key( $job['error_final_reason'] ?? '' );
         $max_clip_attempts = (int) ( $job['max_clip_attempts'] ?? 3 );
+        $composer_elapsed_seconds = self::composer_elapsed_seconds( $job );
+        $soft_timeout_seconds = (int) ( $job['soft_timeout_seconds'] ?? STLAI_Video_Composer_Provider::configured_timeout() );
+        $hard_timeout_seconds = (int) ( $job['hard_timeout_seconds'] ?? 1200 );
+        $soft_timeout_reached = ! empty( $job['soft_timeout_reached'] ) || ( $composer_elapsed_seconds > $soft_timeout_seconds && ! empty( $job['render_job_id'] ) && empty( $job['final_video_url'] ) );
+        $hard_timeout_reached = ! empty( $job['hard_timeout_reached'] ) || ( $composer_elapsed_seconds > $hard_timeout_seconds && ! empty( $job['render_job_id'] ) && empty( $job['final_video_url'] ) );
+        $next_poll_seconds = (int) ( $job['next_poll_seconds'] ?? self::next_poll_seconds( $job, $composer_elapsed_seconds ) );
         $safe_diagnostics = array(
             'job_id'                       => sanitize_text_field( $job['job_id'] ?? '' ),
             'status'                       => sanitize_key( $job['status'] ?? 'queued' ),
@@ -178,8 +184,16 @@ class STLAI_Video_Ajax {
             'composer_endpoint_host'       => sanitize_text_field( $diagnostics['composer_endpoint_host'] ?? '' ),
             'composer_endpoint_path'       => sanitize_text_field( $diagnostics['composer_endpoint_path'] ?? '' ),
             'composer_started_at'          => sanitize_text_field( $job['composition_started_at'] ?? '' ),
-            'composer_elapsed_seconds'     => self::composer_elapsed_seconds( $job ),
+            'composer_elapsed_seconds'     => $composer_elapsed_seconds,
             'composer_poll_count'          => (int) ( $job['poll_count'] ?? 0 ),
+            'soft_timeout_seconds'         => $soft_timeout_seconds,
+            'soft_timeout_reached'         => $soft_timeout_reached,
+            'hard_timeout_seconds'         => $hard_timeout_seconds,
+            'hard_timeout_reached'         => $hard_timeout_reached,
+            'next_poll_seconds'            => $next_poll_seconds,
+            'external_render_status'       => sanitize_key( $job['external_render_status'] ?? ( $job['composer_status'] ?? '' ) ),
+            'external_render_checked_at'   => sanitize_text_field( $job['external_render_checked_at'] ?? '' ),
+            'render_job_id_exists'         => ! empty( $job['render_job_id'] ),
             'last_composer_error_code'     => sanitize_text_field( $job['last_composer_error_code'] ?? ( $job['error_code'] ?? '' ) ),
             'last_composer_error_message'  => sanitize_text_field( $job['last_composer_error_message'] ?? ( $job['error_message'] ?? '' ) ),
             'can_start_composition'        => ! empty( $composition_start['can_start_composition'] ),
@@ -249,8 +263,16 @@ class STLAI_Video_Ajax {
             'composer_endpoint_path' => sanitize_text_field( $diagnostics['composer_endpoint_path'] ?? '' ),
             'composer_started_at' => sanitize_text_field( $job['composition_started_at'] ?? '' ),
             'composer_updated_at' => sanitize_text_field( $job['updated_at'] ?? '' ),
-            'composer_elapsed_seconds' => self::composer_elapsed_seconds( $job ),
+            'composer_elapsed_seconds' => $composer_elapsed_seconds,
             'composer_poll_count' => (int) ( $job['poll_count'] ?? 0 ),
+            'soft_timeout_seconds' => $soft_timeout_seconds,
+            'soft_timeout_reached' => $soft_timeout_reached,
+            'hard_timeout_seconds' => $hard_timeout_seconds,
+            'hard_timeout_reached' => $hard_timeout_reached,
+            'next_poll_seconds' => $next_poll_seconds,
+            'external_render_status' => sanitize_key( $job['external_render_status'] ?? ( $job['composer_status'] ?? '' ) ),
+            'external_render_checked_at' => sanitize_text_field( $job['external_render_checked_at'] ?? '' ),
+            'render_job_id_exists' => ! empty( $job['render_job_id'] ),
             'audio_url_exists' => ! empty( $job['audio_url'] ),
             'final_video_url_exists' => ! empty( $job['final_video_url'] ),
             'can_start_composition' => ! empty( $composition_start['can_start_composition'] ),
@@ -792,6 +814,21 @@ class STLAI_Video_Ajax {
         }
 
         return max( 0, current_time( 'timestamp' ) - $timestamp );
+    }
+
+    private static function next_poll_seconds( array $job, $elapsed = 0 ) {
+        $status = sanitize_key( $job['status'] ?? '' );
+        $composition_status = sanitize_key( $job['composition_status'] ?? '' );
+        if ( 'ready' === $status || ! empty( $job['final_video_url'] ) ) {
+            return 0;
+        }
+        if ( in_array( $status, array( 'composition_queued', 'composition_processing', 'composition_waiting', 'composing_final_video' ), true ) || in_array( $composition_status, array( 'queued', 'processing', 'waiting' ), true ) ) {
+            return (int) $elapsed >= 300 ? 10 : 5;
+        }
+        if ( in_array( $status, array( 'generating_clips', 'generating_audio', 'generating_narration', 'queued', 'submitting' ), true ) ) {
+            return 3;
+        }
+        return 5;
     }
 
     private static function public_error_response( WP_Error $error ) {

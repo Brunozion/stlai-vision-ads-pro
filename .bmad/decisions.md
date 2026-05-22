@@ -1098,6 +1098,28 @@ O frontend renderiza botões consistentes de baixar, ampliar e copiar link no v�
 ### Status
 
 Decidido
+## 2026-05-22 - Soft timeout da composição externa
+
+### Decisao
+
+Quando existe `render_job_id`, o timeout configurado do composer passa a ser soft timeout. Ao ultrapassar esse limite, o job não vira `composition_error`; ele entra em `composition_waiting`/`waiting`, mantém `render_job_id` e continua consultando `GET /render/:render_job_id`.
+
+O hard timeout do MVP é `1200` segundos. Só nesse limite, ou em erro explícito do renderer, a composição vira erro recuperável.
+
+O frontend reduz polling de composição: cerca de 5s durante `queued/processing/waiting` e cerca de 10s após 5 minutos.
+
+### Motivo
+
+Render Free/cold start pode demorar mais que 300s para concluir a composição. Marcar erro aos 300s perde a oportunidade de recuperar `final_video_url` quando o render termina depois.
+
+### Impacto
+
+Diagnostics passam a expor `soft_timeout_seconds`, `soft_timeout_reached`, `hard_timeout_seconds`, `hard_timeout_reached`, `next_poll_seconds`, `external_render_status`, `external_render_checked_at` e `render_job_id_exists`.
+
+### Status
+
+Decidido
+
 ## 2026-05-22 - Idioma de narração e script TTS separado
 
 ### Decisao
