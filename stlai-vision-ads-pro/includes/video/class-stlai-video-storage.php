@@ -301,10 +301,11 @@ class STLAI_Video_Storage {
 	                $status = sanitize_key( $clip_job['status'] ?? 'pending' );
 	                $by_index[ $index ] = array(
 	                    'index'       => $index,
-	                    'status'      => in_array( $status, array( 'pending', 'queued', 'generating', 'retrying', 'ready', 'error', 'error_final' ), true ) ? $status : 'pending',
+	                    'status'      => in_array( $status, array( 'pending', 'queued', 'scheduled', 'generating', 'retrying', 'ready', 'error', 'error_final' ), true ) ? $status : 'pending',
 	                    'attempt'     => max( 0, (int) ( $clip_job['attempt'] ?? 0 ) ),
 	                    'url'         => esc_url_raw( $clip_job['url'] ?? '' ),
 	                    'error'       => sanitize_text_field( $clip_job['error'] ?? '' ),
+	                    'scheduled_start_at' => sanitize_text_field( $clip_job['scheduled_start_at'] ?? '' ),
 	                    'started_at'  => sanitize_text_field( $clip_job['started_at'] ?? '' ),
 	                    'finished_at' => sanitize_text_field( $clip_job['finished_at'] ?? '' ),
 	                    'operation_id' => sanitize_text_field( $clip_job['operation_id'] ?? '' ),
@@ -336,6 +337,7 @@ class STLAI_Video_Storage {
 	                    'attempt'     => max( 1, (int) ( $by_index[ $index ]['attempt'] ?? 1 ) ),
 	                    'url'         => esc_url_raw( $clip['url'] ?? '' ),
 	                    'error'       => '',
+	                    'scheduled_start_at' => sanitize_text_field( $by_index[ $index ]['scheduled_start_at'] ?? '' ),
 	                    'finished_at' => sanitize_text_field( $by_index[ $index ]['finished_at'] ?? current_time( 'mysql' ) ),
 	                    'operation_still_processing' => false,
 	                    'provider' => sanitize_key( $clip['provider'] ?? ( $by_index[ $index ]['provider'] ?? '' ) ),
@@ -351,7 +353,7 @@ class STLAI_Video_Storage {
 
 	        for ( $index = 1; $index <= 4; $index++ ) {
 	            if ( empty( $by_index[ $index ] ) ) {
-	                $by_index[ $index ] = array( 'index' => $index, 'status' => 'pending', 'attempt' => 0, 'url' => '', 'error' => '', 'started_at' => '', 'finished_at' => '', 'operation_id' => '', 'operation_poll_count' => 0, 'operation_checked_at' => '', 'operation_still_processing' => false );
+	                $by_index[ $index ] = array( 'index' => $index, 'status' => 'pending', 'attempt' => 0, 'url' => '', 'error' => '', 'scheduled_start_at' => '', 'started_at' => '', 'finished_at' => '', 'operation_id' => '', 'operation_poll_count' => 0, 'operation_checked_at' => '', 'operation_still_processing' => false );
 	            }
 	        }
 	        ksort( $by_index );
@@ -467,10 +469,11 @@ class STLAI_Video_Storage {
 	            if ( ! is_array( $clip_job ) || ! empty( $clip_job['url'] ) || 'ready' === sanitize_key( $clip_job['status'] ?? '' ) ) {
 	                continue;
 	            }
-	            if ( in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'error', 'error_final', 'generating', 'retrying', 'queued' ), true ) ) {
+	            if ( in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'error', 'error_final', 'generating', 'retrying', 'queued', 'scheduled' ), true ) ) {
 	                $clip_job['status'] = 'pending';
 	                $clip_job['attempt'] = 0;
 	                $clip_job['error'] = '';
+	                $clip_job['scheduled_start_at'] = '';
 	                $clip_job['started_at'] = '';
 	                $clip_job['finished_at'] = '';
 	            }
@@ -480,7 +483,7 @@ class STLAI_Video_Storage {
 	    }
 
 	    private static function stronger_clip_job( array $existing, array $incoming ) {
-	        $rank = array( 'pending' => 1, 'queued' => 2, 'generating' => 3, 'retrying' => 4, 'error' => 5, 'error_final' => 6, 'ready' => 7 );
+	        $rank = array( 'pending' => 1, 'queued' => 2, 'scheduled' => 3, 'generating' => 4, 'retrying' => 5, 'error' => 6, 'error_final' => 7, 'ready' => 8 );
 	        $existing_status = sanitize_key( $existing['status'] ?? 'pending' );
 	        $incoming_status = sanitize_key( $incoming['status'] ?? 'pending' );
 	        if ( ! empty( $existing['url'] ) ) {

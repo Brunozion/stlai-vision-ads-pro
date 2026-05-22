@@ -872,6 +872,31 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-22 - Clipes IA paralelos com stagger
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- `CLIP_MAX_CONCURRENT` passou para 4.
+- `CLIP_START_STAGGER_SECONDS` foi definido como 1.
+- O job agenda os 4 clipes com `scheduled_start_at` em offsets de 0s, 1s, 2s e 3s.
+- O frontend dispara os requests conforme `next_clip_indexes`, respeitando stagger e evitando request duplicado por índice.
+- `scheduled` e `scheduled_start_at` foram adicionados ao estado público dos `clip_jobs`.
+- A composição continua iniciando apenas quando os 4 clipes têm URL.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Story 11: Video Provider Hub e resolução de saída
 
 Arquivos alterados:

@@ -84,8 +84,10 @@ const S = {
     autoClipGenerationResult: "",
     skippedReason: "",
     maxClipAttempts: 3,
-    maxConcurrentClipGenerations: 2,
+    maxConcurrentClipGenerations: 4,
+    clipStartStaggerSeconds: 1,
     startedClipIndexes: [],
+    scheduledClipIndexes: [],
     nextClipIndexes: [],
     retryable: false,
     retryReason: "",
@@ -100,6 +102,7 @@ const S = {
 	    progressTimer: null,
 	    clipLaunchTimers: [],
 	    clipLaunchStarted: false,
+	    clipRequestsInFlight: {},
 	    visualStatus: "",
     visualProgress: 0,
     visualPhaseKey: "",
@@ -1535,6 +1538,7 @@ function normalizeClipJobs(jobs, clips=S.video.clips){
           retryable:Boolean(job.retryable),
           will_retry:Boolean(job.will_retry || job.willRetry),
           retry_reason:String(job.retry_reason || job.retryReason || ""),
+          scheduled_start_at:String(job.scheduled_start_at || job.scheduledStartAt || ""),
           started_at:String(job.started_at || ""),
           finished_at:String(job.finished_at || ""),
           operation_id:String(job.operation_id || ""),
@@ -1565,7 +1569,7 @@ function normalizeClipJobs(jobs, clips=S.video.clips){
 }
 
 function clipStatusRank(status){
-  const rank={pending:1,queued:2,generating:3,retrying:4,error:5,error_final:6,ready:7};
+  const rank={pending:1,queued:2,scheduled:3,generating:4,retrying:5,error:6,error_final:7,ready:8};
   return rank[String(status || "pending")] || 1;
 }
 
@@ -1837,11 +1841,13 @@ function applyVideoState(payload={}, options={}){
   S.video.nextClipIndexes=Array.isArray(incoming.next_clip_indexes) ? incoming.next_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (Array.isArray(incoming.diagnostics?.next_clip_indexes) ? incoming.diagnostics.next_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (S.video.nextClipIndexes || []));
   S.video.nextClipReason=(!stale && incoming.next_clip_reason) || incoming.diagnostics?.next_clip_reason || S.video.nextClipReason || "";
   S.video.startedClipIndexes=Array.isArray(incoming.started_clip_indexes) ? incoming.started_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (Array.isArray(incoming.diagnostics?.started_clip_indexes) ? incoming.diagnostics.started_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (S.video.startedClipIndexes || []));
+  S.video.scheduledClipIndexes=Array.isArray(incoming.scheduled_clip_indexes) ? incoming.scheduled_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (Array.isArray(incoming.diagnostics?.scheduled_clip_indexes) ? incoming.diagnostics.scheduled_clip_indexes.map(Number).filter(index=>index>=1 && index<=4) : (S.video.scheduledClipIndexes || []));
   S.video.autoClipGenerationTriggered=Boolean((!stale && incoming.auto_clip_generation_triggered) || incoming.diagnostics?.auto_clip_generation_triggered || false);
   S.video.autoClipGenerationResult=(!stale && incoming.auto_clip_generation_result) || incoming.diagnostics?.auto_clip_generation_result || S.video.autoClipGenerationResult || "";
   S.video.skippedReason=(!stale && incoming.skipped_reason) || incoming.diagnostics?.skipped_reason || S.video.skippedReason || "";
   S.video.maxClipAttempts=Number((!stale && incoming.max_clip_attempts) || incoming.diagnostics?.max_clip_attempts || S.video.maxClipAttempts || 3);
-  S.video.maxConcurrentClipGenerations=Number((!stale && incoming.max_concurrent_clip_generations) || incoming.diagnostics?.max_concurrent_clip_generations || S.video.maxConcurrentClipGenerations || 2);
+  S.video.maxConcurrentClipGenerations=Number((!stale && incoming.max_concurrent_clip_generations) || incoming.diagnostics?.max_concurrent_clip_generations || S.video.maxConcurrentClipGenerations || 4);
+  S.video.clipStartStaggerSeconds=Number((!stale && incoming.clip_start_stagger_seconds) || incoming.diagnostics?.clip_start_stagger_seconds || S.video.clipStartStaggerSeconds || 1);
   S.video.retryable=Boolean((!stale && incoming.retryable) || incoming.diagnostics?.retryable || false);
   S.video.retryReason=(!stale && incoming.retry_reason) || incoming.diagnostics?.retry_reason || S.video.retryReason || "";
   S.video.willRetry=Boolean((!stale && incoming.will_retry) || incoming.diagnostics?.will_retry || false);
@@ -2190,6 +2196,7 @@ async function mockGenerateVideo(){
 	  S.video.composerStatus="";
 	  S.video.renderJobId="";
 	  S.video.clipLaunchStarted=false;
+  S.video.clipRequestsInFlight={};
   S.video.message=retryingComposition
     ? "Tentando compor o vídeo final novamente..."
     : (retryingPartial ? "Tentando novamente a partir do clipe pendente..." : "Gerando narração e preparando pipeline...");
@@ -2680,11 +2687,12 @@ function renderVideoClipsGridMarkup(clips){
       const willRetry=Boolean(clipJob.will_retry || clipJob.willRetry || S.video.willRetry);
       const retrying=clipJob.status==="retrying" || (willRetry && ["pending","queued"].includes(clipJob.status)) || (String(videoStatusForDisplay()).startsWith("retrying_clip_") && isActive);
       const generating=clipJob.status==="generating" || isActive;
+      const scheduled=clipJob.status==="scheduled";
       const failed=clipJob.status==="error_final" || clipJob.status==="error" || (recoverableVideoErrorStatus(S.video.status) && index===Number(S.video.failedClipIndex || 0));
       const maxAttempts=Number(clipJob.max_attempts || clipJob.maxAttempts || S.video.maxClipAttempts || 3);
       const attempt=Number(clipJob.attempt || 0);
       const finalFailed=failed && !willRetry && attempt >= maxAttempts;
-      const label=finalFailed ? "Erro após tentativas" : (retrying || (willRetry && isActive) ? `Ajustando clipe ${index}` : (generating ? `Gerando clipe ${index}` : "Pendente"));
+      const label=finalFailed ? "Erro após tentativas" : (retrying || (willRetry && isActive) ? `Ajustando clipe ${index}` : (generating ? `Gerando clipe ${index}` : (scheduled ? "Agendado" : "Pendente")));
       cards.push(`<div class="video-clip-card video-clip-card-placeholder ${isActive ? "active" : ""} ${failed ? "error" : ""}">
         <div class="video-clip-title">Clipe ${index}</div>
         <div class="video-clip-placeholder">
@@ -3186,25 +3194,39 @@ function activeVideoClipJobCount(){
     .length;
 }
 
+function isVideoClipRequestInFlight(index){
+  return Boolean(S.video.clipRequestsInFlight && S.video.clipRequestsInFlight[index]);
+}
+
 function scheduleVideoClipStarts(){
   if(!S.video.jobId || !S.video.audioUrl || S.video.finalVideoUrl) return;
-  const maxConcurrent=Math.max(1, Number(S.video.maxConcurrentClipGenerations || 2));
+  const maxConcurrent=Math.max(1, Number(S.video.maxConcurrentClipGenerations || 4));
   const openSlots=Math.max(0, maxConcurrent - activeVideoClipJobCount());
   if(openSlots<=0) return;
-  const jobs=normalizeClipJobs(S.video.clipJobs, S.video.clips)
-    .filter(job=>job.status!=="ready" && job.status!=="generating" && job.status!=="retrying" && job.status!=="error_final")
+  const preferredIndexes=Array.isArray(S.video.nextClipIndexes) ? S.video.nextClipIndexes.map(Number).filter(index=>index>=1 && index<=4) : [];
+  const jobsByIndex={};
+  normalizeClipJobs(S.video.clipJobs, S.video.clips).forEach(job=>{ jobsByIndex[job.index]=job; });
+  const candidates=(preferredIndexes.length ? preferredIndexes.map(index=>jobsByIndex[index]).filter(Boolean) : Object.values(jobsByIndex))
+    .filter(job=>job.status!=="ready" && job.status!=="error_final" && !job.url && !isVideoClipRequestInFlight(job.index))
+    .filter(job=>!(["generating","retrying"].includes(job.status) && !job.operation_id_exists && !job.operation_id))
     .sort((a,b)=>{
       const aRetry=(a.will_retry || a.retryable || a.status==="retrying") ? 0 : 1;
       const bRetry=(b.will_retry || b.retryable || b.status==="retrying") ? 0 : 1;
       return aRetry-bRetry || Number(a.index)-Number(b.index);
-    })
-    .slice(0, openSlots);
+    });
+  const jobs=[];
+  candidates.forEach(job=>{
+    if(jobs.length>=openSlots) return;
+    if(jobs.some(item=>Number(item.index)===Number(job.index))) return;
+    jobs.push(job);
+  });
   if(!jobs.length) return;
 
   clearVideoClipLaunchers();
   S.video.clipLaunchStarted=true;
+  const staggerMs=Math.max(0, Number(S.video.clipStartStaggerSeconds || 1) * 1000);
   jobs.forEach((job,idx)=>{
-    const timer=setTimeout(()=>startVideoClip(job.index), idx * 1000);
+    const timer=setTimeout(()=>startVideoClip(job.index), idx * staggerMs);
     S.video.clipLaunchTimers.push(timer);
   });
 }
@@ -3213,7 +3235,7 @@ function maybeScheduleMissingVideoClips(){
   if(!S.video.jobId || !S.video.audioUrl || S.video.finalVideoUrl) return;
   if(readyVideoClipCount()>=4) return;
   if(recoverableVideoErrorStatus(S.video.status) && !S.video.willRetry) return;
-  if(activeVideoClipJobCount()>=Math.max(1, Number(S.video.maxConcurrentClipGenerations || 2))) return;
+  if(activeVideoClipJobCount()>=Math.max(1, Number(S.video.maxConcurrentClipGenerations || 4))) return;
   if(S.video.nextClipAction && !["generate_missing_clip","retry_stale_clip","retry_clip"].includes(S.video.nextClipAction)) return;
   scheduleVideoClipStarts();
 }
@@ -3234,6 +3256,9 @@ function videoPollingDelayMs(){
 
 async function startVideoClip(index){
   if(!S.video.jobId || S.video.finalVideoUrl) return;
+  index=Number(index || 0);
+  if(index<1 || index>4 || isVideoClipRequestInFlight(index)) return;
+  S.video.clipRequestsInFlight={...(S.video.clipRequestsInFlight || {}), [index]:true};
   try{
     const data=await videoAjaxRequest("stlai_start_video_clip", {
       job_id:S.video.jobId,
@@ -3252,6 +3277,10 @@ async function startVideoClip(index){
     renderVideoStatus();
     if(S.step>=6) renderSummaryVideo();
     maybeScheduleMissingVideoClips();
+  }finally{
+    if(S.video.clipRequestsInFlight){
+      delete S.video.clipRequestsInFlight[index];
+    }
   }
 }
 

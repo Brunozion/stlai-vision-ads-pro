@@ -102,6 +102,28 @@ A troca é visual. Slugs, classes, handles, opções de banco, nomes de pasta e 
 
 Decidido
 
+## 2026-05-22 - Clipes IA com stagger paralelo de 1 segundo
+
+### Decisao
+
+A geração comercial dos 4 clipes passa a usar `MAX_CONCURRENT_CLIP_GENERATIONS = 4` e `CLIP_START_STAGGER_SECONDS = 1`.
+
+Após a narração estar pronta, o job registra os quatro clipes com `scheduled_start_at`: clipe 1 imediatamente, clipe 2 após 1s, clipe 3 após 2s e clipe 4 após 3s. O frontend dispara os requests nessa cadência, e cada clipe mantém `clip_job` independente.
+
+Cada clipe preserva `operation_id`, tentativas, retry individual e merge monotônico. Clipe pronto nunca é regenerado. A composição final só inicia quando os 4 clipes tiverem URL.
+
+### Motivo
+
+Gerar um clipe por vez deixava o fluxo lento. O Veo trabalha com operações assíncronas por clipe; iniciar as quatro operações com stagger reduz o tempo total sem concentrar todos os requests exatamente no mesmo segundo.
+
+### Impacto
+
+Diagnostics passam a expor `max_concurrent_clip_generations`, `clip_start_stagger_seconds`, `scheduled_clip_indexes`, `started_clip_indexes`, `next_clip_indexes`, `active_generating_count`, `clips_ready_count` e `missing_clips`.
+
+### Status
+
+Decidido
+
 ## 2026-05-22 - Video Provider Hub e resolução comercial
 
 ### Decisao

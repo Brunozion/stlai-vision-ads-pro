@@ -190,16 +190,21 @@ Resposta de sucesso:
       "error_final_reason": "",
       "next_clip_action": "retry_clip",
       "next_clip_index": 1,
+      "next_clip_indexes": [1, 2, 3, 4],
+      "scheduled_clip_indexes": [1, 2, 3, 4],
+      "started_clip_indexes": [1],
+      "max_concurrent_clip_generations": 4,
+      "clip_start_stagger_seconds": 1,
       "next_clip_reason": "pending_stale_retry",
       "stale_threshold_seconds": 75,
       "active_generating_count": 0,
-      "max_concurrent_clip_generations": 1,
       "clip_jobs_summary": [
         {
           "index": 1,
-          "status": "pending",
+          "status": "scheduled",
           "attempt": 1,
           "has_url": false,
+          "scheduled_start_at": "2026-05-21 10:00:00",
           "started_at": "2026-05-21 10:00:00",
           "age_seconds": 273,
           "is_stale": true
@@ -242,6 +247,8 @@ Observações:
 - `ready_for_composition` significa que áudio e clipes estão prontos, mas a composição final ainda não foi executada.
 - `ready` fica reservado para o fluxo final composto ou para compatibilidade com o mock anterior.
 - `cancelled` é status reservado para contrato futuro.
+- `scheduled` em `clip_jobs` significa que o clipe já foi reservado para geração com `scheduled_start_at`; o frontend deve iniciar o request quando chegar esse horário.
+- `max_concurrent_clip_generations` é `4` no fluxo comercial atual, com `clip_start_stagger_seconds = 1`.
 
 ### 4.3 `stlai_get_video_result`
 
