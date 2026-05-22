@@ -1511,6 +1511,29 @@ O que foi feito:
 Status:
 
 - Correção concluida.
+## 2026-05-22 - Story 10B roteiro público e TTS obrigatório
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- `script_tts` passa a ser garantido no backend sempre que houver job de vídeo.
+- Jobs antigos sem `script_tts` são reconciliados no status/result/start_clip.
+- O roteiro PT-BR foi ajustado para storytelling mais humano e menos ficha técnica.
+- Normalização de `topper`, `cake topper` e `personalized topper` foi reforçada para "topo de bolo" / "topo de bolo personalizado".
+- Diagnostics expõem `script_public_exists`, `script_tts_exists`, `script_tts_used_for_tts` e `narration_language`, sem expor o conteúdo do TTS.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Soft timeout e polling mais lento da composição
 
 Arquivos alterados:

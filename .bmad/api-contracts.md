@@ -1453,6 +1453,28 @@ No nível do job:
 - `will_retry`: `true` quando o pipeline deve continuar automaticamente.
 
 Regra: `VEO_INVALID_RESPONSE` e mensagens como "O serviço de vídeo não retornou um vídeo válido" ou "URI do vídeo ausente" não podem virar `error_final` antes de `attempt >= max_attempts`.
+## Story 10B video script guarantees
+
+Video job responses expose safe script diagnostics:
+
+```json
+{
+  "script_public": "Texto limpo exibido ao usuário.",
+  "script_public_exists": true,
+  "script_tts_exists": true,
+  "script_tts_used_for_tts": true,
+  "narration_language": "pt-BR"
+}
+```
+
+Rules:
+
+- `script_tts_exists` should be `true` for any active/generated video job.
+- The full `script_tts` value must not be returned to the frontend.
+- If an older job has only `script_public`, the backend regenerates `script_tts` from it.
+- ElevenLabs uses the internal TTS script as the narration source; literal direction tags may be stripped before the API call to avoid spoken tags.
+- PT-BR copy normalizes imported terms such as `topper`, `cake topper`, and `personalized topper`.
+
 ## Composer timeout diagnostics
 
 Video job status responses may include:

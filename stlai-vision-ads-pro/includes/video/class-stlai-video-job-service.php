@@ -28,6 +28,7 @@ class STLAI_Video_Job_Service {
         }
 
         if ( $existing_job ) {
+            $script_pair = self::build_script_pair( $validated['script'], $validated['narration_type'], $validated['video_language'] );
             $job = STLAI_Video_Storage::update_job(
                 $existing_job['job_id'],
                 array_merge(
@@ -40,9 +41,9 @@ class STLAI_Video_Job_Service {
                         'video_language'       => $validated['video_language'],
                         'narration_language'   => $validated['narration_language'],
                         'narration_style'      => $validated['narration_style'],
-                        'script_public'        => self::normalize_script_terms( self::strip_narration_directions( $validated['script'] ), $validated['video_language'] ),
-                        'script_tts'           => self::build_narration_script( $validated['script'], $validated['narration_type'], $validated['video_language'] ),
-                        'script_narration'     => self::build_narration_script( $validated['script'], $validated['narration_type'], $validated['video_language'] ),
+                        'script_public'        => $script_pair['script_public'],
+                        'script_tts'           => $script_pair['script_tts'],
+                        'script_narration'     => $script_pair['script_tts'],
                         'audio_url'            => $existing_job['audio_url'] ?? '',
                         'audio_path'           => $existing_job['audio_path'] ?? '',
                         'audio_provider'       => $existing_job['audio_provider'] ?? '',
@@ -86,14 +87,16 @@ class STLAI_Video_Job_Service {
         } else {
             $create_data = $validated;
             unset( $create_data['job_id'] );
-            $create_data['script_public'] = self::normalize_script_terms( self::strip_narration_directions( $validated['script'] ), $validated['video_language'] );
-            $create_data['script_tts'] = self::build_narration_script( $validated['script'], $validated['narration_type'], $validated['video_language'] );
+            $script_pair = self::build_script_pair( $validated['script'], $validated['narration_type'], $validated['video_language'] );
+            $create_data['script_public'] = $script_pair['script_public'];
+            $create_data['script_tts'] = $script_pair['script_tts'];
             $create_data['script_narration'] = $create_data['script_tts'];
             $job = STLAI_Video_Storage::create_job( $create_data );
         }
 
-        $script_public = self::normalize_script_terms( self::strip_narration_directions( $validated['script'] ), $validated['video_language'] );
-        $script_narration = self::build_narration_script( $script_public, $validated['narration_type'], $validated['video_language'] );
+        $script_pair = self::build_script_pair( $validated['script'], $validated['narration_type'], $validated['video_language'] );
+        $script_public = $script_pair['script_public'];
+        $script_narration = $script_pair['script_tts'];
         $job = STLAI_Video_Storage::update_job(
             $job['job_id'],
             array(
@@ -101,6 +104,8 @@ class STLAI_Video_Job_Service {
                 'script_public'      => $script_public,
                 'script_tts'         => $script_narration,
                 'script_narration'   => $script_narration,
+                'script_public_exists' => ! empty( $script_public ),
+                'script_tts_exists'  => ! empty( $script_narration ),
                 'video_language'     => $validated['video_language'],
                 'narration_language' => $validated['narration_language'],
                 'narration_style'    => $validated['narration_style'],
@@ -119,8 +124,10 @@ class STLAI_Video_Job_Service {
                 )
             );
 
-            $audio = STLAI_ElevenLabs_Provider::generate_audio( $script_narration, $validated['narration_type'] );
+            $script_tts_used_for_tts = ! empty( $script_narration );
+            $audio = STLAI_ElevenLabs_Provider::generate_audio( $script_tts_used_for_tts ? $script_narration : $script_public, $validated['narration_type'] );
             if ( is_wp_error( $audio ) && $script_narration !== $script_public && self::should_retry_audio_without_directions( $audio ) ) {
+                $script_tts_used_for_tts = false;
                 $audio = STLAI_ElevenLabs_Provider::generate_audio( $script_public, $validated['narration_type'] );
             }
             if ( is_wp_error( $audio ) ) {
@@ -153,6 +160,9 @@ class STLAI_Video_Job_Service {
                     'audio_provider' => $audio['provider'] ?? '',
                     'audio_model'    => $audio['model'] ?? '',
                     'audio_voice_id' => $audio['voice_id'] ?? '',
+                    'script_tts_used_for_tts' => $script_tts_used_for_tts,
+                    'script_public_exists' => ! empty( $script_public ),
+                    'script_tts_exists' => ! empty( $script_narration ),
                 )
             );
         } else {
@@ -163,6 +173,9 @@ class STLAI_Video_Job_Service {
                     'progress' => max( 22, (int) ( $job['progress'] ?? 22 ) ),
                     'progress_hint' => 24,
                     'message'  => 'Narracao existente reutilizada.',
+                    'script_tts_used_for_tts' => ! empty( $script_narration ),
+                    'script_public_exists' => ! empty( $script_public ),
+                    'script_tts_exists' => ! empty( $script_narration ),
                 )
             );
         }
@@ -201,6 +214,7 @@ class STLAI_Video_Job_Service {
             return new WP_Error( 'stlai_video_job_not_found', 'Job de video nao encontrado.' );
         }
 
+        $job = self::ensure_script_fields( $job );
         $job = self::reconcile_client_ready_clips( $job, $client_ready_clips, $client_ready_clips_received );
         $job = self::maybe_start_or_poll_composition( $job );
         if ( is_wp_error( $job ) ) {
@@ -332,12 +346,62 @@ class STLAI_Video_Job_Service {
         return $job;
     }
 
+    private static function ensure_script_fields( array $job ) {
+        $language = self::sanitize_video_language( $job['video_language'] ?? ( $job['narration_language'] ?? 'pt-BR' ) );
+        $voice_style = sanitize_key( $job['narration_style'] ?? ( $job['narration_type'] ?? 'persuasiva' ) );
+        if ( ! in_array( $voice_style, array( 'persuasiva', 'emocional' ), true ) ) {
+            $voice_style = 'persuasiva';
+        }
+
+        $source = $job['script_public'] ?? ( $job['script'] ?? '' );
+        $script_pair = self::build_script_pair( $source, $voice_style, $language );
+        $current_public = self::normalize_script_terms( $source, $language );
+        $current_tts = trim( (string) ( $job['script_tts'] ?? ( $job['script_narration'] ?? '' ) ) );
+
+        $updates = array();
+        if ( empty( $current_public ) || $current_public !== ( $job['script_public'] ?? '' ) ) {
+            $updates['script'] = $script_pair['script_public'];
+            $updates['script_public'] = $script_pair['script_public'];
+        }
+        if ( empty( $current_tts ) ) {
+            $updates['script_tts'] = $script_pair['script_tts'];
+            $updates['script_narration'] = $script_pair['script_tts'];
+        }
+        if ( empty( $job['video_language'] ) ) {
+            $updates['video_language'] = $language;
+        }
+        if ( empty( $job['narration_language'] ) ) {
+            $updates['narration_language'] = $language;
+        }
+        if ( empty( $job['narration_style'] ) ) {
+            $updates['narration_style'] = $voice_style;
+        }
+        $public_exists = ! empty( $script_pair['script_public'] );
+        $tts_exists = ! empty( $current_tts ) || ! empty( $script_pair['script_tts'] );
+        if ( (bool) ( $job['script_public_exists'] ?? false ) !== $public_exists ) {
+            $updates['script_public_exists'] = $public_exists;
+        }
+        if ( (bool) ( $job['script_tts_exists'] ?? false ) !== $tts_exists ) {
+            $updates['script_tts_exists'] = $tts_exists;
+        }
+        if ( $tts_exists && ! empty( $job['audio_url'] ) && ! isset( $job['script_tts_used_for_tts'] ) ) {
+            $updates['script_tts_used_for_tts'] = true;
+        }
+
+        if ( empty( $updates ) ) {
+            return $job;
+        }
+
+        return STLAI_Video_Storage::update_job( $job['job_id'], $updates ) ?: $job;
+    }
+
     public static function get_result( $job_id ) {
         $job = STLAI_Video_Storage::get_job( $job_id );
         if ( ! $job ) {
             return new WP_Error( 'stlai_video_job_not_found', 'Job de video nao encontrado.' );
         }
 
+        $job = self::ensure_script_fields( $job );
         $job = self::prepare_clip_jobs_for_job( $job, array(), false );
         return self::maybe_start_or_poll_composition( $job );
     }
@@ -357,6 +421,7 @@ class STLAI_Video_Job_Service {
             return new WP_Error( 'stlai_video_job_not_found', 'Job de video nao encontrado.' );
         }
 
+        $job = self::ensure_script_fields( $job );
         $clip_index = (int) $clip_index;
         if ( $clip_index < 1 || $clip_index > 4 ) {
             return new WP_Error( 'stlai_video_invalid_clip_index', 'Clipe invalido para geração.' );
@@ -595,6 +660,20 @@ class STLAI_Video_Job_Service {
         $clip_jobs = self::normalize_clip_jobs( $clip_jobs, $clips, $reset_failed );
         $video_frames = self::normalize_video_frames( $job['video_frames'] ?? self::video_frames_from_clips( $clips ) );
 
+        $language = $validated['video_language'] ?? ( $job['video_language'] ?? 'pt-BR' );
+        $script_pair = self::build_script_pair(
+            $validated['script'] ?? ( $job['script_public'] ?? ( $job['script'] ?? '' ) ),
+            $validated['narration_type'] ?? ( $job['narration_type'] ?? 'persuasiva' ),
+            $language
+        );
+        $existing_tts = trim( (string) ( $validated['script_tts'] ?? '' ) );
+        if ( empty( $existing_tts ) ) {
+            $existing_tts = trim( (string) ( $job['script_tts'] ?? ( $job['script_narration'] ?? '' ) ) );
+        }
+        if ( empty( $existing_tts ) ) {
+            $existing_tts = $script_pair['script_tts'];
+        }
+
         return STLAI_Video_Storage::update_job(
             $job['job_id'],
             array_merge(
@@ -605,10 +684,12 @@ class STLAI_Video_Job_Service {
                     'video_frames'   => $video_frames,
                     'selected_images' => ! empty( $validated['selected_images'] ) ? $validated['selected_images'] : ( $job['selected_images'] ?? array() ),
                     'format'         => $validated['format'] ?? ( $job['format'] ?? '16:9' ),
-                    'script'         => self::normalize_script_terms( self::strip_narration_directions( $validated['script'] ?? ( $job['script_public'] ?? ( $job['script'] ?? '' ) ) ), $validated['video_language'] ?? ( $job['video_language'] ?? 'pt-BR' ) ),
-                    'script_public'  => self::normalize_script_terms( self::strip_narration_directions( $validated['script'] ?? ( $job['script_public'] ?? ( $job['script'] ?? '' ) ) ), $validated['video_language'] ?? ( $job['video_language'] ?? 'pt-BR' ) ),
-                    'script_tts'     => $validated['script_tts'] ?? ( $job['script_tts'] ?? ( $job['script_narration'] ?? '' ) ),
-                    'script_narration' => $validated['script_tts'] ?? ( $job['script_tts'] ?? ( $job['script_narration'] ?? '' ) ),
+                    'script'         => $script_pair['script_public'],
+                    'script_public'  => $script_pair['script_public'],
+                    'script_tts'     => $existing_tts,
+                    'script_narration' => $existing_tts,
+                    'script_public_exists' => ! empty( $script_pair['script_public'] ),
+                    'script_tts_exists' => ! empty( $existing_tts ),
                     'video_language' => $validated['video_language'] ?? ( $job['video_language'] ?? 'pt-BR' ),
                     'narration_language' => $validated['narration_language'] ?? ( $job['narration_language'] ?? ( $job['video_language'] ?? 'pt-BR' ) ),
                     'narration_style' => $validated['narration_style'] ?? ( $job['narration_style'] ?? ( $job['narration_type'] ?? 'persuasiva' ) ),
@@ -2352,7 +2433,7 @@ class STLAI_Video_Job_Service {
             $replacements = array(
                 '/\bwedding topper\b/iu'       => 'topo de bolo de casamento',
                 '/\bcake topper\b/iu'          => 'topo de bolo',
-                '/\bpersonalized topper\b/iu'  => 'topo personalizado',
+                '/\bpersonalized topper\b/iu'  => 'topo de bolo personalizado',
                 '/\bcustom topper\b/iu'        => 'topo personalizado',
                 '/\btopper personalizado\b/iu' => 'topo de bolo personalizado',
                 '/\btopper\b/iu'               => 'topo de bolo',
@@ -2387,6 +2468,38 @@ class STLAI_Video_Job_Service {
     private static function sanitize_video_language( $language ) {
         $language = sanitize_text_field( (string) $language );
         return in_array( $language, array( 'pt-BR', 'en-US', 'es-ES', 'fr-FR' ), true ) ? $language : 'pt-BR';
+    }
+
+    private static function build_script_pair( $public_script, $voice_style = 'persuasiva', $language = 'pt-BR' ) {
+        $language = self::sanitize_video_language( $language );
+        $script_public = self::normalize_script_terms( $public_script, $language );
+        if ( empty( $script_public ) ) {
+            $script_public = self::fallback_public_script( $language );
+        }
+
+        $script_tts = self::build_narration_script( $script_public, $voice_style, $language );
+        if ( empty( $script_tts ) ) {
+            $script_tts = $script_public;
+        }
+
+        return array(
+            'script_public' => $script_public,
+            'script_tts'    => $script_tts,
+        );
+    }
+
+    private static function fallback_public_script( $language = 'pt-BR' ) {
+        $language = self::sanitize_video_language( $language );
+        if ( 'en-US' === $language ) {
+            return 'I was looking for a detail that felt personal and useful, something that could make the moment more memorable. This product stood out because it brings care, presence, and a thoughtful finish without changing what it was made for.';
+        }
+        if ( 'es-ES' === $language ) {
+            return 'Estaba buscando un detalle especial, algo que hiciera el momento más bonito y memorable. Este producto me llamó la atención por su presencia, su cuidado en los detalles y esa sensación de regalo pensado con cariño.';
+        }
+        if ( 'fr-FR' === $language ) {
+            return "Je cherchais un détail spécial, quelque chose qui rende le moment plus beau et plus mémorable. Ce produit m'a plu par sa présence, son soin dans les détails et cette impression d'un cadeau choisi avec attention.";
+        }
+        return 'Eu estava procurando um detalhe especial, daqueles que fazem a pessoa sorrir antes mesmo de usar. Foi isso que me chamou atenção neste produto: presença, cuidado nos detalhes e uma sensação de presente pensado com carinho.';
     }
 
     private static function build_narration_script( $public_script, $voice_style = 'persuasiva', $language = 'pt-BR' ) {

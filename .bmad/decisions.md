@@ -1098,6 +1098,28 @@ O frontend renderiza botões consistentes de baixar, ampliar e copiar link no v�
 ### Status
 
 Decidido
+## 2026-05-22 - Story 10B: script TTS sempre presente
+
+### Decisao
+
+Todo job de vídeo deve ter `script_public` e `script_tts`. `script_public` é a única versão mostrada ao usuário; `script_tts`/`script_narration` é interno e usado como fonte da narração ElevenLabs.
+
+Jobs antigos ou respostas parciais sem `script_tts` devem ser reconciliados automaticamente a partir do `script_public`.
+
+Para PT-BR, roteiros devem evitar termos importados quando houver equivalente natural. `topper`, `cake topper` e `personalized topper` viram "topo de bolo" ou "topo de bolo personalizado" em textos de roteiro/copy.
+
+### Motivo
+
+O response ainda podia trazer `script_tts_exists=false`, e a copy soava técnica demais. Isso prejudica a qualidade emocional da narração e a localização em PT-BR.
+
+### Impacto
+
+O frontend gera uma copy mais narrativa, o backend garante o par de scripts e o AJAX expõe apenas flags seguras: `script_public_exists`, `script_tts_exists`, `script_tts_used_for_tts` e `narration_language`.
+
+### Status
+
+Decidido
+
 ## 2026-05-22 - Soft timeout da composição externa
 
 ### Decisao

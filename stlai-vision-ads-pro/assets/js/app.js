@@ -1215,7 +1215,7 @@ function normalizeScriptTerms(text, lang=S.video.language){
     out=out
       .replace(/\bwedding topper\b/gi, "topo de bolo de casamento")
       .replace(/\bcake topper\b/gi, "topo de bolo")
-      .replace(/\bpersonalized topper\b/gi, "topo personalizado")
+      .replace(/\bpersonalized topper\b/gi, "topo de bolo personalizado")
       .replace(/\bcustom topper\b/gi, "topo personalizado")
       .replace(/\btopper personalizado\b/gi, "topo de bolo personalizado")
       .replace(/\btopper\b/gi, "topo de bolo");
@@ -1258,8 +1258,8 @@ function buildVideoScript(){
       : `Vous savez, quand un produit semble simple, mais que les détails font toute la différence? ${name} réunit style, utilité et personnalité sans complication. ${desc} Avec ${feat}, il se distingue dans l'usage, le cadeau et la présentation. ${title} est un choix pratique, élégant, avec ce petit détail qui donne envie.`;
   }else{
     script=S.voiceStyle==="emocional"
-      ? `Eu estava procurando um detalhe especial, daqueles que fazem a pessoa sorrir antes mesmo de usar. Foi isso que me chamou atenção em ${name}: uma peça com presença, carinho e personalidade. ${desc} O acabamento, os detalhes e ${feat} dão aquela sensação de presente pensado com cuidado. É o tipo de produto que transforma um momento simples em uma lembrança bonita.`
-      : `Sabe quando um produto parece simples, mas no detalhe ele conquista? ${name} foi feito para entregar visual, utilidade e personalidade sem complicar. ${desc} Com ${feat}, ele se destaca no uso, no presente e na apresentação. ${title} é uma escolha prática, bonita e com aquele toque que faz diferença na hora de comprar.`;
+      ? `Eu estava procurando um detalhe que deixasse o momento com a cara de quem vai receber, algo que não fosse só bonito na foto, mas que também virasse uma lembrança. Foi aí que ${name} chamou minha atenção. ${desc} O que mais encanta é perceber ${feat}, sem perder a delicadeza e o propósito do produto. É aquele tipo de detalhe que aparece, emociona e continua fazendo sentido depois.`
+      : `Eu queria encontrar um produto que chamasse atenção sem parecer exagerado, com presença, acabamento e utilidade no momento certo. ${name} entra exatamente nessa ideia. ${desc} Com ${feat}, ele ajuda a valorizar a apresentação e deixa a escolha mais especial para quem compra ou presenteia. ${title} é uma opção bonita, prática e com aquele detalhe que dá vontade de escolher.`;
   }
   return normalizeScriptTerms(script, lang);
 }
