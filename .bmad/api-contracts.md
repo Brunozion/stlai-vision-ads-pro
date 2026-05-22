@@ -1599,3 +1599,35 @@ Rules:
 - Providers other than `gemini_veo` may be configured, but return `VIDEO_PROVIDER_NOT_IMPLEMENTED` until implemented.
 - Invalid provider/model/resolution values fall back to `gemini_veo`, `veo-3.1-lite-generate-preview` and `720p`.
 - Commercial video prompts must explicitly block glitter, purple particles, overlays, REC/HUD/camera UI, text, watermark, artificial visual effects and invented product functions.
+
+## Veo clip operation polling
+
+Each `clip_jobs` item may include a live Gemini Veo operation:
+
+```json
+{
+  "index": 2,
+  "status": "generating",
+  "attempt": 1,
+  "operation_id": "models/veo-3.1-fast-generate-preview/operations/...",
+  "operation_id_exists": true,
+  "operation_poll_count": 10,
+  "operation_elapsed_seconds": 240,
+  "clip_operation_soft_timeout_seconds": 300,
+  "clip_operation_hard_timeout_seconds": 900,
+  "operation_still_processing": true,
+  "attempt_counts_operations_not_polls": true,
+  "requested_resolution": "1080p",
+  "effective_resolution": "1080p",
+  "video_model": "veo-3.1-fast-generate-preview"
+}
+```
+
+Rules:
+
+- `VEO_OPERATION_PROCESSING` and legacy `VEO_OPERATION_TIMEOUT` mean the operation is still alive, not a final clip failure.
+- Existing `operation_id` must be reused in later polling instead of creating a new operation.
+- Attempts count started operations, not polling checks.
+- 720p operation timeout: soft 180s, hard 600s.
+- 1080p operation timeout: soft 300s, hard 900s.
+- Only hard timeout, explicit operation error, or invalid/missing operation may consume another attempt.

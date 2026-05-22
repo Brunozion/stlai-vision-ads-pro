@@ -141,6 +141,15 @@ class STLAI_Video_Ajax {
         $summary_retryable = false;
         $summary_will_retry = false;
         $summary_retry_reason = '';
+        $operation_summary = array(
+            'operation_id_exists' => false,
+            'operation_id' => '',
+            'operation_poll_count' => 0,
+            'operation_elapsed_seconds' => 0,
+            'clip_operation_soft_timeout_seconds' => 0,
+            'clip_operation_hard_timeout_seconds' => 0,
+            'operation_still_processing' => false,
+        );
         foreach ( $clip_summary as $clip_item ) {
             if ( ! empty( $clip_item['retryable'] ) ) {
                 $summary_retryable = true;
@@ -150,6 +159,17 @@ class STLAI_Video_Ajax {
                 if ( empty( $summary_retry_reason ) ) {
                     $summary_retry_reason = sanitize_key( $clip_item['retry_reason'] ?? '' );
                 }
+            }
+            if ( ! empty( $clip_item['operation_id_exists'] ) && empty( $operation_summary['operation_id'] ) ) {
+                $operation_summary = array(
+                    'operation_id_exists' => true,
+                    'operation_id' => sanitize_text_field( $clip_item['operation_id'] ?? '' ),
+                    'operation_poll_count' => (int) ( $clip_item['operation_poll_count'] ?? 0 ),
+                    'operation_elapsed_seconds' => (int) ( $clip_item['operation_elapsed_seconds'] ?? 0 ),
+                    'clip_operation_soft_timeout_seconds' => (int) ( $clip_item['clip_operation_soft_timeout_seconds'] ?? 0 ),
+                    'clip_operation_hard_timeout_seconds' => (int) ( $clip_item['clip_operation_hard_timeout_seconds'] ?? 0 ),
+                    'operation_still_processing' => ! empty( $clip_item['operation_still_processing'] ),
+                );
             }
         }
         $retryable = ! empty( $job['retryable'] ) || $summary_retryable;
@@ -233,6 +253,14 @@ class STLAI_Video_Ajax {
             'retry_reason'                 => $retry_reason,
             'will_retry'                   => $will_retry,
             'error_final_reason'           => $error_final_reason,
+            'operation_id_exists'          => ! empty( $operation_summary['operation_id_exists'] ),
+            'operation_id'                 => $operation_summary['operation_id'],
+            'operation_poll_count'         => (int) $operation_summary['operation_poll_count'],
+            'operation_elapsed_seconds'    => (int) $operation_summary['operation_elapsed_seconds'],
+            'clip_operation_soft_timeout_seconds' => (int) $operation_summary['clip_operation_soft_timeout_seconds'],
+            'clip_operation_hard_timeout_seconds' => (int) $operation_summary['clip_operation_hard_timeout_seconds'],
+            'operation_still_processing'   => ! empty( $operation_summary['operation_still_processing'] ),
+            'attempt_counts_operations_not_polls' => true,
         );
         return array(
             'job_id'          => $job['job_id'] ?? '',
@@ -483,6 +511,11 @@ class STLAI_Video_Ajax {
             $error = sanitize_text_field( $job['error'] ?? '' );
             $attempt = (int) ( $job['attempt'] ?? 0 );
             $retryable = empty( $job['url'] ) && self::is_retryable_clip_error_summary( $error );
+            $started_at = sanitize_text_field( $job['started_at'] ?? '' );
+            $age = self::clip_job_age_seconds( $started_at );
+            $effective_resolution = sanitize_key( $job['effective_resolution'] ?? ( $job['output_resolution'] ?? '720p' ) );
+            $soft_timeout = '1080p' === $effective_resolution ? 300 : 180;
+            $hard_timeout = '1080p' === $effective_resolution ? 900 : 600;
 
             $response[] = array(
                 'index'       => (int) ( $job['index'] ?? 0 ),
@@ -495,8 +528,19 @@ class STLAI_Video_Ajax {
                 'retryable'   => $retryable,
                 'will_retry'  => $retryable && $attempt > 0 && $attempt < 3,
                 'retry_reason' => $retryable ? self::clip_retry_reason_from_summary( $error ) : '',
-                'started_at'  => sanitize_text_field( $job['started_at'] ?? '' ),
+                'started_at'  => $started_at,
                 'finished_at' => sanitize_text_field( $job['finished_at'] ?? '' ),
+                'operation_id_exists' => ! empty( $job['operation_id'] ),
+                'operation_id' => sanitize_text_field( $job['operation_id'] ?? '' ),
+                'operation_poll_count' => (int) ( $job['operation_poll_count'] ?? 0 ),
+                'operation_elapsed_seconds' => $age,
+                'clip_operation_soft_timeout_seconds' => $soft_timeout,
+                'clip_operation_hard_timeout_seconds' => $hard_timeout,
+                'operation_still_processing' => ! empty( $job['operation_still_processing'] ) || ( ! empty( $job['operation_id'] ) && empty( $job['url'] ) ),
+                'attempt_counts_operations_not_polls' => true,
+                'requested_resolution' => sanitize_key( $job['requested_resolution'] ?? $effective_resolution ),
+                'effective_resolution' => $effective_resolution,
+                'video_model' => sanitize_text_field( $job['model'] ?? '' ),
             );
         }
 
@@ -664,6 +708,10 @@ class STLAI_Video_Ajax {
             $error_code = self::clip_error_code_from_summary( $error );
             $retryable = empty( $clip_job['url'] ) && self::is_retryable_clip_error_summary( $error );
             $will_retry = $retryable && $attempt > 0 && $attempt < 3 && 'ready' !== $status;
+            $operation_id = sanitize_text_field( $clip_job['operation_id'] ?? '' );
+            $effective_resolution = sanitize_key( $clip_job['effective_resolution'] ?? ( $clip_job['output_resolution'] ?? '720p' ) );
+            $soft_timeout = '1080p' === $effective_resolution ? 300 : 180;
+            $hard_timeout = '1080p' === $effective_resolution ? 900 : 600;
             $summary[] = array(
                 'index'       => $index,
                 'status'      => $status ?: 'pending',
@@ -678,6 +726,17 @@ class STLAI_Video_Ajax {
                 'started_at'  => $started_at,
                 'age_seconds' => $age,
                 'is_stale'    => in_array( $status, array( 'pending', 'generating', 'retrying' ), true ) && empty( $clip_job['url'] ) && ! empty( $started_at ) && $age >= self::CLIP_GENERATION_STALE_SECONDS,
+                'operation_id_exists' => ! empty( $operation_id ),
+                'operation_id' => $operation_id,
+                'operation_poll_count' => (int) ( $clip_job['operation_poll_count'] ?? 0 ),
+                'operation_elapsed_seconds' => $age,
+                'clip_operation_soft_timeout_seconds' => $soft_timeout,
+                'clip_operation_hard_timeout_seconds' => $hard_timeout,
+                'operation_still_processing' => ! empty( $clip_job['operation_still_processing'] ) || ( ! empty( $operation_id ) && 'ready' !== $status ),
+                'attempt_counts_operations_not_polls' => true,
+                'requested_resolution' => sanitize_key( $clip_job['requested_resolution'] ?? $effective_resolution ),
+                'effective_resolution' => $effective_resolution,
+                'video_model' => sanitize_text_field( $clip_job['model'] ?? '' ),
             );
         }
         return $summary;

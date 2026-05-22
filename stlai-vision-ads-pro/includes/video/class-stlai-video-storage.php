@@ -307,6 +307,17 @@ class STLAI_Video_Storage {
 	                    'error'       => sanitize_text_field( $clip_job['error'] ?? '' ),
 	                    'started_at'  => sanitize_text_field( $clip_job['started_at'] ?? '' ),
 	                    'finished_at' => sanitize_text_field( $clip_job['finished_at'] ?? '' ),
+	                    'operation_id' => sanitize_text_field( $clip_job['operation_id'] ?? '' ),
+	                    'operation_poll_count' => max( 0, (int) ( $clip_job['operation_poll_count'] ?? 0 ) ),
+	                    'operation_checked_at' => sanitize_text_field( $clip_job['operation_checked_at'] ?? '' ),
+	                    'operation_still_processing' => ! empty( $clip_job['operation_still_processing'] ),
+	                    'provider' => sanitize_key( $clip_job['provider'] ?? ( $clip_job['video_provider'] ?? '' ) ),
+	                    'model' => sanitize_text_field( $clip_job['model'] ?? ( $clip_job['video_model'] ?? '' ) ),
+	                    'output_resolution' => sanitize_key( $clip_job['output_resolution'] ?? '' ),
+	                    'requested_resolution' => sanitize_key( $clip_job['requested_resolution'] ?? '' ),
+	                    'effective_resolution' => sanitize_key( $clip_job['effective_resolution'] ?? ( $clip_job['output_resolution'] ?? '' ) ),
+	                    'aspect_ratio' => sanitize_text_field( $clip_job['aspect_ratio'] ?? '' ),
+	                    'prepared_frame_url' => esc_url_raw( $clip_job['prepared_frame_url'] ?? '' ),
 	                );
 	                $by_index[ $index ] = self::recover_premature_final_clip_job( $by_index[ $index ] );
 	                $by_index[ $index ] = self::recover_stale_clip_job( $by_index[ $index ] );
@@ -326,13 +337,21 @@ class STLAI_Video_Storage {
 	                    'url'         => esc_url_raw( $clip['url'] ?? '' ),
 	                    'error'       => '',
 	                    'finished_at' => sanitize_text_field( $by_index[ $index ]['finished_at'] ?? current_time( 'mysql' ) ),
+	                    'operation_still_processing' => false,
+	                    'provider' => sanitize_key( $clip['provider'] ?? ( $by_index[ $index ]['provider'] ?? '' ) ),
+	                    'model' => sanitize_text_field( $clip['model'] ?? ( $by_index[ $index ]['model'] ?? '' ) ),
+	                    'output_resolution' => sanitize_key( $clip['output_resolution'] ?? ( $by_index[ $index ]['output_resolution'] ?? '' ) ),
+	                    'requested_resolution' => sanitize_key( $clip['requested_resolution'] ?? ( $by_index[ $index ]['requested_resolution'] ?? '' ) ),
+	                    'effective_resolution' => sanitize_key( $clip['effective_resolution'] ?? ( $by_index[ $index ]['effective_resolution'] ?? '' ) ),
+	                    'aspect_ratio' => sanitize_text_field( $clip['aspect_ratio'] ?? ( $by_index[ $index ]['aspect_ratio'] ?? '' ) ),
+	                    'prepared_frame_url' => esc_url_raw( $clip['prepared_frame_url'] ?? ( $by_index[ $index ]['prepared_frame_url'] ?? '' ) ),
 	                )
 	            );
 	        }
 
 	        for ( $index = 1; $index <= 4; $index++ ) {
 	            if ( empty( $by_index[ $index ] ) ) {
-	                $by_index[ $index ] = array( 'index' => $index, 'status' => 'pending', 'attempt' => 0, 'url' => '', 'error' => '', 'started_at' => '', 'finished_at' => '' );
+	                $by_index[ $index ] = array( 'index' => $index, 'status' => 'pending', 'attempt' => 0, 'url' => '', 'error' => '', 'started_at' => '', 'finished_at' => '', 'operation_id' => '', 'operation_poll_count' => 0, 'operation_checked_at' => '', 'operation_still_processing' => false );
 	            }
 	        }
 	        ksort( $by_index );
@@ -390,17 +409,29 @@ class STLAI_Video_Storage {
 	        }
 
 	        $attempt = max( 1, (int) ( $clip_job['attempt'] ?? 1 ) );
+	        if ( ! empty( $clip_job['operation_id'] ) ) {
+	            $hard_timeout = '1080p' === sanitize_key( $clip_job['effective_resolution'] ?? ( $clip_job['output_resolution'] ?? '' ) ) ? 900 : 600;
+	            if ( $age < $hard_timeout ) {
+	                $clip_job['status'] = 'generating';
+	                $clip_job['error'] = 'Operação Veo ainda em processamento.';
+	                $clip_job['operation_still_processing'] = true;
+	                return $clip_job;
+	            }
+	        }
+
 	        if ( $attempt >= 3 ) {
 	            $clip_job['status'] = 'error_final';
 	            $clip_job['attempt'] = 3;
 	            $clip_job['error'] = $clip_job['error'] ?: 'A geração do clipe demorou mais que o esperado.';
 	            $clip_job['finished_at'] = current_time( 'mysql' );
+	            $clip_job['operation_id'] = '';
 	            return $clip_job;
 	        }
 
 	        $clip_job['status'] = 'pending';
 	        $clip_job['attempt'] = $attempt;
 	        $clip_job['error'] = $clip_job['error'] ?: 'Tentativa anterior ficou sem resposta.';
+	        $clip_job['operation_id'] = '';
 	        return $clip_job;
 	    }
 

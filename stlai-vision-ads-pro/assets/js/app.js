@@ -1406,7 +1406,18 @@ function normalizeClipJobs(jobs, clips=S.video.clips){
           will_retry:Boolean(job.will_retry || job.willRetry),
           retry_reason:String(job.retry_reason || job.retryReason || ""),
           started_at:String(job.started_at || ""),
-          finished_at:String(job.finished_at || "")
+          finished_at:String(job.finished_at || ""),
+          operation_id:String(job.operation_id || ""),
+          operation_id_exists:Boolean(job.operation_id_exists || job.operation_id),
+          operation_poll_count:Number(job.operation_poll_count || 0),
+          operation_elapsed_seconds:Number(job.operation_elapsed_seconds || 0),
+          clip_operation_soft_timeout_seconds:Number(job.clip_operation_soft_timeout_seconds || 0),
+          clip_operation_hard_timeout_seconds:Number(job.clip_operation_hard_timeout_seconds || 0),
+          operation_still_processing:Boolean(job.operation_still_processing),
+          attempt_counts_operations_not_polls:job.attempt_counts_operations_not_polls !== false,
+          requested_resolution:String(job.requested_resolution || ""),
+          effective_resolution:String(job.effective_resolution || ""),
+          video_model:String(job.video_model || "")
         };
       }
     });

@@ -102,6 +102,33 @@ Jobs de vídeo passam a registrar `video_provider`, `video_model`, `output_resol
 
 Decidido
 
+## 2026-05-22 - Operações Veo longas não consomem tentativas
+
+### Decisao
+
+`VEO_OPERATION_PROCESSING` e o antigo `VEO_OPERATION_TIMEOUT` passam a significar operação viva em processamento, não falha final da tentativa. O `operation_id` do Veo deve ficar persistido em `clip_jobs[index].operation_id` e as próximas consultas devem reutilizar essa operação.
+
+Tentativas de clipe contam operações iniciadas, não polls internos. Consultar a mesma operação 10, 20 ou 30 vezes continua sendo a mesma tentativa.
+
+Timeouts por resolução:
+
+- 720p: soft 180s, hard 600s.
+- 1080p: soft 300s, hard 900s.
+
+Soft timeout apenas muda a mensagem para "ainda em processamento"; hard timeout permite encerrar a operação e iniciar nova tentativa, respeitando o limite de 3 operações.
+
+### Motivo
+
+Veo em 1080p e modelos fast pode demorar mais que 10 polls internos. Tratar isso como erro consumia as 3 tentativas e gerava `error_final` mesmo com a operação ainda viva.
+
+### Impacto
+
+`clip_jobs_summary` expõe diagnostics seguros de operação: `operation_id_exists`, `operation_id`, `operation_poll_count`, `operation_elapsed_seconds`, `clip_operation_soft_timeout_seconds`, `clip_operation_hard_timeout_seconds`, `operation_still_processing` e `attempt_counts_operations_not_polls`.
+
+### Status
+
+Decidido
+
 ## 2026-05-21 - Estado monotônico de vídeo e clipes
 
 ### Decisao

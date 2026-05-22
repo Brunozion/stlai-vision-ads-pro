@@ -878,6 +878,32 @@ Status:
 
 - Implementação concluida.
 
+## 2026-05-22 - Correção de timeout de operação Veo 1080p
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-veo-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- `operation_id` do Veo passa a ser persistido em `clip_jobs`.
+- Se a operação ainda está em processamento, o provider retorna `VEO_OPERATION_PROCESSING` com `operation_id`, sem transformar em falha final.
+- Pollings seguintes reutilizam a mesma operação em vez de criar outra.
+- Attempts contam operações iniciadas, não polls internos.
+- Timeouts por resolução: 720p soft 180s/hard 600s; 1080p soft 300s/hard 900s.
+- Diagnostics de AJAX/clip_jobs incluem dados seguros de operação e timeouts.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-21 - Concorrência 2 clipes e player final vertical compacto
 
 Arquivos alterados:

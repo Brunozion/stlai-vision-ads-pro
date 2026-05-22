@@ -84,14 +84,17 @@ class STLAI_Veo_Provider {
 
         $safe_debug = self::payload_debug( $config, $aspect_ratio['value'], $prepared_frame, $payload );
 
-        $operation = self::create_operation( $config, $body, $safe_debug );
-        if ( is_wp_error( $operation ) ) {
-            return $operation;
-        }
-
-        $operation_name = $operation['name'] ?? '';
+        $operation_name = trim( sanitize_text_field( (string) ( $payload['operation_id'] ?? '' ) ) );
         if ( empty( $operation_name ) ) {
-            return self::error( 'VEO_INVALID_RESPONSE', 'O serviço de vídeo não retornou uma operação válida.', self::join_debug( $safe_debug, 'Campo name ausente na criação da operação.' ) );
+            $operation = self::create_operation( $config, $body, $safe_debug );
+            if ( is_wp_error( $operation ) ) {
+                return $operation;
+            }
+
+            $operation_name = $operation['name'] ?? '';
+            if ( empty( $operation_name ) ) {
+                return self::error( 'VEO_INVALID_RESPONSE', 'O serviço de vídeo não retornou uma operação válida.', self::join_debug( $safe_debug, 'Campo name ausente na criação da operação.' ) );
+            }
         }
 
         $operation_debug = self::join_debug( $safe_debug, 'operation_id=' . $operation_name );
@@ -673,7 +676,22 @@ class STLAI_Veo_Provider {
             $last_debug = 'Operação ainda em processamento; tentativa ' . ( $i + 1 ) . ' de ' . self::POLL_ATTEMPTS . '.';
         }
 
-        return self::error( 'VEO_OPERATION_TIMEOUT', 'O clipe de teste ainda está em processamento. Tente novamente em alguns instantes.', self::join_debug( $safe_debug, $last_debug ) );
+        return self::processing_error( $operation_name, self::join_debug( $safe_debug, $last_debug ), self::POLL_ATTEMPTS );
+    }
+
+    private static function processing_error( $operation_name, $debug, $poll_count ) {
+        return new WP_Error(
+            'VEO_OPERATION_PROCESSING',
+            'O clipe ainda está em processamento.',
+            array(
+                'debug' => sanitize_text_field( (string) $debug ),
+                'operation_id' => sanitize_text_field( (string) $operation_name ),
+                'operation_still_processing' => true,
+                'operation_poll_count' => (int) $poll_count,
+                'retryable' => true,
+                'retry_reason' => 'operation_still_processing',
+            )
+        );
     }
 
     private static function download_video( array $config, $video_uri ) {
