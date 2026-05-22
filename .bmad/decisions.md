@@ -80,6 +80,26 @@ O painel admin passa a armazenar as credenciais e modelos futuros. Nenhuma chave
 
 Decidido
 
+## 2026-05-22 - Timer de composição atualizado em tempo real
+
+### Decisao
+
+O timer visual de "Tempo decorrido" durante a composição final deve ser atualizado no frontend por um intervalo local de 1 segundo, sem depender do polling AJAX.
+
+O frontend fixa um timestamp único por job/composição usando, nesta ordem, `composer_started_at`, `composer_elapsed_seconds` ou um timestamp local. O valor não é resetado a cada polling/re-render. O DOM do timer é atualizado diretamente por atributos `data-stlai-composition-timer` e `data-stlai-composition-timer-note`.
+
+### Motivo
+
+O timer podia travar em `00:01` porque a atualização dependia de re-render do card e do estado recebido por polling, causando resets visuais em vez de contagem contínua.
+
+### Impacto
+
+Durante `composition_queued`, `composition_processing` e `composition_waiting`, o usuário vê o timer avançar em tempo real. O intervalo é único e é limpo quando o vídeo final fica pronto, quando a composição completa ou quando ocorre erro final real.
+
+### Status
+
+Decidido
+
 ## 2026-05-22 - Identidade visual STLAI Seller
 
 ### Decisao

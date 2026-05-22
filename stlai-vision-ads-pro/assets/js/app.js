@@ -66,6 +66,8 @@ const S = {
     composerStatus: "",
     composerStartedAt: "",
     localCompositionStartedAt: 0,
+    compositionTimerStartedAtMs: 0,
+    compositionTimerJobId: "",
     composerEndpointConfigured: false,
     composerEndpointHost: "",
     composerEndpointPath: "",
@@ -1547,19 +1549,56 @@ function formatElapsedTime(seconds){
   return `${String(minutes).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
 }
 
+function parseCompositionDateMs(value){
+  if(!value) return 0;
+  const raw=String(value).trim();
+  if(!raw) return 0;
+  const candidates=[raw, raw.replace(" ", "T")];
+  for(const candidate of candidates){
+    const parsed=Date.parse(candidate);
+    if(Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function isCompositionTimerTerminalState(){
+  const status=videoStatusForDisplay();
+  const compositionStatus=String(S.video.compositionStatus || "");
+  return Boolean(
+    S.video.finalVideoUrl
+    || status==="ready"
+    || compositionStatus==="complete"
+    || compositionStatus==="ready"
+    || S.video.status==="composition_error"
+    || compositionStatus==="error"
+    || compositionStatus==="hard_timeout"
+  );
+}
+
+function ensureCompositionTimerStartedAt(){
+  if(!isVideoCompositionState() || isCompositionTimerTerminalState()) return 0;
+  const backendElapsed=Math.max(0, Number(S.video.composerElapsedSeconds || 0));
+  const backendStarted=parseCompositionDateMs(S.video.composerStartedAt);
+  const currentJobId=String(S.video.jobId || S.video.renderJobId || "");
+
+  if(S.video.compositionTimerJobId && currentJobId && S.video.compositionTimerJobId!==currentJobId){
+    stopCompositionTimerLoop();
+  }
+
+  if(!S.video.compositionTimerStartedAtMs){
+    S.video.compositionTimerStartedAtMs=backendStarted || (Date.now() - (backendElapsed * 1000));
+    S.video.localCompositionStartedAt=S.video.compositionTimerStartedAtMs;
+    S.video.compositionTimerJobId=currentJobId;
+  }
+
+  return S.video.compositionTimerStartedAtMs;
+}
+
 function compositionElapsedUiSeconds(){
-  if(S.video.finalVideoUrl || videoStatusForDisplay()==="ready" || S.video.compositionStatus==="complete") return 0;
+  if(isCompositionTimerTerminalState()) return 0;
   const backendElapsed=Number(S.video.composerElapsedSeconds || 0);
-  const startedAt=Date.parse(S.video.composerStartedAt || "");
-  if(startedAt && !Number.isNaN(startedAt)){
-    return Math.max(backendElapsed, Math.floor((Date.now() - startedAt) / 1000));
-  }
-  if(!S.video.localCompositionStartedAt && isVideoCompositionState()){
-    S.video.localCompositionStartedAt=Date.now() - (backendElapsed * 1000);
-  }
-  if(S.video.localCompositionStartedAt){
-    return Math.max(backendElapsed, Math.floor((Date.now() - S.video.localCompositionStartedAt) / 1000));
-  }
+  const startedAt=ensureCompositionTimerStartedAt();
+  if(startedAt) return Math.max(backendElapsed, Math.floor((Date.now() - startedAt) / 1000));
   return backendElapsed;
 }
 
@@ -1570,18 +1609,35 @@ function compositionTimerSubtitle(seconds=compositionElapsedUiSeconds()){
 }
 
 function startCompositionTimerLoop(){
-  if(S.video.compositionTimer || !isVideoCompositionState() || S.video.finalVideoUrl || videoStatusForDisplay()==="ready") return;
-  if(!S.video.localCompositionStartedAt && !S.video.composerStartedAt){
-    S.video.localCompositionStartedAt=Date.now() - (Number(S.video.composerElapsedSeconds || 0) * 1000);
-  }
+  if(S.video.compositionTimer || !isVideoCompositionState() || isCompositionTimerTerminalState()) return;
+  ensureCompositionTimerStartedAt();
+  updateCompositionTimerDom();
   S.video.compositionTimer=setInterval(()=>{
-    if(!isVideoCompositionState() || S.video.finalVideoUrl || videoStatusForDisplay()==="ready" || S.video.status==="composition_error"){
+    if(!isVideoCompositionState() || isCompositionTimerTerminalState()){
       stopCompositionTimerLoop(false);
       return;
     }
-    renderVideoMotion();
-    if(S.step>=6) renderSummaryVideoMotion(Boolean(S.video.finalVideoUrl));
+    updateCompositionTimerDom();
   }, 1000);
+}
+
+function updateCompositionTimerDom(){
+  if(!isVideoCompositionState() || isCompositionTimerTerminalState()) return;
+  const elapsed=compositionElapsedUiSeconds();
+  const formatted=formatElapsedTime(elapsed);
+  const note=compositionTimerSubtitle(elapsed);
+  document.querySelectorAll("[data-stlai-composition-timer]").forEach(el=>{
+    el.textContent=formatted;
+  });
+  document.querySelectorAll("[data-stlai-composition-timer-note]").forEach(el=>{
+    el.textContent=note;
+  });
+  S.video.diagnostics={
+    ...(S.video.diagnostics || {}),
+    composition_timer_started_at_ms:Number(S.video.compositionTimerStartedAtMs || 0),
+    composition_timer_elapsed_seconds:elapsed,
+    composition_timer_interval_active:Boolean(S.video.compositionTimer)
+  };
 }
 
 function stopCompositionTimerLoop(clearLocal=true){
@@ -1591,6 +1647,8 @@ function stopCompositionTimerLoop(clearLocal=true){
   }
   if(clearLocal){
     S.video.localCompositionStartedAt=0;
+    S.video.compositionTimerStartedAtMs=0;
+    S.video.compositionTimerJobId="";
   }
 }
 
@@ -1862,6 +1920,11 @@ function applyVideoState(payload={}, options={}){
   const mergedStatus=deriveMergedVideoStatus(previous, incoming, merged);
   const canUseIncomingStatus=!stale || incomingRank>=previousRank || videoPhaseRank(incoming.status)>=videoPhaseRank(previous.status);
 
+  const previousJobId=String(S.video.jobId || "");
+  const incomingJobId=String(incoming.job_id || "");
+  if(previousJobId && incomingJobId && previousJobId!==incomingJobId){
+    stopCompositionTimerLoop();
+  }
   S.video.jobId=incoming.job_id || S.video.jobId || "";
   S.video.language=normalizeVideoLanguage((!stale && (incoming.video_language || incoming.narration_language)) || S.video.language || "pt-BR");
   S.video.videoProvider=(!stale && incoming.video_provider) || incoming.diagnostics?.video_provider || S.video.videoProvider || "gemini_veo";
@@ -1926,8 +1989,8 @@ function applyVideoState(payload={}, options={}){
   S.video.willRetry=Boolean((!stale && incoming.will_retry) || incoming.diagnostics?.will_retry || false);
   S.video.errorFinalReason=(!stale && incoming.error_final_reason) || incoming.diagnostics?.error_final_reason || S.video.errorFinalReason || "";
   S.video.diagnostics=(!stale && incoming.diagnostics && typeof incoming.diagnostics==="object") ? incoming.diagnostics : (S.video.diagnostics || {});
-  if(isVideoCompositionState(merged.status, S.video.compositionStatus) && !S.video.localCompositionStartedAt && !S.video.composerStartedAt){
-    S.video.localCompositionStartedAt=Date.now() - (Number(S.video.composerElapsedSeconds || 0) * 1000);
+  if(isVideoCompositionState(merged.status, S.video.compositionStatus)){
+    ensureCompositionTimerStartedAt();
   }
   if(!S.video.errorCode && incoming.last_composer_error_code) S.video.errorCode=incoming.last_composer_error_code;
   S.video.jobVersion=Math.max(previousVersion, incomingVersion);
@@ -1965,7 +2028,7 @@ function applyVideoState(payload={}, options={}){
     }
   }else if(isVideoCompositionState()){
     startCompositionTimerLoop();
-  }else if(S.video.status==="composition_error" || S.video.status==="clip_generation_error" || S.video.status==="error"){
+  }else if(S.video.status==="composition_error" || S.video.compositionStatus==="error" || S.video.compositionStatus==="hard_timeout" || S.video.status==="clip_generation_error" || S.video.status==="error"){
     stopCompositionTimerLoop(false);
   }
   if(options.debug && S.cfg && S.cfg.debugVideo){
@@ -2276,9 +2339,11 @@ async function mockGenerateVideo(){
   S.video.failedClipRole="";
   S.video.errorCode="";
   S.video.compositionStatus="pending";
-	  S.video.composerStatus="";
+  S.video.composerStatus="";
   S.video.composerStartedAt="";
   S.video.localCompositionStartedAt=0;
+  S.video.compositionTimerStartedAtMs=0;
+  S.video.compositionTimerJobId="";
 	  S.video.renderJobId="";
 	  S.video.clipLaunchStarted=false;
   S.video.clipRequestsInFlight={};
@@ -2605,7 +2670,7 @@ function renderMotionMarkup(state){
   }).join("");
   const progress=Math.max(0,Math.min(100,Number(state.progress || 0)));
   const timerHtml=state.timerActive
-    ? `<div class="video-motion-timer"><span>Tempo decorrido</span><strong>${esc(formatElapsedTime(state.elapsedSeconds))}</strong><em>${esc(state.timerNote)}</em></div>`
+    ? `<div class="video-motion-timer"><span>Tempo decorrido</span><strong data-stlai-composition-timer>${esc(formatElapsedTime(state.elapsedSeconds))}</strong><em data-stlai-composition-timer-note>${esc(state.timerNote)}</em></div>`
     : "";
   return `<div class="video-motion-box ${state.mode==="error" ? "error" : ""}">
     <div class="video-motion-inner">
@@ -2638,7 +2703,11 @@ function renderVideoMotion(){
   }
   box.style.display="block";
   box.innerHTML=renderMotionMarkup(state);
-  if(state.timerActive) startCompositionTimerLoop();
+  if(state.timerActive){
+    ensureCompositionTimerStartedAt();
+    updateCompositionTimerDom();
+    startCompositionTimerLoop();
+  }
 }
 
 function renderSummaryVideoMotion(hasFinal=false){
@@ -2653,7 +2722,11 @@ function renderSummaryVideoMotion(hasFinal=false){
   }
   box.style.display="block";
   box.innerHTML=renderMotionMarkup(state);
-  if(state.timerActive) startCompositionTimerLoop();
+  if(state.timerActive){
+    ensureCompositionTimerStartedAt();
+    updateCompositionTimerDom();
+    startCompositionTimerLoop();
+  }
 }
 
 function renderVideoActionButton(){

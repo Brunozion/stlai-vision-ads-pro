@@ -851,6 +851,25 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-22 - Correção do timer de composição final
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+
+O que foi feito:
+
+- O timer de "Tempo decorrido" deixou de depender de novas respostas AJAX ou de re-render completo do card.
+- O frontend fixa `compositionTimerStartedAtMs` uma vez por job/composição usando `composer_started_at`, `composer_elapsed_seconds` ou fallback local.
+- Um único `setInterval` atualiza diretamente os elementos `data-stlai-composition-timer` e `data-stlai-composition-timer-note` a cada segundo.
+- O timer para ao receber vídeo final, status `ready`, composição completa ou erro final real.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Ajuste visual STLAI Seller
 
 Arquivos alterados:
