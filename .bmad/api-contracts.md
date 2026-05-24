@@ -194,6 +194,7 @@ Resposta de sucesso:
       "scheduled_clip_indexes": [1, 2, 3, 4],
       "started_clip_indexes": [1],
       "started_clip_indexes_this_tick": [1],
+      "polling_operation_indexes": [1, 2, 3, 4],
       "max_concurrent_clip_generations": 4,
       "clip_start_stagger_seconds": 1,
       "clip_generation_mode": "staggered_parallel",
@@ -255,6 +256,8 @@ Observações:
 - `scheduled` em `clip_jobs` significa que o clipe já foi reservado para geração com `scheduled_start_at`; o frontend deve iniciar o request quando chegar esse horário.
 - `max_concurrent_clip_generations` é `4` no fluxo comercial atual, com `clip_start_stagger_seconds = 1` e `clip_generation_mode = "staggered_parallel"`.
 - `started_clip_indexes_this_tick` lista somente os clipes iniciados na rodada atual; `started_clip_indexes` pode ser preservado por compatibilidade.
+- `polling_operation_indexes` lista clipes com `operation_id` ativo e sem URL, que devem continuar sendo consultados.
+- Attempts de clipe contam operações iniciadas, não polls de uma operação existente.
 
 ### 4.3 `stlai_get_video_result`
 
@@ -830,6 +833,32 @@ Estados consumidos pelo plugin:
 - `composition_processing`
 - `composition_error`
 - `ready`
+
+### GET `/ping`
+
+Endpoint público do renderer para keepalive temporário no Render Free.
+
+Autenticação:
+
+- Não exige `Authorization`.
+- Não executa FFmpeg.
+- Não altera o contrato de `/render`.
+
+Resposta:
+
+```json
+{
+  "ok": true,
+  "service": "stlai-video-renderer",
+  "ts": "2026-05-23T00:00:00.000Z"
+}
+```
+
+Uso recomendado:
+
+- Cron externo com HTTP GET.
+- URL: `https://stlai-video-renderer.onrender.com/ping`
+- Intervalo: 10 minutos.
 
 ## 13. Estados de retry automático dos clipes
 

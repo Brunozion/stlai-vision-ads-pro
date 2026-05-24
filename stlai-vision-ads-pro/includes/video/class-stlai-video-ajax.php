@@ -152,6 +152,7 @@ class STLAI_Video_Ajax {
             'clip_operation_hard_timeout_seconds' => 0,
             'operation_still_processing' => false,
         );
+        $polling_operation_indexes = array();
         foreach ( $clip_summary as $clip_item ) {
             if ( ! empty( $clip_item['retryable'] ) ) {
                 $summary_retryable = true;
@@ -173,7 +174,11 @@ class STLAI_Video_Ajax {
                     'operation_still_processing' => ! empty( $clip_item['operation_still_processing'] ),
                 );
             }
+            if ( ! empty( $clip_item['operation_id_exists'] ) && empty( $clip_item['has_url'] ) ) {
+                $polling_operation_indexes[] = (int) ( $clip_item['index'] ?? 0 );
+            }
         }
+        $polling_operation_indexes = self::public_index_list( ! empty( $job['polling_operation_indexes'] ) ? $job['polling_operation_indexes'] : $polling_operation_indexes );
         $retryable = ! empty( $job['retryable'] ) || $summary_retryable;
         $will_retry = ! empty( $job['will_retry'] ) || $summary_will_retry;
         $retry_reason = sanitize_key( $job['retry_reason'] ?? $summary_retry_reason );
@@ -244,6 +249,7 @@ class STLAI_Video_Ajax {
             'started_clip_indexes'         => $started_clip_indexes,
             'started_clip_indexes_this_tick' => $started_clip_indexes_this_tick,
             'scheduled_clip_indexes'       => self::public_index_list( $job['scheduled_clip_indexes'] ?? array() ),
+            'polling_operation_indexes'    => $polling_operation_indexes,
             'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
             'auto_clip_generation_result'  => $auto_clip_generation_result,
             'skipped_reason'               => $skipped_reason,
@@ -341,6 +347,7 @@ class STLAI_Video_Ajax {
             'started_clip_indexes' => $started_clip_indexes,
             'started_clip_indexes_this_tick' => $started_clip_indexes_this_tick,
             'scheduled_clip_indexes' => self::public_index_list( $job['scheduled_clip_indexes'] ?? array() ),
+            'polling_operation_indexes' => $polling_operation_indexes,
             'clip_generation_mode' => sanitize_key( $job['clip_generation_mode'] ?? 'staggered_parallel' ),
             'auto_clip_generation_triggered' => $auto_clip_generation_triggered,
             'auto_clip_generation_result' => $auto_clip_generation_result,
@@ -725,6 +732,8 @@ class STLAI_Video_Ajax {
             $effective_resolution = sanitize_key( $clip_job['effective_resolution'] ?? ( $clip_job['output_resolution'] ?? '720p' ) );
             $soft_timeout = '1080p' === $effective_resolution ? 300 : 180;
             $hard_timeout = '1080p' === $effective_resolution ? 900 : 600;
+            $is_stale = in_array( $status, array( 'pending', 'generating', 'retrying' ), true ) && empty( $clip_job['url'] ) && ! empty( $started_at );
+            $is_stale = $is_stale && ( ! empty( $operation_id ) ? $age >= $hard_timeout : $age >= self::CLIP_GENERATION_STALE_SECONDS );
             $summary[] = array(
                 'index'       => $index,
                 'status'      => $status ?: 'pending',
@@ -740,7 +749,7 @@ class STLAI_Video_Ajax {
                 'scheduled_start_at' => sanitize_text_field( $clip_job['scheduled_start_at'] ?? '' ),
                 'started_at'  => $started_at,
                 'age_seconds' => $age,
-                'is_stale'    => in_array( $status, array( 'pending', 'generating', 'retrying' ), true ) && empty( $clip_job['url'] ) && ! empty( $started_at ) && $age >= self::CLIP_GENERATION_STALE_SECONDS,
+                'is_stale'    => $is_stale,
                 'operation_id_exists' => ! empty( $operation_id ),
                 'operation_id' => $operation_id,
                 'operation_poll_count' => (int) ( $clip_job['operation_poll_count'] ?? 0 ),

@@ -166,6 +166,36 @@ O frontend mantém timers por índice (`clipLaunchTimersByIndex`) para que um no
 
 Decidido
 
+## 2026-05-24 - Operações Veo assíncronas e keepalive do renderer
+
+### Decisao
+
+Os 4 clipes comerciais Veo continuam com `MAX_CONCURRENT_CLIP_GENERATIONS = 4` e `CLIP_START_STAGGER_SECONDS = 1`, mas o caminho principal passa a separar o início da operação do polling.
+
+O provider Veo expõe `start_clip_operation`, que cria a operação e retorna `operation_id` rapidamente, e `poll_clip_operation`, que consulta a operação existente até retornar `processing`, `ready` ou erro controlado. O job salva `operation_id` por clipe e não cria uma nova operação para o mesmo índice enquanto houver operação ativa.
+
+Tentativas contam operações iniciadas, não polls. `VEO_OPERATION_PROCESSING` mantém o clipe em `generating` e não consome nova tentativa.
+
+A composição final continua usando o renderer externo atual no Render, sem alteração no contrato de `/render`.
+
+O renderer Node ganhou `GET /ping`, sem autenticação, para permitir keepalive externo temporário no Render Free.
+
+### Motivo
+
+Polls bloqueantes dentro da criação do clipe faziam os clipes parecerem sequenciais. Separar criação e polling permite iniciar as quatro operações quase juntas e acompanhar cada uma de forma independente.
+
+Render Free pode dormir após inatividade; o `/ping` permite usar cron-job.org para reduzir cold start sem executar FFmpeg.
+
+### Impacto
+
+O AJAX passa a expor `polling_operation_indexes` junto de `scheduled_clip_indexes`, `started_clip_indexes_this_tick`, `operation_id_exists`, `operation_elapsed_seconds` e `attempt_counts_operations_not_polls`.
+
+O frontend continua refletindo o estado por card: `scheduled` como "Agendado", `generating` como "Gerando clipe X" e processamentos longos como "Ainda processando clipe X".
+
+### Status
+
+Decidido
+
 ## 2026-05-22 - Timer de composição e bônus de score do vídeo final
 
 ### Decisao

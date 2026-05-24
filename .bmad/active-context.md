@@ -876,6 +876,33 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-24 - Start/poll Veo separado e ping do renderer
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-veo-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-video-renderer/server.js
+- stlai-video-renderer/README.md
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O provider Veo passou a ter `start_clip_operation` e `poll_clip_operation`.
+- A criação da operação salva `operation_id` rapidamente por clipe; o polling consulta a mesma operação nas chamadas seguintes.
+- Attempts contam operações iniciadas, não polls.
+- `VEO_OPERATION_PROCESSING` mantém o clipe em processamento e não vira erro/attempt novo.
+- O job service pode iniciar operações vencidas em lote quando o polling atrasar, preservando o stagger de 1 segundo e o limite 4.
+- O renderer ganhou `GET /ping` sem autenticação para keepalive via cron externo no Render Free.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Timer visível e zoom seguro da galeria
 
 Arquivos alterados:

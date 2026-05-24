@@ -71,6 +71,36 @@ Resposta esperada:
 
 Se `ffmpeg` vier `false`, instale FFmpeg/FFprobe ou configure `FFMPEG_PATH` e `FFPROBE_PATH` no ambiente.
 
+## Keepalive no Render Free
+
+O Render Free pode suspender o serviço após inatividade. Para reduzir cold start temporariamente, use um cron externo chamando o endpoint público de ping.
+
+Endpoint:
+
+```bash
+curl https://stlai-video-renderer.onrender.com/ping
+```
+
+Resposta esperada:
+
+```json
+{
+  "ok": true,
+  "service": "stlai-video-renderer",
+  "ts": "2026-05-23T00:00:00.000Z"
+}
+```
+
+Configuração sugerida no cron-job.org:
+
+- Tipo: HTTP GET
+- URL: `https://stlai-video-renderer.onrender.com/ping`
+- Intervalo: a cada 10 minutos
+- Timeout: padrão
+- Headers: nenhum header especial; não precisa `Authorization`
+
+Esse ping não melhora a CPU do plano gratuito. Ele apenas ajuda a evitar que o serviço durma e reduz o cold start antes da composição.
+
 ## Testar render assíncrono com curl
 
 Iniciar composição:

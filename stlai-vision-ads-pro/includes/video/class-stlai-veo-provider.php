@@ -42,6 +42,28 @@ class STLAI_Veo_Provider {
     }
 
     public static function generate_clip( array $payload ) {
+        $operation = self::start_clip_operation( $payload );
+        if ( is_wp_error( $operation ) ) {
+            return $operation;
+        }
+
+        $payload = array_merge(
+            $payload,
+            array(
+                'operation_id' => $operation['operation_id'] ?? '',
+                'prepared_frame_url' => $operation['prepared_frame_url'] ?? '',
+                'prepared_frame_path' => $operation['prepared_frame_path'] ?? '',
+                'prepared_frame_width' => $operation['prepared_frame_width'] ?? 0,
+                'prepared_frame_height' => $operation['prepared_frame_height'] ?? 0,
+                'prepared_frame_aspect_ratio' => $operation['aspect_ratio'] ?? '',
+                'operation_debug' => $operation['debug'] ?? '',
+            )
+        );
+
+        return self::poll_clip_operation( $operation['operation_id'] ?? '', $payload, true );
+    }
+
+    public static function start_clip_operation( array $payload ) {
         $settings = get_option( 'stlai_vision_ads_pro_settings', array() );
         $config = self::validate_config( $settings );
         if ( is_wp_error( $config ) ) {
@@ -84,22 +106,66 @@ class STLAI_Veo_Provider {
 
         $safe_debug = self::payload_debug( $config, $aspect_ratio['value'], $prepared_frame, $payload );
 
-        $operation_name = trim( sanitize_text_field( (string) ( $payload['operation_id'] ?? '' ) ) );
-        if ( empty( $operation_name ) ) {
-            $operation = self::create_operation( $config, $body, $safe_debug );
-            if ( is_wp_error( $operation ) ) {
-                return $operation;
-            }
+        $operation = self::create_operation( $config, $body, $safe_debug );
+        if ( is_wp_error( $operation ) ) {
+            return $operation;
+        }
 
-            $operation_name = $operation['name'] ?? '';
-            if ( empty( $operation_name ) ) {
-                return self::error( 'VEO_INVALID_RESPONSE', 'O serviço de vídeo não retornou uma operação válida.', self::join_debug( $safe_debug, 'Campo name ausente na criação da operação.' ) );
-            }
+        $operation_name = $operation['name'] ?? '';
+        if ( empty( $operation_name ) ) {
+            return self::error( 'VEO_INVALID_RESPONSE', 'O serviço de vídeo não retornou uma operação válida.', self::join_debug( $safe_debug, 'Campo name ausente na criação da operação.' ) );
         }
 
         $operation_debug = self::join_debug( $safe_debug, 'operation_id=' . $operation_name );
 
-        $done = self::poll_operation( $config, $operation_name, $operation_debug );
+        return array(
+            'index'          => (int) ( $payload['index'] ?? 1 ),
+            'role'           => sanitize_key( $payload['role'] ?? 'clip' ),
+            'label'          => sanitize_text_field( $payload['role_label'] ?? 'Clipe' ),
+            'prepared_frame_url' => $prepared_frame['prepared_frame_url'] ?? '',
+            'prepared_frame_path' => $prepared_frame['prepared_frame_path'] ?? '',
+            'prepared_frame_width' => (int) ( $prepared_frame['prepared_width'] ?? 0 ),
+            'prepared_frame_height' => (int) ( $prepared_frame['prepared_height'] ?? 0 ),
+            'aspect_ratio'   => $aspect_ratio['value'],
+            'provider'       => $config['provider'],
+            'model'          => $config['model'],
+            'output_resolution' => $config['effective_resolution'],
+            'requested_resolution' => $config['requested_resolution'],
+            'effective_resolution' => $config['effective_resolution'],
+            'resolution_fallback_reason' => $config['resolution_fallback_reason'],
+            'operation_id'   => $operation_name,
+            'operation_name' => $operation_name,
+            'status'         => 'processing',
+            'debug'          => $operation_debug,
+        );
+    }
+
+    public static function poll_clip_operation( $operation_name, array $payload = array(), $blocking = false ) {
+        $operation_name = trim( sanitize_text_field( (string) $operation_name ) );
+        if ( empty( $operation_name ) ) {
+            return self::error( 'VEO_OPERATION_MISSING', 'Operação de vídeo ausente.', 'operation_id vazio.' );
+        }
+
+        $settings = get_option( 'stlai_vision_ads_pro_settings', array() );
+        $config = self::validate_config( $settings );
+        if ( is_wp_error( $config ) ) {
+            return $config;
+        }
+
+        $format = sanitize_text_field( $payload['format'] ?? '' );
+        $aspect_ratio = self::aspect_ratio_for_format( $format );
+        if ( is_wp_error( $aspect_ratio ) ) {
+            return $aspect_ratio;
+        }
+
+        $operation_debug = trim( sanitize_text_field( (string) ( $payload['operation_debug'] ?? '' ) ) );
+        if ( empty( $operation_debug ) ) {
+            $operation_debug = 'operation_id=' . $operation_name;
+        }
+
+        $done = $blocking
+            ? self::poll_operation( $config, $operation_name, $operation_debug )
+            : self::poll_operation_once( $config, $operation_name, $operation_debug );
         if ( is_wp_error( $done ) ) {
             return $done;
         }
@@ -139,10 +205,10 @@ class STLAI_Veo_Provider {
             'path'           => $clip['path'],
             'duration'       => 8,
             'muted'          => true,
-            'prepared_frame_url' => $prepared_frame['prepared_frame_url'] ?? '',
-            'prepared_frame_path' => $prepared_frame['prepared_frame_path'] ?? '',
-            'prepared_frame_width' => (int) ( $prepared_frame['prepared_width'] ?? 0 ),
-            'prepared_frame_height' => (int) ( $prepared_frame['prepared_height'] ?? 0 ),
+            'prepared_frame_url' => esc_url_raw( $payload['prepared_frame_url'] ?? '' ),
+            'prepared_frame_path' => sanitize_text_field( $payload['prepared_frame_path'] ?? '' ),
+            'prepared_frame_width' => (int) ( $payload['prepared_frame_width'] ?? 0 ),
+            'prepared_frame_height' => (int) ( $payload['prepared_frame_height'] ?? 0 ),
             'aspect_ratio'   => $aspect_ratio['value'],
             'provider'       => $config['provider'],
             'model'          => $config['model'],
@@ -677,6 +743,34 @@ class STLAI_Veo_Provider {
         }
 
         return self::processing_error( $operation_name, self::join_debug( $safe_debug, $last_debug ), self::POLL_ATTEMPTS );
+    }
+
+    private static function poll_operation_once( array $config, $operation_name, $safe_debug = '' ) {
+        $url = $config['base_url'] . '/' . ltrim( $operation_name, '/' );
+        $response = wp_remote_get(
+            $url,
+            array(
+                'timeout' => 30,
+                'headers' => array(
+                    'x-goog-api-key' => $config['api_key'],
+                ),
+            )
+        );
+
+        $decoded = self::decode_json_response( $response, 'VEO_REQUEST_ERROR', 'VEO_HTTP_ERROR', 'VEO_INVALID_RESPONSE', 'Não foi possível consultar o clipe.', $safe_debug );
+        if ( is_wp_error( $decoded ) ) {
+            return $decoded;
+        }
+
+        if ( ! empty( $decoded['error'] ) ) {
+            return self::error( 'VEO_HTTP_ERROR', 'O serviço de vídeo retornou erro na operação.', self::join_debug( $safe_debug, self::extract_provider_message( wp_json_encode( $decoded ) ) ) );
+        }
+
+        if ( ! empty( $decoded['done'] ) ) {
+            return $decoded;
+        }
+
+        return self::processing_error( $operation_name, self::join_debug( $safe_debug, 'Operação ainda em processamento; polling externo do job.' ), 1 );
     }
 
     private static function processing_error( $operation_name, $debug, $poll_count ) {

@@ -41,6 +41,14 @@ app.use("/renders", express.static(RENDERS_DIR, {
   maxAge: "7d"
 }));
 
+app.get("/ping", (req, res) => {
+  res.json({
+    ok: true,
+    service: "stlai-video-renderer",
+    ts: new Date().toISOString()
+  });
+});
+
 function jsonError(res, status, code, message, debug = "", extra = {}) {
   return res.status(status).json({
     success: false,

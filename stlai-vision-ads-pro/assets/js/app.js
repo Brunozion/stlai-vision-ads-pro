@@ -2920,7 +2920,8 @@ function renderVideoClipsGridMarkup(clips){
       const maxAttempts=Number(clipJob.max_attempts || clipJob.maxAttempts || S.video.maxClipAttempts || 3);
       const attempt=Number(clipJob.attempt || 0);
       const finalFailed=failed && !willRetry && attempt >= maxAttempts;
-      const label=finalFailed ? "Erro após tentativas" : (retrying || (willRetry && isActive) ? `Ajustando clipe ${index}` : (generating ? `Gerando clipe ${index}` : (scheduled ? "Aguardando envio" : "Pendente")));
+      const operationElapsed=Number(clipJob.operation_elapsed_seconds || clipJob.operationElapsedSeconds || 0);
+      const label=finalFailed ? "Erro após tentativas" : (retrying || (willRetry && isActive) ? `Ajustando clipe ${index}` : (generating ? (operationElapsed >= 180 ? `Ainda processando clipe ${index}` : `Gerando clipe ${index}`) : (scheduled ? "Agendado" : "Pendente")));
       cards.push(`<div class="video-clip-card video-clip-card-placeholder ${isActive ? "active" : ""} ${failed ? "error" : ""}">
         <div class="video-clip-title">Clipe ${index}</div>
         <div class="video-clip-placeholder">

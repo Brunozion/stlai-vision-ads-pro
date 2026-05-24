@@ -620,6 +620,76 @@ class STLAI_Video_Job_Service {
             );
         }
 
+        $started_this_tick = array();
+        $batch_job = $job;
+        for ( $slot = 0; $slot < self::CLIP_MAX_CONCURRENT; $slot++ ) {
+            $latest_batch = STLAI_Video_Storage::get_job( $batch_job['job_id'] ) ?: $batch_job;
+            $latest_batch = self::prepare_clip_jobs_for_job( $latest_batch, array(), false );
+            $latest_batch = self::schedule_clip_jobs_for_job( $latest_batch, false );
+            $batch_clips = self::normalize_clip_list( $latest_batch['clips'] ?? array() );
+            if ( self::count_ready_clips( $batch_clips ) >= 4 ) {
+                return self::start_composition_if_ready( $latest_batch );
+            }
+
+            $batch_clip_jobs = self::normalize_clip_jobs( $latest_batch['clip_jobs'] ?? array(), $batch_clips, false );
+            if ( self::active_generating_count( $batch_clip_jobs ) >= self::CLIP_MAX_CONCURRENT ) {
+                break;
+            }
+
+            $batch_next = self::next_processable_clip_job( $batch_clip_jobs );
+            if ( ! $batch_next ) {
+                break;
+            }
+
+            $batch_next_index = (int) ( $batch_next['index'] ?? 0 );
+            if ( $batch_next_index < 1 || $batch_next_index > 4 || in_array( $batch_next_index, $started_this_tick, true ) ) {
+                break;
+            }
+
+            $batch_result = self::process_single_clip_job( $latest_batch, $batch_next_index );
+            if ( is_wp_error( $batch_result ) ) {
+                return $batch_result;
+            }
+
+            $started_this_tick[] = $batch_next_index;
+            $batch_job = $batch_result;
+        }
+
+        if ( ! empty( $started_this_tick ) ) {
+            $result_clips = self::normalize_clip_list( $batch_job['clips'] ?? array() );
+            $result_jobs = self::normalize_clip_jobs( $batch_job['clip_jobs'] ?? array(), $result_clips, false );
+            if ( self::count_ready_clips( $result_clips ) >= 4 ) {
+                return self::start_composition_if_ready( $batch_job );
+            }
+
+            return STLAI_Video_Storage::update_job(
+                $batch_job['job_id'],
+                array_merge(
+                    self::clip_job_state_fields( $result_jobs ),
+                    array(
+                        'status' => 'generating_clips',
+                        'progress' => self::clip_jobs_progress( $result_jobs ),
+                        'progress_hint' => self::clip_jobs_progress( $result_jobs ),
+                        'message' => count( $started_this_tick ) > 1 ? 'Clipes enviados ao Veo em paralelo controlado.' : 'Clipe enviado ao Veo. Aguardando processamento.',
+                        'next_clip_indexes' => self::scheduled_or_processable_clip_indexes( $result_jobs, max( 1, self::CLIP_MAX_CONCURRENT - self::active_generating_count( $result_jobs ) ) ),
+                        'started_clip_indexes' => $started_this_tick,
+                        'started_clip_indexes_this_tick' => $started_this_tick,
+                        'polling_operation_indexes' => self::active_operation_clip_indexes( $result_jobs ),
+                        'auto_clip_generation_triggered' => true,
+                        'auto_clip_generation_result' => 'operation_started',
+                        'skipped_reason' => '',
+                        'active_generating_count' => self::active_generating_count( $result_jobs ),
+                        'max_concurrent_clip_generations' => self::CLIP_MAX_CONCURRENT,
+                        'clip_start_stagger_seconds' => self::CLIP_START_STAGGER_SECONDS,
+                        'clip_generation_mode' => 'staggered_parallel',
+                        'scheduled_clip_indexes' => self::scheduled_clip_indexes( $result_jobs ),
+                        'concurrency_blocked' => false,
+                        'attempt_counts_operations_not_polls' => true,
+                    )
+                )
+            ) ?: $batch_job;
+        }
+
         $next = self::next_processable_clip_job( $clip_jobs );
         if ( ! $next ) {
             $live_operation = self::active_operation_clip_job( $clip_jobs );
@@ -818,6 +888,10 @@ class STLAI_Video_Job_Service {
                     'effective_resolution' => sanitize_key( $clip_job['effective_resolution'] ?? ( $clip_job['output_resolution'] ?? '' ) ),
                     'aspect_ratio' => sanitize_text_field( $clip_job['aspect_ratio'] ?? '' ),
                     'prepared_frame_url' => esc_url_raw( $clip_job['prepared_frame_url'] ?? '' ),
+                    'prepared_frame_path' => sanitize_text_field( $clip_job['prepared_frame_path'] ?? '' ),
+                    'prepared_frame_width' => (int) ( $clip_job['prepared_frame_width'] ?? 0 ),
+                    'prepared_frame_height' => (int) ( $clip_job['prepared_frame_height'] ?? 0 ),
+                    'operation_debug' => sanitize_text_field( $clip_job['operation_debug'] ?? '' ),
                 );
                 $by_index[ $index ] = self::recover_premature_final_clip_job( $by_index[ $index ] );
                 $by_index[ $index ] = self::recover_stale_clip_job( $by_index[ $index ] );
@@ -850,6 +924,10 @@ class STLAI_Video_Job_Service {
                 'effective_resolution' => sanitize_key( $clip['effective_resolution'] ?? ( $by_index[ $index ]['effective_resolution'] ?? '' ) ),
                 'aspect_ratio' => sanitize_text_field( $clip['aspect_ratio'] ?? ( $by_index[ $index ]['aspect_ratio'] ?? '' ) ),
                 'prepared_frame_url' => esc_url_raw( $clip['prepared_frame_url'] ?? ( $by_index[ $index ]['prepared_frame_url'] ?? '' ) ),
+                'prepared_frame_path' => sanitize_text_field( $clip['prepared_frame_path'] ?? ( $by_index[ $index ]['prepared_frame_path'] ?? '' ) ),
+                'prepared_frame_width' => (int) ( $clip['prepared_frame_width'] ?? ( $by_index[ $index ]['prepared_frame_width'] ?? 0 ) ),
+                'prepared_frame_height' => (int) ( $clip['prepared_frame_height'] ?? ( $by_index[ $index ]['prepared_frame_height'] ?? 0 ) ),
+                'operation_debug' => sanitize_text_field( $by_index[ $index ]['operation_debug'] ?? '' ),
             );
         }
 
@@ -1304,6 +1382,24 @@ class STLAI_Video_Job_Service {
         return null;
     }
 
+    private static function active_operation_clip_indexes( array $clip_jobs ) {
+        $indexes = array();
+        foreach ( $clip_jobs as $clip_job ) {
+            if ( empty( $clip_job['operation_id'] ) || ! empty( $clip_job['url'] ) ) {
+                continue;
+            }
+            if ( ! in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'pending', 'generating', 'retrying' ), true ) ) {
+                continue;
+            }
+            $index = (int) ( $clip_job['index'] ?? 0 );
+            if ( $index >= 1 && $index <= 4 ) {
+                $indexes[] = $index;
+            }
+        }
+        sort( $indexes );
+        return array_values( array_unique( $indexes ) );
+    }
+
     private static function clip_operation_timeouts( $resolution ) {
         $resolution = sanitize_key( (string) $resolution );
         if ( '1080p' === $resolution ) {
@@ -1404,6 +1500,11 @@ class STLAI_Video_Job_Service {
                 'output_resolution' => $job['output_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION,
                 'requested_resolution' => $job['requested_resolution'] ?? ( $job['output_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ),
                 'effective_resolution' => $job['effective_resolution'] ?? ( $job['output_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ),
+                'prepared_frame_url' => esc_url_raw( $existing_clip_job['prepared_frame_url'] ?? '' ),
+                'prepared_frame_path' => sanitize_text_field( $existing_clip_job['prepared_frame_path'] ?? '' ),
+                'prepared_frame_width' => (int) ( $existing_clip_job['prepared_frame_width'] ?? 0 ),
+                'prepared_frame_height' => (int) ( $existing_clip_job['prepared_frame_height'] ?? 0 ),
+                'operation_debug' => sanitize_text_field( $existing_clip_job['operation_debug'] ?? '' ),
             )
         );
 
@@ -1415,7 +1516,7 @@ class STLAI_Video_Job_Service {
                     'status'               => 'generating_clip_' . $clip_index,
                     'progress'             => self::clip_jobs_progress( $clip_jobs ),
                     'progress_hint'        => self::clip_progress_hint( $clip_index ),
-                    'message'              => 'Gerando clipe ' . $clip_index . ' de 4.',
+                    'message'              => $has_live_operation ? 'Consultando processamento do clipe ' . $clip_index . ' no Veo.' : 'Enviando clipe ' . $clip_index . ' ao Veo.',
                     'current_clip_index'   => $clip_index,
                     'current_clip_attempt' => $start_attempt,
                     'clip_retry_count'     => max( 0, $start_attempt - 1 ),
@@ -1424,8 +1525,8 @@ class STLAI_Video_Job_Service {
                     'max_concurrent_clip_generations' => self::CLIP_MAX_CONCURRENT,
                     'clip_start_stagger_seconds' => self::CLIP_START_STAGGER_SECONDS,
                     'clip_generation_mode' => 'staggered_parallel',
-                    'started_clip_indexes' => array( $clip_index ),
-                    'started_clip_indexes_this_tick' => array( $clip_index ),
+                    'started_clip_indexes' => $has_live_operation ? array() : array( $clip_index ),
+                    'started_clip_indexes_this_tick' => $has_live_operation ? array() : array( $clip_index ),
                     'retryable'            => false,
                     'retry_reason'         => '',
                     'will_retry'           => false,
@@ -1439,26 +1540,101 @@ class STLAI_Video_Job_Service {
             )
         );
 
-        $clip = self::generate_clip_with_retries(
-            $job,
-            $clips,
-            array(
-                'image_url'            => $selected_images[ $clip_index - 1 ]['url'] ?? '',
-                'format'               => $job['format'] ?? '16:9',
-                'script'               => $job['script_public'] ?? ( $job['script'] ?? '' ),
-                'product_name'         => $job['product_name'] ?? '',
-                'product_description'  => $job['product_description'] ?? '',
-                'index'                => $clip_index,
-                'role'                 => $role['role'] ?? '',
-                'role_label'           => $role['label'] ?? '',
-                'role_direction'       => $role['direction'] ?? '',
-                'start_attempt'        => $start_attempt,
-                'video_provider'       => $job['video_provider'] ?? self::DEFAULT_VIDEO_PROVIDER,
-                'video_model'          => $job['video_model'] ?? self::DEFAULT_VIDEO_MODEL,
-                'output_resolution'    => $job['output_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION,
-                'operation_id'         => $has_live_operation ? $operation_id : '',
-            )
+        $clip_payload = array(
+            'image_url'            => $selected_images[ $clip_index - 1 ]['url'] ?? '',
+            'format'               => $job['format'] ?? '16:9',
+            'script'               => $job['script_public'] ?? ( $job['script'] ?? '' ),
+            'product_name'         => $job['product_name'] ?? '',
+            'product_description'  => $job['product_description'] ?? '',
+            'index'                => $clip_index,
+            'role'                 => $role['role'] ?? '',
+            'role_label'           => $role['label'] ?? '',
+            'role_direction'       => $role['direction'] ?? '',
+            'start_attempt'        => $start_attempt,
+            'video_provider'       => $job['video_provider'] ?? self::DEFAULT_VIDEO_PROVIDER,
+            'video_model'          => $job['video_model'] ?? self::DEFAULT_VIDEO_MODEL,
+            'output_resolution'    => $job['output_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION,
+            'operation_id'         => $has_live_operation ? $operation_id : '',
+            'prepared_frame_url'   => $existing_clip_job['prepared_frame_url'] ?? '',
+            'prepared_frame_path'  => $existing_clip_job['prepared_frame_path'] ?? '',
+            'prepared_frame_width' => $existing_clip_job['prepared_frame_width'] ?? 0,
+            'prepared_frame_height' => $existing_clip_job['prepared_frame_height'] ?? 0,
+            'operation_debug'      => $existing_clip_job['operation_debug'] ?? '',
         );
+
+        if ( $has_live_operation ) {
+            $clip = STLAI_Veo_Provider::poll_clip_operation( $operation_id, $clip_payload );
+        } else {
+            $operation = STLAI_Veo_Provider::start_clip_operation( $clip_payload );
+            if ( ! is_wp_error( $operation ) ) {
+                $latest = STLAI_Video_Storage::get_job( $job['job_id'] ) ?: $job;
+                $clips = self::normalize_clip_list( $latest['clips'] ?? $clips );
+                $clip_jobs = self::normalize_clip_jobs( $latest['clip_jobs'] ?? array(), $clips, false );
+                $clip_jobs = self::replace_clip_job(
+                    $clip_jobs,
+                    $clip_index,
+                    array(
+                        'status' => 'generating',
+                        'attempt' => $start_attempt,
+                        'error' => '',
+                        'scheduled_start_at' => '',
+                        'finished_at' => '',
+                        'operation_id' => sanitize_text_field( $operation['operation_id'] ?? '' ),
+                        'operation_poll_count' => 0,
+                        'operation_still_processing' => true,
+                        'operation_checked_at' => current_time( 'mysql' ),
+                        'provider' => sanitize_key( $operation['provider'] ?? ( $job['video_provider'] ?? self::DEFAULT_VIDEO_PROVIDER ) ),
+                        'model' => sanitize_text_field( $operation['model'] ?? ( $job['video_model'] ?? self::DEFAULT_VIDEO_MODEL ) ),
+                        'output_resolution' => sanitize_key( $operation['output_resolution'] ?? ( $job['output_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ) ),
+                        'requested_resolution' => sanitize_key( $operation['requested_resolution'] ?? ( $job['requested_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ) ),
+                        'effective_resolution' => sanitize_key( $operation['effective_resolution'] ?? ( $job['effective_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ) ),
+                        'aspect_ratio' => sanitize_text_field( $operation['aspect_ratio'] ?? ( $job['format'] ?? '' ) ),
+                        'prepared_frame_url' => esc_url_raw( $operation['prepared_frame_url'] ?? '' ),
+                        'prepared_frame_path' => sanitize_text_field( $operation['prepared_frame_path'] ?? '' ),
+                        'prepared_frame_width' => (int) ( $operation['prepared_frame_width'] ?? 0 ),
+                        'prepared_frame_height' => (int) ( $operation['prepared_frame_height'] ?? 0 ),
+                        'operation_debug' => sanitize_text_field( $operation['debug'] ?? '' ),
+                    )
+                );
+
+                return STLAI_Video_Storage::update_job(
+                    $job['job_id'],
+                    array_merge(
+                        self::clip_job_state_fields( $clip_jobs ),
+                        array(
+                            'status' => 'generating_clips',
+                            'progress' => self::clip_jobs_progress( $clip_jobs ),
+                            'progress_hint' => self::clip_progress_hint( $clip_index ),
+                            'message' => 'Clipe ' . $clip_index . ' enviado ao Veo. Aguardando processamento.',
+                            'current_clip_index' => $clip_index,
+                            'current_clip_attempt' => $start_attempt,
+                            'clip_retry_count' => max( 0, $start_attempt - 1 ),
+                            'last_clip_error' => '',
+                            'retryable' => true,
+                            'retry_reason' => 'operation_still_processing',
+                            'will_retry' => true,
+                            'operation_still_processing' => true,
+                            'operation_id' => sanitize_text_field( $operation['operation_id'] ?? '' ),
+                            'operation_poll_count' => 0,
+                            'polling_operation_indexes' => self::active_operation_clip_indexes( $clip_jobs ),
+                            'clip_operation_soft_timeout_seconds' => $operation_timeouts['soft'],
+                            'clip_operation_hard_timeout_seconds' => $operation_timeouts['hard'],
+                            'attempt_counts_operations_not_polls' => true,
+                            'max_concurrent_clip_generations' => self::CLIP_MAX_CONCURRENT,
+                            'clip_start_stagger_seconds' => self::CLIP_START_STAGGER_SECONDS,
+                            'clip_generation_mode' => 'staggered_parallel',
+                            'started_clip_indexes' => array( $clip_index ),
+                            'started_clip_indexes_this_tick' => array( $clip_index ),
+                            'error_code' => '',
+                            'error_message' => '',
+                            'error_debug' => '',
+                        )
+                    )
+                );
+            }
+
+            $clip = $operation;
+        }
 
         $latest = STLAI_Video_Storage::get_job( $job['job_id'] ) ?: $job;
         $clips = self::normalize_clip_list( $latest['clips'] ?? $clips );
