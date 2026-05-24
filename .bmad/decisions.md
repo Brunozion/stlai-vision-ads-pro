@@ -104,6 +104,32 @@ Diagnostics passam a indicar `global_status_before_normalization`, `global_statu
 
 Decidido
 
+## 2026-05-24 - UX de vídeo e organização das Configurações de IA
+
+### Decisao
+
+A etapa de preparação de vídeo remove o botão público "Testar clipe IA"; o endpoint/função interna pode continuar existindo para desenvolvimento, mas não aparece para o usuário final.
+
+O botão "Acompanhar resultado" passa a levar ao topo da página Resultado, não diretamente à seção de vídeo.
+
+A seleção de imagens para vídeo foi padronizada para exatamente 4 imagens. A galeria continua exibindo até 8 imagens geradas, mas o vídeo usa 4 imagens, uma para cada clipe.
+
+A página Configurações de IA foi reorganizada em blocos profissionais: Provedores de Texto, Provedores de Imagem, Inteligência de Mercado, Vídeo Comercial, Composição Final, Narração / ElevenLabs e UGC Futuro.
+
+Configurações de vídeo comercial e provider de vídeo comercial ficam em um bloco único. Os campos de modelo e credenciais aparecem conforme o provider selecionado. Gemini Veo é marcado como ativo no MVP; Fal.ai, Atlas Cloud e MuAPI aparecem como futuros.
+
+### Motivo
+
+O botão de teste confundia o fluxo final, o atalho de resultado pulava o contexto geral do resultado, a seleção 4 a 8 não refletia o pipeline atual de 4 clipes, e o admin misturava campos de provider/modelo sem contexto.
+
+### Impacto
+
+As option keys existentes foram preservadas para compatibilidade. Novos campos futuros de provider podem ser salvos, mas não alteram o fluxo funcional atual. Providers não implementados ficam visualmente identificados como "em breve" ou custom dependente de contrato compatível.
+
+### Status
+
+Decidido
+
 ## 2026-05-22 - Timer visível e zoom sem asset quebrado
 
 ### Decisao

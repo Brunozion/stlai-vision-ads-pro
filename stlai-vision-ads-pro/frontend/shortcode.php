@@ -432,7 +432,7 @@
   <div class="sh">
     <div class="sh-tag">✦ Passo 4 de 6</div>
     <h1>Imagens geradas</h1>
-    <p id="img-step-sub">Imagens individuais prontas. Selecione de 4 a 8 imagens para o vídeo.</p>
+    <p id="img-step-sub">Imagens individuais prontas. Escolha exatamente 4 imagens para compor os clipes do vídeo.</p>
   </div>
 
   <div id="i-ld" style="display:none">
@@ -469,8 +469,8 @@
 
     <div style="display:flex;align-items:center;gap:12px;background:#061b17;border:1px solid #144f43;border-radius:12px;padding:14px 18px;margin-top:14px">
       <span style="font-size:18px">🎬</span>
-      <span style="font-size:13px;color:#a0d7cc;font-weight:500">Selecione de 4 a 8 imagens para o vídeo</span>
-      <span style="margin-left:auto;font-family:'Syne',sans-serif;font-size:14px;font-weight:800;color:#fff" id="vsc">0 / 8</span>
+      <span style="font-size:13px;color:#a0d7cc;font-weight:500">Escolha 4 imagens para o vídeo. Elas serão usadas para criar os 4 clipes do anúncio.</span>
+      <span style="margin-left:auto;font-family:'Syne',sans-serif;font-size:14px;font-weight:800;color:#fff" id="vsc">0/4 selecionadas</span>
     </div>
   </div>
 
@@ -496,8 +496,8 @@
     <div class="card video-prep-main">
       <div class="video-panel-head">
         <div>
-          <div class="sl">Imagens selecionadas para o vídeo</div>
-          <p>Estas imagens serão usadas para preparar os clipes comerciais.</p>
+          <div class="sl">Escolha 4 imagens para o vídeo</div>
+          <p>Essas imagens serão usadas para criar os 4 clipes do seu anúncio.</p>
         </div>
         <button class="btn bs bsm" onclick="go(4)">← Voltar para imagens</button>
       </div>
@@ -619,7 +619,6 @@
     <button class="btn bs" onclick="go(4)">← Voltar para imagens</button>
     <div class="arr">
       <button class="btn bs" id="btn-video-result" onclick="goVideoResult()">Ir para resultado</button>
-      <button class="btn bs" id="btn-test-veo-clip" onclick="generateTestVeoClip(this)">Testar clipe IA</button>
       <button class="btn bp" id="btn-generate-video" onclick="mockGenerateVideo()">Gerar vídeo</button>
     </div>
   </div>

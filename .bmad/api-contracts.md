@@ -1648,6 +1648,8 @@ Rules:
 - Providers other than `gemini_veo` may be configured, but return `VIDEO_PROVIDER_NOT_IMPLEMENTED` until implemented.
 - Invalid provider/model/resolution values fall back to `gemini_veo`, `veo-3.1-lite-generate-preview` and `720p`.
 - Commercial video prompts must explicitly block glitter, purple particles, overlays, REC/HUD/camera UI, text, watermark, artificial visual effects and invented product functions.
+- Public UI currently asks the user to select exactly 4 generated images for video composition, matching the 4 commercial clips.
+- The admin UI groups commercial video provider, model, credentials and output resolution in one "Vídeo Comercial" block; provider-specific future fields are UI/config only until their runtime providers are implemented.
 
 ## Veo clip operation polling
 

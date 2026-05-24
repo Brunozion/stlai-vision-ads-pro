@@ -426,7 +426,7 @@ function syncImageStepCopy(){
   const stepSub = document.getElementById("img-step-sub");
   const blockLabel = document.getElementById("img-block1-label");
   const blockDesc = document.getElementById("img-block1-desc");
-  if(stepSub) stepSub.textContent = `${count} imagens individuais 1:1 + 1 imagem combo 2x2. Clique para selecionar para vídeo.`;
+  if(stepSub) stepSub.textContent = `${count} imagens individuais 1:1 + 1 imagem combo 2x2. Escolha exatamente 4 imagens para o vídeo.`;
   if(blockLabel) blockLabel.innerHTML = `Bloco 1 — ${count} imagens individuais <span>1:1 QUADRADO</span>`;
   if(blockDesc) blockDesc.textContent = S.plan === "premium"
     ? "Fundo branco + cenas ambientadas + destaque de acabamento e benefício"
@@ -663,7 +663,7 @@ async function startImgGen(){
   document.getElementById("i-out").style.display="block";
   document.getElementById("i-act").style.display="none";
   S.imgs4=[]; S.comboUrl=null; S.selVid=[]; S.imageComboJobs=[]; S.imageDiagnostics={};
-  document.getElementById("vsc").textContent="0/8";
+  document.getElementById("vsc").textContent="0/4 selecionadas";
 
   const g=document.getElementById("grid4");g.innerHTML="";
   // Adiciona a classe que renderiza a animação nos cards individuais
@@ -1213,15 +1213,15 @@ function togVid(key,tile){
   const idx=S.selVid.indexOf(key);
   if(idx>-1){S.selVid.splice(idx,1);tile.classList.remove("fv");}
   else{
-    if(S.selVid.length>=8){toast("Máximo 8 imagens.","warn");return;}
+    if(S.selVid.length>=4){toast("Escolha exatamente 4 imagens para o vídeo.","warn");return;}
     S.selVid.push(key);tile.classList.add("fv");
   }
-  document.getElementById("vsc").textContent=`${S.selVid.length}/8`;
+  document.getElementById("vsc").textContent=`${S.selVid.length}/4 selecionadas`;
 }
 
 function goVideoStep(){
-  if(S.selVid.length<4){
-    toast("Selecione pelo menos 4 imagens para gerar o vídeo.","warn");
+  if(S.selVid.length!==4){
+    toast("Selecione exatamente 4 imagens para gerar o vídeo.","warn");
     return;
   }
   go(5);
@@ -1231,7 +1231,7 @@ function goVideoResult(){
   unlock(6);
   go(6);
   setTimeout(()=>{
-    const target=document.getElementById("result-video-section");
+    const target=document.getElementById("s6");
     if(target) target.scrollIntoView({behavior:"smooth", block:"start"});
   }, 120);
 }
@@ -2373,8 +2373,8 @@ async function mockGenerateVideo(){
   }
 
   const selected=selectedVideoImagesForPayload();
-  if(selected.length<4 || selected.length>8){
-    toast("Selecione de 4 a 8 imagens para gerar o vídeo.","warn");
+  if(selected.length!==4){
+    toast("Selecione exatamente 4 imagens para gerar o vídeo.","warn");
     return;
   }
 

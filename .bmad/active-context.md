@@ -875,6 +875,31 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-24 - UX de seleção de vídeo e admin de IA
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/admin/settings-page.php
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- Removido da UI pública o botão "Testar clipe IA".
+- "Acompanhar resultado" agora abre o passo Resultado no topo.
+- Seleção de imagens para vídeo exige exatamente 4 imagens, refletindo o pipeline de 4 clipes.
+- Configurações de IA foram reorganizadas em blocos claros.
+- Configurações de vídeo comercial e provider comercial foram unificadas no bloco "Vídeo Comercial".
+- Campos do provider comercial agora aparecem condicionalmente conforme o provider escolhido.
+- Gemini Veo aparece como provider ativo do MVP; Fal.ai, Atlas Cloud e MuAPI ficam marcados como futuros.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Clipes comerciais em stagger paralelo 4x
 
 Arquivos alterados:

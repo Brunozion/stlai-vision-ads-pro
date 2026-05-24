@@ -175,7 +175,7 @@ function stlai_render_text_field( $args ) {
     $options = get_option( 'stlai_vision_ads_pro_settings' );
     $val = isset($options[$args['id']]) ? $options[$args['id']] : ($args['default'] ?? '');
     $placeholder = isset($args['placeholder']) ? ' placeholder="' . esc_attr($args['placeholder']) . '"' : '';
-    echo '<input type="text" class="regular-text" style="width:100%; max-width:500px;" name="stlai_vision_ads_pro_settings[' . esc_attr( $args['id'] ) . ']" value="' . esc_attr( $val ) . '"' . $placeholder . '>';
+    echo '<input type="text" id="' . esc_attr( $args['id'] ) . '" class="regular-text" style="width:100%; max-width:500px;" name="stlai_vision_ads_pro_settings[' . esc_attr( $args['id'] ) . ']" value="' . esc_attr( $val ) . '"' . $placeholder . '>';
     if (!empty($args['description'])) {
         echo '<p class="description">' . esc_html($args['description']) . '</p>';
     }
@@ -185,7 +185,7 @@ function stlai_render_password_field( $args ) {
     $options = get_option( 'stlai_vision_ads_pro_settings' );
     $val = isset($options[$args['id']]) ? $options[$args['id']] : '';
     $placeholder = isset($args['placeholder']) ? ' placeholder="' . esc_attr($args['placeholder']) . '"' : '';
-    echo '<input type="password" class="regular-text" style="width:100%; max-width:500px;" name="stlai_vision_ads_pro_settings[' . esc_attr( $args['id'] ) . ']" value="' . esc_attr( $val ) . '"' . $placeholder . '>';
+    echo '<input type="password" id="' . esc_attr( $args['id'] ) . '" class="regular-text" style="width:100%; max-width:500px;" name="stlai_vision_ads_pro_settings[' . esc_attr( $args['id'] ) . ']" value="' . esc_attr( $val ) . '"' . $placeholder . '>';
     if (!empty($args['description'])) {
         echo '<p class="description">' . esc_html($args['description']) . '</p>';
     }
@@ -195,13 +195,13 @@ function stlai_render_textarea_field( $args ) {
     $options = get_option( 'stlai_vision_ads_pro_settings' );
     $val = isset($options[$args['id']]) ? $options[$args['id']] : '';
     $rows = isset($args['rows']) ? $args['rows'] : 8;
-    echo '<textarea class="large-text" style="width:100%; max-width:800px;" rows="' . esc_attr($rows) . '" name="stlai_vision_ads_pro_settings[' . esc_attr( $args['id'] ) . ']">' . esc_textarea( $val ) . '</textarea>';
+    echo '<textarea id="' . esc_attr( $args['id'] ) . '" class="large-text" style="width:100%; max-width:800px;" rows="' . esc_attr($rows) . '" name="stlai_vision_ads_pro_settings[' . esc_attr( $args['id'] ) . ']">' . esc_textarea( $val ) . '</textarea>';
 }
 
 function stlai_render_select_field( $args ) {
     $options = get_option( 'stlai_vision_ads_pro_settings' );
     $val = isset($options[$args['id']]) ? $options[$args['id']] : ($args['default'] ?? '');
-    echo '<select name="stlai_vision_ads_pro_settings[' . esc_attr( $args['id'] ) . ']">';
+    echo '<select id="' . esc_attr( $args['id'] ) . '" name="stlai_vision_ads_pro_settings[' . esc_attr( $args['id'] ) . ']">';
     foreach ( $args['options'] as $k => $v ) {
         echo '<option value="' . esc_attr($k) . '" ' . selected( $val, $k, false ) . '>' . esc_html($v) . '</option>';
     }
@@ -246,18 +246,153 @@ function stlai_dashboard_page() {
     <?php
 }
 
+function stlai_admin_settings_card( $title, $description, $rows_callback ) {
+    echo '<section class="stlai-admin-card">';
+    echo '<div class="stlai-admin-card__head"><h2>' . esc_html( $title ) . '</h2>';
+    if ( ! empty( $description ) ) {
+        echo '<p>' . esc_html( $description ) . '</p>';
+    }
+    echo '</div><table class="form-table" role="presentation"><tbody>';
+    call_user_func( $rows_callback );
+    echo '</tbody></table></section>';
+}
+
+function stlai_admin_field_row( $label, $callback, $args, $class = '', $note = '' ) {
+    echo '<tr' . ( $class ? ' class="' . esc_attr( $class ) . '"' : '' ) . '>';
+    echo '<th scope="row"><label for="' . esc_attr( $args['id'] ?? '' ) . '">' . esc_html( $label ) . '</label></th>';
+    echo '<td>';
+    call_user_func( $callback, $args );
+    if ( ! empty( $note ) ) {
+        echo '<p class="description">' . esc_html( $note ) . '</p>';
+    }
+    echo '</td></tr>';
+}
+
+function stlai_admin_notice_row( $message, $class = 'notice-info', $provider_class = '' ) {
+    echo '<tr' . ( $provider_class ? ' class="' . esc_attr( $provider_class ) . '"' : '' ) . '><th scope="row"></th><td>';
+    echo '<div class="notice ' . esc_attr( $class ) . ' inline stlai-provider-notice"><p>' . esc_html( $message ) . '</p></div>';
+    echo '</td></tr>';
+}
+
 function stlai_config_ia_page() {
     ?>
     <div class="wrap">
         <h1>Configurações de Inteligência Artificial</h1>
-        <p>Informe suas credenciais e os modelos desejados.</p>
-        <form action="options.php" method="post" style="background:#fff; padding:20px; border:1px solid #ccd0d4; border-radius:8px; margin-top:15px;">
+        <p>Informe suas credenciais e modelos por área. Gemini Veo é o provider de vídeo funcional no MVP.</p>
+        <style>
+            .stlai-admin-settings{max-width:1120px;margin-top:18px}
+            .stlai-admin-card{background:#fff;border:1px solid #dcdcde;border-radius:10px;margin:0 0 18px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+            .stlai-admin-card__head{padding:18px 20px;border-bottom:1px solid #f0f0f1}
+            .stlai-admin-card__head h2{margin:0;color:#1d2327;font-size:18px}
+            .stlai-admin-card__head p{margin:6px 0 0;color:#646970;max-width:760px}
+            .stlai-admin-card .form-table{margin:0}
+            .stlai-admin-card .form-table th{padding-left:20px;width:260px}
+            .stlai-admin-card .form-table td{padding-right:20px}
+            .stlai-provider-notice{margin:0;max-width:720px}
+            .stlai-admin-provider-hidden{display:none}
+        </style>
+        <form action="options.php" method="post" class="stlai-admin-settings">
             <?php
             settings_fields( 'stlai_settings_group' );
-            do_settings_sections( 'stlai_config_ia_page' );
+            stlai_admin_settings_card( 'Provedores de Texto', 'Modelos e credenciais usados para títulos, descrição e leitura textual.', function() {
+                stlai_admin_field_row( 'IA para Textos', 'stlai_render_select_field', array( 'id' => 'txtApi', 'options' => array( 'openai' => 'OpenAI', 'gemini' => 'Google Gemini' ) ) );
+                stlai_admin_field_row( 'OpenAI API Key', 'stlai_render_password_field', array( 'id' => 'apiKey' ) );
+                stlai_admin_field_row( 'OpenAI Endpoint URL', 'stlai_render_text_field', array( 'id' => 'url' ) );
+                stlai_admin_field_row( 'OpenAI Modelo Texto', 'stlai_render_text_field', array( 'id' => 'textModel' ) );
+                stlai_admin_field_row( 'Gemini API Key', 'stlai_render_password_field', array( 'id' => 'geminiKey' ) );
+                stlai_admin_field_row( 'Gemini Endpoint URL', 'stlai_render_text_field', array( 'id' => 'geminiUrl' ) );
+                stlai_admin_field_row( 'Gemini Modelo Texto', 'stlai_render_text_field', array( 'id' => 'geminiTextModel' ) );
+            } );
+
+            stlai_admin_settings_card( 'Provedores de Imagem', 'Configurações usadas na geração da galeria de imagens comerciais.', function() {
+                stlai_admin_field_row( 'IA para Imagens', 'stlai_render_select_field', array( 'id' => 'imgApi', 'options' => array( 'openai' => 'OpenAI', 'gemini' => 'Google Gemini' ) ) );
+                stlai_admin_field_row( 'OpenAI Modelo Imagem', 'stlai_render_text_field', array( 'id' => 'imageModel' ) );
+                stlai_admin_field_row( 'Gemini Modelo Imagem', 'stlai_render_text_field', array( 'id' => 'geminiImageModel' ) );
+                stlai_admin_field_row( 'Quality', 'stlai_render_select_field', array( 'id' => 'imageQuality', 'default' => 'auto', 'options' => array( 'auto' => 'Auto', 'high' => 'Alta', 'medium' => 'Média', 'low' => 'Baixa' ) ) );
+                stlai_admin_field_row( 'Qualidade de Imagem OpenAI', 'stlai_render_text_field', array( 'id' => 'imgQuality' ) );
+                stlai_admin_field_row( 'Resolução de Imagem', 'stlai_render_text_field', array( 'id' => 'imgResolution', 'placeholder' => 'ex: 1024x1024, 1k, 2k' ) );
+            } );
+
+            stlai_admin_settings_card( 'Inteligência de Mercado', 'Credenciais para pesquisa competitiva e dados de marketplace.', function() {
+                stlai_admin_field_row( 'SerpAPI Key', 'stlai_render_password_field', array( 'id' => 'serpapiKey' ) );
+                stlai_admin_field_row( 'Mercado Livre App ID', 'stlai_render_text_field', array( 'id' => 'mlAppId' ) );
+                stlai_admin_field_row( 'Mercado Livre Secret Key', 'stlai_render_password_field', array( 'id' => 'mlSecretKey' ) );
+            } );
+
+            stlai_admin_settings_card( 'Vídeo Comercial', 'Provider, modelo e resolução para os 4 clipes comerciais. No MVP, Gemini Veo é o fluxo ativo.', function() {
+                stlai_admin_field_row( 'Provider de vídeo', 'stlai_render_select_field', array( 'id' => 'commercialVideoProvider', 'default' => 'gemini_veo', 'options' => array( 'gemini_veo' => 'Gemini Veo (ativo no MVP)', 'fal_ai' => 'Fal.ai (em breve)', 'atlas_cloud' => 'Atlas Cloud (em breve)', 'muapi' => 'MuAPI (em breve)', 'custom' => 'Custom' ), 'description' => 'Providers futuros podem ser salvos, mas o fluxo principal atual usa Gemini Veo.' ) );
+                stlai_admin_notice_row( 'Gemini Veo está ativo no MVP e será usado para gerar os clipes comerciais.', 'notice-info', 'stlai-provider-row stlai-provider-gemini_veo' );
+                stlai_admin_field_row( 'Video API Key', 'stlai_render_password_field', array( 'id' => 'videoApiKey' ), 'stlai-provider-row stlai-provider-gemini_veo' );
+                stlai_admin_field_row( 'Video Base URL', 'stlai_render_text_field', array( 'id' => 'videoBaseUrl', 'placeholder' => 'Endpoint/base URL da API de vídeo' ), 'stlai-provider-row stlai-provider-gemini_veo' );
+                stlai_admin_field_row( 'Modelo Gemini/Veo', 'stlai_render_select_field', array( 'id' => 'commercialVideoModel', 'default' => 'veo-3.1-lite-generate-preview', 'options' => array( 'veo-3.1-lite-generate-preview' => 'veo-3.1-lite-generate-preview (Lite)', 'veo-3.1-fast-generate-preview' => 'veo-3.1-fast-generate-preview (Fast)', 'veo-3.1-generate-preview' => 'veo-3.1-generate-preview', 'veo-2.0-generate-001' => 'veo-2.0-generate-001' ), 'description' => 'Lite é mais barato/rápido; Fast é equilíbrio; Generate tende a maior qualidade/custo.' ), 'stlai-provider-row stlai-provider-gemini_veo' );
+                stlai_admin_field_row( 'Resolução de saída', 'stlai_render_select_field', array( 'id' => 'commercialVideoOutputResolution', 'default' => '720p', 'options' => array( '720p' => '720p', '1080p' => '1080p' ), 'description' => '720p é mais rápido e econômico. 1080p melhora qualidade, mas pode demorar mais.' ), 'stlai-provider-row stlai-provider-gemini_veo stlai-provider-custom' );
+
+                stlai_admin_notice_row( 'Fal.ai está preparado para uso futuro. O fluxo principal atual usa Gemini Veo.', 'notice-warning', 'stlai-provider-row stlai-provider-fal_ai' );
+                stlai_admin_field_row( 'Fal.ai API Key', 'stlai_render_password_field', array( 'id' => 'falAiApiKey' ), 'stlai-provider-row stlai-provider-fal_ai' );
+                stlai_admin_field_row( 'Fal.ai Base URL', 'stlai_render_text_field', array( 'id' => 'falAiBaseUrl' ), 'stlai-provider-row stlai-provider-fal_ai' );
+                stlai_admin_field_row( 'Fal.ai Model', 'stlai_render_text_field', array( 'id' => 'falAiModel', 'placeholder' => 'fal-ai/pixverse/v6/image-to-video' ), 'stlai-provider-row stlai-provider-fal_ai' );
+
+                stlai_admin_notice_row( 'Atlas Cloud está preparado para uso futuro e ainda não está ativo no MVP.', 'notice-warning', 'stlai-provider-row stlai-provider-atlas_cloud' );
+                stlai_admin_field_row( 'Atlas API Key', 'stlai_render_password_field', array( 'id' => 'atlasCloudApiKey' ), 'stlai-provider-row stlai-provider-atlas_cloud' );
+                stlai_admin_field_row( 'Atlas Base URL', 'stlai_render_text_field', array( 'id' => 'atlasCloudBaseUrl' ), 'stlai-provider-row stlai-provider-atlas_cloud' );
+                stlai_admin_field_row( 'Atlas Model', 'stlai_render_text_field', array( 'id' => 'atlasCloudModel' ), 'stlai-provider-row stlai-provider-atlas_cloud' );
+
+                stlai_admin_notice_row( 'MuAPI está preparado para uso futuro e ainda não está ativo no MVP.', 'notice-warning', 'stlai-provider-row stlai-provider-muapi' );
+                stlai_admin_field_row( 'MuAPI Key', 'stlai_render_password_field', array( 'id' => 'commercialMuApiKey' ), 'stlai-provider-row stlai-provider-muapi' );
+                stlai_admin_field_row( 'MuAPI Base URL', 'stlai_render_text_field', array( 'id' => 'commercialMuApiBaseUrl' ), 'stlai-provider-row stlai-provider-muapi' );
+                stlai_admin_field_row( 'MuAPI Model', 'stlai_render_text_field', array( 'id' => 'commercialMuApiModel' ), 'stlai-provider-row stlai-provider-muapi' );
+
+                stlai_admin_notice_row( 'Provider customizado requer implementação compatível com o contrato de vídeo do plugin.', 'notice-warning', 'stlai-provider-row stlai-provider-custom' );
+                stlai_admin_field_row( 'Custom Endpoint', 'stlai_render_text_field', array( 'id' => 'commercialVideoCustomEndpoint', 'placeholder' => 'https://api.seuprovedor.com/video' ), 'stlai-provider-row stlai-provider-custom' );
+                stlai_admin_field_row( 'Custom API Key', 'stlai_render_password_field', array( 'id' => 'commercialVideoCustomApiKey' ), 'stlai-provider-row stlai-provider-custom' );
+                stlai_admin_field_row( 'Custom Model', 'stlai_render_text_field', array( 'id' => 'commercialVideoCustomModel', 'placeholder' => 'modelo-custom' ), 'stlai-provider-row stlai-provider-custom' );
+            } );
+
+            stlai_admin_settings_card( 'Composição Final', 'Configurações do serviço que monta os clipes, narração e vídeo final.', function() {
+                stlai_admin_field_row( 'Modo de composição', 'stlai_render_select_field', array( 'id' => 'videoComposerMode', 'default' => 'external_service', 'options' => array( 'external_service' => 'Serviço externo', 'local_ffmpeg' => 'FFmpeg local' ) ) );
+                stlai_admin_field_row( 'Endpoint do serviço', 'stlai_render_text_field', array( 'id' => 'videoComposerEndpoint', 'placeholder' => 'https://video-render.seudominio.com/render' ) );
+                stlai_admin_field_row( 'API Key do serviço', 'stlai_render_password_field', array( 'id' => 'videoComposerApiKey' ) );
+                stlai_admin_field_row( 'Timeout da composição', 'stlai_render_text_field', array( 'id' => 'videoComposerTimeout', 'default' => '300' ) );
+                stlai_admin_field_row( 'Caminho do FFmpeg', 'stlai_render_text_field', array( 'id' => 'ffmpegPath', 'placeholder' => 'Auto detectar, /usr/bin/ffmpeg ou /usr/local/bin/ffmpeg' ) );
+            } );
+
+            stlai_admin_settings_card( 'Narração / ElevenLabs', 'Configurações de voz usadas na narração do anúncio.', function() {
+                stlai_admin_field_row( 'Provider de áudio', 'stlai_render_select_field', array( 'id' => 'audioProvider', 'default' => 'elevenlabs', 'options' => array( 'elevenlabs' => 'ElevenLabs' ) ) );
+                stlai_admin_field_row( 'ElevenLabs API Key', 'stlai_render_password_field', array( 'id' => 'elevenLabsApiKey' ) );
+                stlai_admin_field_row( 'Voice ID Emocional', 'stlai_render_text_field', array( 'id' => 'elevenLabsVoiceEmotional' ) );
+                stlai_admin_field_row( 'Voice ID Persuasiva', 'stlai_render_text_field', array( 'id' => 'elevenLabsVoicePersuasive' ) );
+                stlai_admin_field_row( 'Modelo ElevenLabs', 'stlai_render_text_field', array( 'id' => 'elevenLabsModel', 'default' => 'eleven_multilingual_v2' ) );
+                stlai_admin_field_row( 'Idioma padrão', 'stlai_render_text_field', array( 'id' => 'elevenLabsDefaultLanguage', 'default' => 'pt-BR' ) );
+            } );
+
+            stlai_admin_settings_card( 'UGC Futuro', 'Campos reservados para próximos formatos de vídeo UGC.', function() {
+                stlai_admin_field_row( 'Provider UGC', 'stlai_render_select_field', array( 'id' => 'ugcProvider', 'default' => 'none', 'options' => array( 'none' => 'Desativado', 'seedance' => 'Seedance 2.0 / BytePlus ModelArk', 'muapi' => 'MuAPI' ) ) );
+                stlai_admin_field_row( 'Seedance API Key', 'stlai_render_password_field', array( 'id' => 'seedanceApiKey' ) );
+                stlai_admin_field_row( 'Seedance Base URL', 'stlai_render_text_field', array( 'id' => 'seedanceBaseUrl' ) );
+                stlai_admin_field_row( 'Seedance Model', 'stlai_render_text_field', array( 'id' => 'seedanceModel' ) );
+                stlai_admin_field_row( 'MuAPI Key', 'stlai_render_password_field', array( 'id' => 'muApiKey' ) );
+                stlai_admin_field_row( 'MuAPI Base URL', 'stlai_render_text_field', array( 'id' => 'muApiBaseUrl' ) );
+            } );
             submit_button('Salvar Configurações');
             ?>
         </form>
+        <script>
+        (function(){
+            const provider=document.getElementById("commercialVideoProvider");
+            const rows=[].slice.call(document.querySelectorAll(".stlai-provider-row"));
+            function syncProviderRows(){
+                const value=provider ? provider.value : "gemini_veo";
+                rows.forEach(row=>{
+                    const show=row.classList.contains("stlai-provider-" + value);
+                    row.classList.toggle("stlai-admin-provider-hidden", !show);
+                });
+            }
+            if(provider){
+                provider.addEventListener("change", syncProviderRows);
+                syncProviderRows();
+            }
+        })();
+        </script>
     </div>
     <?php
 }
