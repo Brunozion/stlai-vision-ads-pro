@@ -193,7 +193,28 @@ function normalizeMediaUrl(url){
   let value=String(url || "").trim();
   value=value.replace(/^["']|["']$/g,"").replace(/\\\//g,"/");
   if(!value) return "";
+  if(/^data:image\//i.test(value) || /^blob:/i.test(value)) return value;
   if(/^https?:\/\//i.test(value)) return value;
+  return "";
+}
+
+function resolveImageUrl(imageOrUrl){
+  if(typeof imageOrUrl==="string") return normalizeMediaUrl(imageOrUrl);
+  if(!imageOrUrl || typeof imageOrUrl!=="object") return "";
+  const candidates=[
+    imageOrUrl.full_url,
+    imageOrUrl.fullUrl,
+    imageOrUrl.url,
+    imageOrUrl.image_url,
+    imageOrUrl.imageUrl,
+    imageOrUrl.download_url,
+    imageOrUrl.downloadUrl,
+    imageOrUrl.src
+  ];
+  for(const candidate of candidates){
+    const clean=normalizeMediaUrl(candidate);
+    if(clean) return clean;
+  }
   return "";
 }
 
@@ -401,18 +422,26 @@ function applyAF(silent=false){
 
 function currentImageTypes(){
   const hasDims = S.x || S.y || S.z;
+  const infoScene = buildInformativeImageScene();
+  const dimsScene = hasDims ? buildTechnicalDimensionsScene(dimsText()) : "";
   const basic = [
     { key:"capa", label:"Capa — Fundo Branco", scene: S.cfg.sceneCapa || window.stlaiConfig.sceneCapa },
-    hasDims ? 
-      { key:"dims", label:"Medidas — Fundo Branco", scene: fillTpl(S.cfg.sceneDims || window.stlaiConfig.sceneDims, { dimsTxt: dimsText() }) } : 
-      { key:"amb1", label:"Ambientada — Uso 1", scene: S.cfg.sceneAmb1 || window.stlaiConfig.sceneAmb1 },
-    { key:"amb2", label:"Ambientada — Uso 2", scene: S.cfg.sceneAmb2 || window.stlaiConfig.sceneAmb2 },
-    { key:"amb3", label:"Ambientada — Uso 3", scene: S.cfg.sceneAmb3 || window.stlaiConfig.sceneAmb3 }
+    hasDims
+      ? { key:"dims", label:"Medidas", scene: dimsScene }
+      : { key:"info", label:"Características", scene: infoScene },
+    hasDims
+      ? { key:"info", label:"Informações Técnicas", scene: infoScene }
+      : { key:"amb1", label:"Ambientada — Uso 1", scene: S.cfg.sceneAmb1 || window.stlaiConfig.sceneAmb1 },
+    hasDims
+      ? { key:"amb1", label:"Ambientada — Uso 1", scene: S.cfg.sceneAmb1 || window.stlaiConfig.sceneAmb1 }
+      : { key:"amb2", label:"Ambientada — Uso 2", scene: S.cfg.sceneAmb2 || window.stlaiConfig.sceneAmb2 }
   ];
 
   const premium = [
     ...basic,
-    { key:"amb4", label:"Ambientada — Uso 4", scene: S.cfg.sceneAmb4 || window.stlaiConfig.sceneAmb4 },
+    hasDims
+      ? { key:"amb2", label:"Ambientada — Uso 2", scene: S.cfg.sceneAmb2 || window.stlaiConfig.sceneAmb2 }
+      : { key:"amb3", label:"Ambientada — Uso 3", scene: S.cfg.sceneAmb3 || window.stlaiConfig.sceneAmb3 },
     { key:"detail", label:"Detalhe — Acabamento", scene: S.cfg.sceneDetail || window.stlaiConfig.sceneDetail },
     { key:"feature", label:"Destaque — Benefício", scene: S.cfg.sceneFeature || window.stlaiConfig.sceneFeature },
     { key:"hero", label:"Hero — Cena Final", scene: S.cfg.sceneHero || window.stlaiConfig.sceneHero }
@@ -423,14 +452,54 @@ function currentImageTypes(){
 
 function syncImageStepCopy(){
   const count = currentImageTypes().length;
+  const hasDims = S.x || S.y || S.z;
   const stepSub = document.getElementById("img-step-sub");
   const blockLabel = document.getElementById("img-block1-label");
   const blockDesc = document.getElementById("img-block1-desc");
   if(stepSub) stepSub.textContent = `${count} imagens individuais 1:1 + 1 imagem combo 2x2. Escolha exatamente 4 imagens para o vídeo.`;
   if(blockLabel) blockLabel.innerHTML = `Bloco 1 — ${count} imagens individuais <span>1:1 QUADRADO</span>`;
-  if(blockDesc) blockDesc.textContent = S.plan === "premium"
-    ? "Fundo branco + cenas ambientadas + destaque de acabamento e benefício"
-    : "Fundo branco + 3 ambientadas em contexto de uso";
+  if(blockDesc) blockDesc.textContent = hasDims
+    ? "Fundo branco + imagem de medidas + arte informativa + cenas comerciais"
+    : "Fundo branco + arte informativa + cenas ambientadas em contexto de uso";
+}
+
+function productPreservationInstruction(){
+  return "Preserve completamente o produto da imagem de referência, sem alterar formato, cor, estrutura, material, acabamento, textura, proporção, detalhes ou identidade. Não adicione, remova ou invente partes, acessórios, funções, textos técnicos falsos ou especificações não fornecidas.";
+}
+
+function buildTechnicalDimensionsScene(dimsTxt){
+  return [
+    "Crie uma imagem comercial técnica do produto.",
+    productPreservationInstruction(),
+    "Mostre o produto em destaque com fundo claro, limpo e neutro.",
+    `Inclua apenas estas dimensões reais fornecidas no contexto: ${dimsTxt || "não informado"}.`,
+    "Use linhas, setas e marcadores discretos, legíveis e profissionais para largura, altura e/ou profundidade quando esses dados existirem.",
+    "Não invente medidas. Se uma dimensão estiver ausente, não crie valor para ela.",
+    "O layout deve parecer uma arte informativa profissional de e-commerce ou marketplace, limpa, organizada e elegante.",
+    "Texto curto, objetivo e sem poluição visual. Proporção 1:1."
+  ].join(" ");
+}
+
+function buildInformativeImageScene(){
+  const facts=[
+    S.name ? `Produto: ${S.name}.` : "",
+    S.descTxt || S.desc ? `Contexto/descrição: ${S.descTxt || S.desc}.` : "",
+    S.feat ? `Características reais: ${S.feat}.` : "",
+    dimsText() ? `Dimensões disponíveis: ${dimsText()}.` : "",
+    S.wt ? `Peso informado: ${S.wt} g.` : "",
+    S.volt && S.volt !== "N/A" ? `Voltagem informada: ${S.volt}.` : ""
+  ].filter(Boolean).join(" ");
+
+  return [
+    "Crie uma imagem comercial informativa do produto.",
+    productPreservationInstruction(),
+    "Mostre o produto com destaque e organize visualmente poucas características, benefícios, usos ou especificações reais disponíveis no contexto.",
+    facts ? `Use somente estas informações como fonte: ${facts}` : "Se faltarem especificações técnicas, use benefícios e contexto de uso de forma genérica, sem inventar dados.",
+    "Pode combinar o produto com uma cena de uso ou utilidade quando fizer sentido, sem modificar o item.",
+    "Layout limpo, elegante, comercial e fácil de entender, com texto curto e objetivo.",
+    "Não invente potência, voltagem, material, dimensões, capacidade, quantidades ou qualquer especificação técnica.",
+    "Proporção 1:1."
+  ].join(" ");
 }
 
 function togglePlan(){setPlan(S.plan==="basic"?"premium":"basic");}
@@ -869,7 +938,7 @@ async function runImageComboWithRetries(combo, ref, totalImages){
     setComboTilesLoading(combo, attempt>1 ? "Tentando novamente" : "Gerando imagem");
 
     try{
-      const scene=getBatchScene(combo.combo_index);
+      const scene=getBatchScene(combo);
       const prompt=fillTpl(S.cfg.imagePrompt, {
         scene,
         name:S.name || "não informado",
@@ -1025,7 +1094,12 @@ async function genDimsImage(btn) {
   }
 }
 
-function getBatchScene(batchNum) {
+function getBatchScene(batchOrCombo) {
+  if(batchOrCombo && typeof batchOrCombo==="object" && Array.isArray(batchOrCombo.items)){
+    return buildImageComboScene(batchOrCombo);
+  }
+
+  const batchNum=Number(batchOrCombo || 1);
   const prodName = S.name || "produto";
   const hasDims = S.x || S.y || S.z;
   const dimsTxt = [S.x, S.y, S.z].filter(Boolean).join("x") + " cm";
@@ -1039,6 +1113,42 @@ function getBatchScene(batchNum) {
   } else {
     return fillTpl(S.cfg.promptBatch2 || window.stlaiConfig.promptBatch2, { name: prodName });
   }
+}
+
+function buildImageComboScene(combo){
+  const positions=[
+    "Top-Left Quadrant",
+    "Top-Right Quadrant",
+    "Bottom-Left Quadrant",
+    "Bottom-Right Quadrant"
+  ];
+  const facts=[
+    S.name ? `Product name: ${S.name}.` : "",
+    S.descTxt || S.desc ? `Description/context: ${S.descTxt || S.desc}.` : "",
+    S.feat ? `Real features: ${S.feat}.` : "",
+    dimsText() ? `Real dimensions: ${dimsText()}.` : "",
+    S.wt ? `Real weight: ${S.wt} g.` : "",
+    S.volt && S.volt !== "N/A" ? `Real voltage: ${S.volt}.` : ""
+  ].filter(Boolean).join(" ");
+  const quadrants=combo.items.map((item,index)=>{
+    const position=positions[index] || `Quadrant ${index + 1}`;
+    const label=item.label || `Imagem ${combo.start_index + index}`;
+    return `- ${position} (${label}): ${item.scene || label}`;
+  }).join("\n");
+
+  return [
+    "Generate exactly ONE large square image divided evenly into a clean 2x2 grid. Each quadrant must be a complete independent 1:1 commercial image, because it will be cropped into separate product images.",
+    "Do not merge quadrants. Do not create diagonal layouts. Keep the product fully visible in each quadrant.",
+    "The product from the reference image is mandatory and must remain exactly the same physical item in every quadrant.",
+    "Do not modify the product shape, color, material, structure, texture, proportions, finish, printed details, accessories, identity or function.",
+    "Do not add, remove, redesign, stylize, replace or invent any part of the product.",
+    "Use only factual information provided here. Never invent dimensions, material, power, voltage, capacity, quantity or technical specifications.",
+    facts ? `Available factual context: ${facts}` : "Available factual context is limited; use generic commercial benefits and usage context without inventing technical data.",
+    "Quadrant plan:",
+    quadrants,
+    "For technical or informative quadrants, use short clean text only when needed, with professional e-commerce layout, legible arrows/markers and minimal visual clutter.",
+    "Overall style: premium marketplace product imagery, realistic, clean, elegant, commercially useful, no watermark, no UI, no fake logos, no extra props attached to the product."
+  ].join("\n");
 }
 
 async function genBatchImage(batchNum, ref) {
@@ -1104,8 +1214,9 @@ function getSelectedSquarePx(){
 function renderTile4(t,url){
   const tile=document.getElementById(`t4-${t.key}`);
   if(!tile)return;
+  const imageUrl=resolveImageUrl(url);
   tile.classList.remove("gen", "error");
-  tile.innerHTML=`<img src="${url}" alt="${esc(t.label)}" style="opacity:0; transition:opacity 0.6s ease" onload="this.style.opacity=1"><div class="img4-tile-lbl">${esc(t.label)}</div>`;
+  tile.innerHTML=`<img src="${imageUrl}" alt="${esc(t.label)}" style="opacity:0; transition:opacity 0.6s ease" onload="this.style.opacity=1"><div class="img4-tile-lbl">${esc(t.label)}</div>`;
   tile.onclick=(e)=>{ if(e.target.closest('button')) return; togVid(t.key,tile); };
 }
 
@@ -1172,8 +1283,8 @@ function renderCombo(url){
 
 function comboSourceImages(){
   const preferred = S.imgs4.filter(img => img.key !== "capa").slice(0, 4);
-  if (preferred.length === 4) return preferred.map(img => img.url);
-  return S.imgs4.slice(0, 4).map(img => img.url);
+  if (preferred.length === 4) return preferred.map(img => resolveImageUrl(img));
+  return S.imgs4.slice(0, 4).map(img => resolveImageUrl(img));
 }
 
 async function buildCombo2x2(urls){
@@ -1237,8 +1348,10 @@ function goVideoResult(){
 }
 
 function dlImg(url,label){
+  const clean=resolveImageUrl(url);
+  if(!clean){toast("Imagem ainda não disponível.","warn");return;}
   const a=document.createElement("a");
-  a.href=url;
+  a.href=clean;
   a.download=`stlai-${String(label).replace(/\s+/g,"-").toLowerCase()}.jpg`;
   a.click();
   toast(`Download: ${label}`,"info");
@@ -3750,9 +3863,10 @@ function popSum(){
     const tile = document.createElement("div");
     tile.className = "img4-tile";
     tile.id = `sum-t4-${img.key}`;
+    const imageUrl=resolveImageUrl(img);
     const canRegen=Boolean(currentImageTypes().find(type=>type.key===img.key));
     const regenButton=canRegen ? `<button class="btn bs bsm rg-btn" type="button" title="Regerar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button>` : "";
-    tile.innerHTML = `<img src="${img.url}" alt="${esc(img.label)}"><div class="img4-tile-lbl">${esc(img.label)}</div><div class="img4-tile-ov" style="flex-direction:row;gap:5px"><button class="btn bs bsm dl-btn" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button><button class="btn bs bsm lb-btn" type="button" title="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button>${regenButton}</div>`;
+    tile.innerHTML = `<img src="${imageUrl}" alt="${esc(img.label)}"><div class="img4-tile-lbl">${esc(img.label)}</div><div class="img4-tile-ov" style="flex-direction:row;gap:5px"><button class="btn bs bsm dl-btn" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button><button class="btn bs bsm lb-btn" type="button" title="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button>${regenButton}</div>`;
     
     tile.querySelector('.dl-btn').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); triggerDlImg(img.key); });
     tile.querySelector('.lb-btn').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); triggerLightbox(img.key); });
@@ -3766,12 +3880,12 @@ function popSum(){
 
 function triggerDlImg(key) {
   const img = S.imgs4.find(i => i.key === key);
-  if(img) dlImg(img.url, img.label);
+  if(img) dlImg(resolveImageUrl(img), img.label);
 }
 
 function triggerLightbox(key) {
   const img = S.imgs4.find(i => i.key === key);
-  if(img) openLightbox(img.url);
+  if(img) openLightbox(resolveImageUrl(img), "image", img.label || "Imagem ampliada");
 }
 
 window.dlImg = dlImg;
@@ -4249,12 +4363,12 @@ function esc(s){
   return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
 function escAttr(s){return String(s ?? "").replace(/'/g,"&#39;");}
-function openLightbox(url, type="image") {
+function openLightbox(url, type="image", label="Imagem ampliada") {
   const lb = document.getElementById('lightbox');
   const img=document.getElementById('lightbox-img');
   const video=document.getElementById('lightbox-video');
   const fallback=document.getElementById('lightbox-fallback');
-  const clean=normalizeMediaUrl(url);
+  const clean=type==="video" ? normalizeMediaUrl(url) : resolveImageUrl(url);
   const isVideo=type==="video" || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(clean);
   const showFallback=()=>{
     if(img){
@@ -4278,6 +4392,8 @@ function openLightbox(url, type="image") {
   if(img){
     img.style.display=isVideo ? "none" : "block";
     img.onerror=showFallback;
+    img.alt=label || "Imagem ampliada";
+    img.title=label || "Imagem ampliada";
     if(isVideo){
       img.removeAttribute("src");
     }else{

@@ -1454,3 +1454,23 @@ O payload de vídeo passa a carregar `video_language`, `narration_language`, `na
 ### Status
 
 Decidido
+
+## 2026-05-24 - Galeria com zoom robusto e imagem técnica/informativa
+
+### Decisao
+
+O modal de ampliar imagem deve usar o mesmo resolvedor de URL usado pelo download, aceitando `full_url`, `url`, `image_url`, `download_url`, `src`, URLs `https`, `data:image` e `blob`. Se a imagem pode ser baixada, ela também deve poder ser ampliada.
+
+O fluxo de imagens passa a incluir automaticamente arte técnica/informativa. A imagem 1 permanece como fundo branco. Quando existem dimensões, a imagem 2 é "Medidas" e a imagem 3 é "Informações Técnicas". Quando não existem dimensões, a imagem 2 é "Características". As demais imagens seguem como ambientadas, detalhe, benefício e hero conforme o plano.
+
+### Motivo
+
+As imagens recortadas do combo 2x2 podem existir como `data:image`, que o modal descartava, embora o download funcionasse. Além disso, anúncios de marketplace precisam de uma imagem mais funcional, capaz de comunicar medidas, características, uso e benefícios sem exigir edição manual.
+
+### Impacto
+
+Os prompts do combo 2x2 agora são montados por quadrante e reforçam a preservação obrigatória do produto: não alterar formato, cor, estrutura, material, acabamento, textura, proporção, identidade ou função, e não inventar medidas ou especificações técnicas. A futura regeneração manual pode reaproveitar os tipos `dims` e `info`.
+
+### Status
+
+Decidido
