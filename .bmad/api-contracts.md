@@ -57,7 +57,7 @@ Entrada esperada:
 Campos:
 
 - `selected_images`: array de imagens selecionadas pelo usuário. O fluxo principal espera de 4 a 8 imagens.
-- `narration_type`: `persuasiva` ou `emocional`.
+- `narration_type`: estilo de narração. Valores aceitos: `persuasiva`, `emocional`, `demonstrativa`, `premium`.
 - `format`: `9:16` ou `16:9` no MVP. Estado legado `1:1` deve cair para `9:16`.
 - `script`: texto de narração enviado ao ElevenLabs.
 - `product_name`: nome do produto.
@@ -404,7 +404,7 @@ Observações:
 Campos usados pelo fluxo de vídeo:
 
 - `selected_images`: imagens selecionadas pelo usuário.
-- `narration_type`: estilo de narração, `persuasiva` ou `emocional`.
+- `narration_type`: estilo de narração. Valores aceitos: `persuasiva`, `emocional`, `demonstrativa`, `premium`.
 - `format`: formato do vídeo, `9:16` ou `16:9`.
 - `script`: roteiro/narração.
 - `product_name`: nome do produto.
@@ -1575,6 +1575,21 @@ Accepted languages:
 - `en-US`
 - `es-ES`
 - `fr-FR`
+
+Accepted narration styles:
+
+- `persuasiva`: foco em venda, benefícios e decisão de compra.
+- `emocional`: foco em desejo, conexão e experiência de uso.
+- `demonstrativa`: foco em explicar produto, uso, detalhes e diferenciais.
+- `premium`: foco em sofisticação, acabamento, exclusividade e valor percebido.
+
+Narration rules:
+
+- `script_public` is clean text shown to the user.
+- `script_tts` is internal, optimized for TTS, and must not be exposed in full in the public UI.
+- Narration scripts must not reuse marketplace SEO/technical copy verbatim.
+- PT-BR narration should normalize imported terms such as `topper` to `topo de bolo` when applicable.
+- Numbers and dimensions that remain in narration should be written in spoken form, for example `20 x 10 x 7 cm` as `vinte por dez por sete centímetros`.
 
 Response fields:
 

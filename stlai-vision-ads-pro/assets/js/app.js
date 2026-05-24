@@ -18,7 +18,7 @@ const S = {
   lang: "pt-BR",
   tone: "profissional",
   audience: "",
-  voiceStyle: "persuasiva",
+  voiceStyle: "emocional",
   titles: [],
   descTxt: "",
   textApproved: false,
@@ -555,7 +555,7 @@ function colForm(){
   const ve=document.querySelector('input[name="vlt"]:checked');
   S.volt=ve?ve.value:"Bivolt";
   const voiceEl=document.querySelector('input[name="voice_style"]:checked');
-  S.voiceStyle=voiceEl?voiceEl.value:"persuasiva";
+  S.voiceStyle=normalizeVoiceStyle(voiceEl?voiceEl.value:"emocional");
   if(S.plan==="premium"){
     S.tone=document.getElementById("f-tn").value;
     S.audience=document.getElementById("f-au").value.trim();
@@ -1484,7 +1484,28 @@ function popVid(){
 }
 
 function voiceStyleLabel(){
-  return S.voiceStyle==="emocional" ? "Emocional" : "Persuasiva";
+  const labels={
+    persuasiva:"Persuasiva",
+    emocional:"Emocional",
+    demonstrativa:"Demonstrativa",
+    premium:"Premium"
+  };
+  return labels[normalizeVoiceStyle(S.voiceStyle)] || "Emocional";
+}
+
+function normalizeVoiceStyle(value){
+  const key=String(value || "").toLowerCase().trim();
+  const map={
+    persuasive:"persuasiva",
+    persuasiva:"persuasiva",
+    emotional:"emocional",
+    emocional:"emocional",
+    demo:"demonstrativa",
+    demonstrative:"demonstrativa",
+    demonstrativa:"demonstrativa",
+    premium:"premium"
+  };
+  return map[key] || "emocional";
 }
 
 function normalizeVideoLanguage(value){
@@ -1536,34 +1557,151 @@ function normalizeScriptTerms(text, lang=S.video.language){
       .replace(/\bcustom topper\b/gi, "décoration de gâteau personnalisée")
       .replace(/\btopper\b/gi, "décoration de gâteau");
   }
+  out=out
+    .replace(/\btopo de bolo de bolo personalizado\b/gi, "topo de bolo personalizado")
+    .replace(/\btopo de bolo de bolo\b/gi, "topo de bolo")
+    .replace(/\btopo de bolo de topo de bolo\b/gi, "topo de bolo")
+    .replace(/\bproduto de produto\b/gi, "produto");
+  out=normalizeNarrationNumbers(out, selected);
   return out.replace(/\s+/g, " ").trim();
+}
+
+function numberToWordsPt(value){
+  const n=Number(String(value).replace(",","."));
+  const words={
+    0:"zero",1:"um",2:"dois",3:"três",4:"quatro",5:"cinco",6:"seis",7:"sete",8:"oito",9:"nove",10:"dez",
+    11:"onze",12:"doze",13:"treze",14:"quatorze",15:"quinze",16:"dezesseis",17:"dezessete",18:"dezoito",19:"dezenove",
+    20:"vinte",30:"trinta",40:"quarenta",50:"cinquenta",60:"sessenta",70:"setenta",80:"oitenta",90:"noventa",
+    100:"cem",200:"duzentos",300:"trezentos",400:"quatrocentos",500:"quinhentos",600:"seiscentos",700:"setecentos",800:"oitocentos",900:"novecentos"
+  };
+  if(!Number.isFinite(n) || n%1!==0) return String(value).replace(".", ",");
+  if(words[n]) return words[n];
+  if(n<100) return `${words[Math.floor(n/10)*10]} e ${words[n%10]}`;
+  if(n<1000){
+    const hundred=Math.floor(n/100)*100;
+    const rest=n%100;
+    return `${hundred===100 ? "cento" : words[hundred]} e ${numberToWordsPt(rest)}`;
+  }
+  return String(value);
+}
+
+function normalizeNarrationNumbers(text, lang=S.video.language){
+  if(normalizeVideoLanguage(lang)!=="pt-BR") return String(text || "");
+  return String(text || "")
+    .replace(/\b(\d+)\s*x\s*(\d+)\s*x\s*(\d+)\s*cm\b/gi, (_,a,b,c)=>`${numberToWordsPt(a)} por ${numberToWordsPt(b)} por ${numberToWordsPt(c)} centímetros`)
+    .replace(/\b(\d+)\s*x\s*(\d+)\s*cm\b/gi, (_,a,b)=>`${numberToWordsPt(a)} por ${numberToWordsPt(b)} centímetros`)
+    .replace(/\b(\d+)\s*cm\b/gi, (_,n)=>`${numberToWordsPt(n)} centímetros`)
+    .replace(/\b(\d+)\s*W\b/g, (_,n)=>`${numberToWordsPt(n)} watts`)
+    .replace(/\b(\d+)\s*(?:V|volts?)\b/gi, (_,n)=>`${numberToWordsPt(n)} volts`)
+    .replace(/\b(\d+)\s+velocidades\b/gi, (_,n)=>`${numberToWordsPt(n)} velocidades`)
+    .replace(/\b(\d+)\s+pás\b/gi, (_,n)=>`${numberToWordsPt(n)} pás`)
+    .replace(/\b3D\b/g, "três D");
 }
 
 function buildVideoScript(){
   const lang=normalizeVideoLanguage(S.video.language);
-  const name=normalizeScriptTerms(cleanScriptPiece(S.name, lang==="pt-BR" ? "este produto" : "this product"), lang);
-  const desc=normalizeScriptTerms(cleanScriptPiece(S.descTxt || S.desc, lang==="pt-BR" ? "uma peça pensada para deixar a rotina mais prática e bonita" : "a piece designed to make the moment feel more useful and memorable"), lang);
-  const feat=normalizeScriptTerms(cleanScriptPiece(S.feat, lang==="pt-BR" ? "acabamento cuidadoso, visual marcante e uso funcional" : "careful finishing, a distinctive look, and practical use"), lang);
-  const title=normalizeScriptTerms(cleanScriptPiece((S.titles || []).find(t=>String(t || "").trim()), name), lang);
+  S.voiceStyle=normalizeVoiceStyle(S.voiceStyle);
+  const name=normalizeProductNameForNarration(cleanScriptPiece(S.name, lang==="pt-BR" ? "este produto" : "this product"), lang);
+  const shortName=shortProductReference(name, lang);
+  const desc=productDescriptionForNarration(S.descTxt || S.desc, lang);
+  const feat=productFeaturesForNarration(S.feat, lang);
   let script="";
   if(lang==="en-US"){
-    script=S.voiceStyle==="emocional"
-      ? `I was looking for a detail that felt personal, the kind that makes someone smile before they even use it. That is what stood out in ${name}: it feels thoughtful, well made, and full of personality. ${desc} The finish, the visual details, and ${feat} make it feel like a gift chosen with care. It is the kind of piece that turns a simple moment into something worth remembering.`
-      : `You know when a product looks simple, but the details make it memorable? ${name} brings together style, usefulness, and personality without overcomplicating things. ${desc} With ${feat}, it stands out in presentation, gifting, and everyday use. ${title} is a practical choice with the kind of detail that makes people want it.`;
+    script=buildLocalizedVideoScriptEn(name, shortName, desc, feat);
   }else if(lang==="es-ES"){
-    script=S.voiceStyle==="emocional"
-      ? `Estaba buscando un detalle especial, de esos que hacen sonreír a la persona antes de usarlo. Eso fue lo que me llamó la atención de ${name}: una pieza con presencia, cariño y personalidad. ${desc} El acabado, los detalles y ${feat} transmiten esa sensación de regalo pensado con cuidado. Es el tipo de producto que convierte un momento simple en un recuerdo bonito.`
-      : `¿Sabes cuando un producto parece simple, pero los detalles conquistan? ${name} combina presencia, utilidad y personalidad sin complicaciones. ${desc} Con ${feat}, destaca en el uso, en el regalo y en la presentación. ${title} es una elección práctica, bonita y con ese toque que marca la diferencia.`;
+    script=buildLocalizedVideoScriptEs(name, shortName, desc, feat);
   }else if(lang==="fr-FR"){
-    script=S.voiceStyle==="emocional"
-      ? `Je cherchais un détail spécial, le genre de détail qui fait sourire avant même de l'utiliser. C'est ce qui m'a touché avec ${name}: une pièce pleine de présence, de soin et de personnalité. ${desc} La finition, les détails et ${feat} donnent cette impression d'un cadeau choisi avec attention. C'est le genre de produit qui transforme un moment simple en joli souvenir.`
-      : `Vous savez, quand un produit semble simple, mais que les détails font toute la différence? ${name} réunit style, utilité et personnalité sans complication. ${desc} Avec ${feat}, il se distingue dans l'usage, le cadeau et la présentation. ${title} est un choix pratique, élégant, avec ce petit détail qui donne envie.`;
+    script=buildLocalizedVideoScriptFr(name, shortName, desc, feat);
   }else{
-    script=S.voiceStyle==="emocional"
-      ? `Eu estava procurando um detalhe que deixasse o momento com a cara de quem vai receber, algo que não fosse só bonito na foto, mas que também virasse uma lembrança. Foi aí que ${name} chamou minha atenção. ${desc} O que mais encanta é perceber ${feat}, sem perder a delicadeza e o propósito do produto. É aquele tipo de detalhe que aparece, emociona e continua fazendo sentido depois.`
-      : `Eu queria encontrar um produto que chamasse atenção sem parecer exagerado, com presença, acabamento e utilidade no momento certo. ${name} entra exatamente nessa ideia. ${desc} Com ${feat}, ele ajuda a valorizar a apresentação e deixa a escolha mais especial para quem compra ou presenteia. ${title} é uma opção bonita, prática e com aquele detalhe que dá vontade de escolher.`;
+    script=buildLocalizedVideoScriptPt(name, shortName, desc, feat);
   }
   return normalizeScriptTerms(script, lang);
+}
+
+function productDescriptionForNarration(value, lang){
+  const fallback={
+    "pt-BR":"uma peça pensada para valorizar o momento com presença, cuidado e bom acabamento",
+    "en-US":"a product designed to add presence, care, and a polished finish to the moment",
+    "es-ES":"una pieza pensada para dar presencia, cuidado y buen acabado al momento",
+    "fr-FR":"une pièce pensée pour apporter de la présence, du soin et une belle finition au moment"
+  }[lang] || "uma peça pensada para valorizar o momento";
+  return normalizeScriptTerms(cleanScriptPiece(value, fallback), lang)
+    .replace(/\bSEO\b.*$/gi, "")
+    .replace(/\bpalavras[- ]chave\b.*$/gi, "")
+    .replace(/(?:^|\s)[•*-]\s*/g, " ")
+    .replace(/\b\d+(?:[,.]\d+)?\s*x\s*\d+(?:[,.]\d+)?(?:\s*x\s*\d+(?:[,.]\d+)?)?\s*cm\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim() || fallback;
+}
+
+function productFeaturesForNarration(value, lang){
+  const fallback={
+    "pt-BR":"acabamento cuidadoso, visual bem definido e presença na composição",
+    "en-US":"careful finishing, a clear look, and strong presentation",
+    "es-ES":"acabado cuidado, visual definido y buena presencia",
+    "fr-FR":"une finition soignée, un visuel net et une belle présence"
+  }[lang] || "acabamento cuidadoso e visual marcante";
+  const text=normalizeScriptTerms(cleanScriptPiece(value, fallback), lang).replace(/(?:^|\s)[•*-]\s*/g, " ");
+  const parts=text.split(/[,.;]\s*/).filter(Boolean).slice(0,3);
+  return parts.length ? parts.join(", ") : fallback;
+}
+
+function normalizeProductNameForNarration(productName, lang=S.video.language){
+  const selected=normalizeVideoLanguage(lang);
+  let name=normalizeScriptTerms(productName, selected)
+    .replace(/\btopo de bolo de bolo personalizado\b/gi, "topo de bolo personalizado")
+    .replace(/\btopo de bolo de bolo\b/gi, "topo de bolo")
+    .replace(/\bpersonalizado personalizado\b/gi, "personalizado")
+    .replace(/\s+/g, " ")
+    .trim();
+  if(selected==="pt-BR"){
+    name=name.replace(/^o\s+/i,"").replace(/^a\s+/i,"");
+    if(!/[A-Z]{2,}|[0-9]/.test(name.slice(1))) name=name.charAt(0).toLowerCase()+name.slice(1);
+    if(!/^(esse|essa|este|esta)\b/i.test(name)) name=`esse ${name}`;
+  }
+  return name || (selected==="pt-BR" ? "este produto" : "this product");
+}
+
+function shortProductReference(name, lang=S.video.language){
+  const selected=normalizeVideoLanguage(lang);
+  if(selected==="pt-BR"){
+    const clean=String(name || "").replace(/^(esse|essa|este|esta)\s+/i,"").trim();
+    if(/topo de bolo/i.test(clean)) return "o topo";
+    if(/peça|decor/i.test(clean)) return "a peça";
+    return "esse detalhe";
+  }
+  if(selected==="es-ES") return "la pieza";
+  if(selected==="fr-FR") return "la pièce";
+  return "the piece";
+}
+
+function buildLocalizedVideoScriptPt(name, shortName, desc, feat){
+  const style=normalizeVoiceStyle(S.voiceStyle);
+  if(style==="persuasiva") return `Seu produto merece uma apresentação que chame atenção sem parecer exagerada. ${name} valoriza a cena, destaca o cuidado nos detalhes e ajuda a transformar interesse em desejo de compra. ${desc}. Com ${feat}, ${shortName} entrega presença e utilidade de um jeito simples, bonito e fácil de entender. É uma escolha que deixa o anúncio mais forte e a decisão mais natural.`;
+  if(style==="demonstrativa") return `${name} foi pensado para quem quer entender o produto de forma clara antes de escolher. Ele reúne ${feat} em uma apresentação objetiva, sem perder o cuidado visual. ${desc}. Na prática, ${shortName} ajuda a mostrar uso, acabamento e diferencial sem depender de uma ficha técnica longa.`;
+  if(style==="premium") return `Alguns detalhes elevam a percepção de valor logo no primeiro olhar. ${name} traz uma presença elegante, com ${feat}, criando uma apresentação mais refinada e memorável. ${desc}. É uma peça que comunica cuidado, acabamento e intenção, com linguagem sofisticada e sem exagero.`;
+  return `Às vezes, o que torna um momento mais especial está nos pequenos detalhes. ${name} foi criado para trazer presença, cuidado e significado sem perder naturalidade. ${desc}. O acabamento, o visual e ${feat} fazem ${shortName} parecer uma escolha pessoal, daquelas que aparecem bem, emocionam e continuam fazendo sentido depois.`;
+}
+
+function buildLocalizedVideoScriptEn(name, shortName, desc, feat){
+  if(S.voiceStyle==="demonstrativa") return `${name} is made for people who want to understand the product clearly before choosing it. It brings ${feat} in a simple and useful presentation. ${desc}. In practice, ${shortName} helps show use, finish, and value without sounding like a technical sheet.`;
+  if(S.voiceStyle==="premium") return `Some details raise perceived value from the very first look. ${name} brings an elegant presence, with ${feat}, creating a refined and memorable presentation. ${desc}. It feels intentional, polished, and made to stand out with subtlety.`;
+  if(S.voiceStyle==="persuasiva") return `Your product deserves a presentation that catches attention without feeling forced. ${name} highlights the details, makes the offer easier to understand, and helps turn interest into desire. ${desc}. With ${feat}, ${shortName} becomes a simple, attractive, and confident choice.`;
+  return `Sometimes, the smallest details make a moment feel more personal. ${name} brings presence, care, and meaning in a natural way. ${desc}. The finish, the look, and ${feat} make ${shortName} feel thoughtful, memorable, and easy to connect with.`;
+}
+
+function buildLocalizedVideoScriptEs(name, shortName, desc, feat){
+  if(S.voiceStyle==="demonstrativa") return `${name} fue pensado para explicar el producto de forma clara antes de elegirlo. Reúne ${feat} en una presentación simple y útil. ${desc}. En la práctica, ${shortName} ayuda a mostrar uso, acabado y diferencial sin parecer una ficha técnica.`;
+  if(S.voiceStyle==="premium") return `Hay detalles que elevan el valor percibido desde el primer vistazo. ${name} aporta una presencia elegante, con ${feat}, creando una presentación refinada y memorable. ${desc}. Es una pieza que comunica cuidado, acabado e intención.`;
+  if(S.voiceStyle==="persuasiva") return `Tu producto merece una presentación que llame la atención sin parecer forzada. ${name} destaca los detalles, hace la oferta más fácil de entender y ayuda a convertir interés en deseo. ${desc}. Con ${feat}, ${shortName} se vuelve una elección atractiva y segura.`;
+  return `A veces, lo que hace especial un momento está en los pequeños detalles. ${name} aporta presencia, cuidado y significado de forma natural. ${desc}. El acabado, el visual y ${feat} hacen que ${shortName} se sienta personal, memorable y fácil de querer.`;
+}
+
+function buildLocalizedVideoScriptFr(name, shortName, desc, feat){
+  if(S.voiceStyle==="demonstrativa") return `${name} a été pensé pour expliquer le produit clairement avant de le choisir. Il réunit ${feat} dans une présentation simple et utile. ${desc}. En pratique, ${shortName} montre l'usage, la finition et la valeur sans ressembler à une fiche technique.`;
+  if(S.voiceStyle==="premium") return `Certains détails élèvent la perception de valeur dès le premier regard. ${name} apporte une présence élégante, avec ${feat}, pour une présentation raffinée et mémorable. ${desc}. C'est une pièce qui communique le soin, la finition et l'intention.`;
+  if(S.voiceStyle==="persuasiva") return `Votre produit mérite une présentation qui attire l'attention sans paraître forcée. ${name} met les détails en valeur, rend l'offre plus claire et transforme l'intérêt en envie. ${desc}. Avec ${feat}, ${shortName} devient un choix attractif et évident.`;
+  return `Parfois, ce sont les petits détails qui rendent un moment plus personnel. ${name} apporte de la présence, du soin et du sens naturellement. ${desc}. La finition, le visuel et ${feat} donnent à ${shortName} une impression attentionnée, mémorable et facile à aimer.`;
 }
 
 function buildTtsScript(publicScript){
@@ -1571,13 +1709,17 @@ function buildTtsScript(publicScript){
   if(!clean) return "";
   const sentences=clean.split(/(?<=[.!?])\s+/).filter(Boolean);
   if(!sentences.length) return clean;
-  const emotional=S.voiceStyle==="emocional";
-  const opening=emotional ? "[thoughtful]" : "[confident]";
-  const second=emotional ? "[warmly]" : "[excited]";
+  const style=normalizeVoiceStyle(S.voiceStyle);
+  const directions={
+    persuasiva:["[confident]","[excited]","[warmly]"],
+    emocional:["[thoughtful]","[warmly]","[softly]"],
+    demonstrativa:["[confident]","[warmly]","[warmly]"],
+    premium:["[softly]","[warmly]","[softly]"]
+  }[style] || ["[thoughtful]","[warmly]","[softly]"];
   const parts=sentences.map((sentence, index)=>{
-    if(index===0) return `${opening} ${sentence}`;
-    if(index===1) return `[short pause] ${second} ${sentence}`;
-    if(index===sentences.length-1) return `${emotional ? "[softly]" : "[warmly]"} ${sentence}`;
+    if(index===0) return `${directions[0]} ${sentence}`;
+    if(index===1) return `[short pause] ${directions[1]} ${sentence}`;
+    if(index===sentences.length-1) return `${directions[2]} ${sentence}`;
     return sentence;
   });
   return parts.join("\n").replace(/\n{3,}/g, "\n\n").trim();

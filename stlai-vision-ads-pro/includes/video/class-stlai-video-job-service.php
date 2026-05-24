@@ -375,10 +375,7 @@ class STLAI_Video_Job_Service {
 
     private static function ensure_script_fields( array $job ) {
         $language = self::sanitize_video_language( $job['video_language'] ?? ( $job['narration_language'] ?? 'pt-BR' ) );
-        $voice_style = sanitize_key( $job['narration_style'] ?? ( $job['narration_type'] ?? 'persuasiva' ) );
-        if ( ! in_array( $voice_style, array( 'persuasiva', 'emocional' ), true ) ) {
-            $voice_style = 'persuasiva';
-        }
+        $voice_style = self::sanitize_narration_style( $job['narration_style'] ?? ( $job['narration_type'] ?? 'emocional' ) );
 
         $source = $job['script_public'] ?? ( $job['script'] ?? '' );
         $script_pair = self::build_script_pair( $source, $voice_style, $language );
@@ -813,7 +810,7 @@ class STLAI_Video_Job_Service {
         $language = $validated['video_language'] ?? ( $job['video_language'] ?? 'pt-BR' );
         $script_pair = self::build_script_pair(
             $validated['script'] ?? ( $job['script_public'] ?? ( $job['script'] ?? '' ) ),
-            $validated['narration_type'] ?? ( $job['narration_type'] ?? 'persuasiva' ),
+            $validated['narration_style'] ?? ( $validated['narration_type'] ?? ( $job['narration_style'] ?? ( $job['narration_type'] ?? 'emocional' ) ) ),
             $language
         );
         $existing_tts = trim( (string) ( $validated['script_tts'] ?? '' ) );
@@ -842,7 +839,7 @@ class STLAI_Video_Job_Service {
                     'script_tts_exists' => ! empty( $existing_tts ),
                     'video_language' => $validated['video_language'] ?? ( $job['video_language'] ?? 'pt-BR' ),
                     'narration_language' => $validated['narration_language'] ?? ( $job['narration_language'] ?? ( $job['video_language'] ?? 'pt-BR' ) ),
-                    'narration_style' => $validated['narration_style'] ?? ( $job['narration_style'] ?? ( $job['narration_type'] ?? 'persuasiva' ) ),
+                    'narration_style' => self::sanitize_narration_style( $validated['narration_style'] ?? ( $job['narration_style'] ?? ( $job['narration_type'] ?? 'emocional' ) ) ),
                     'product_name'   => $validated['product_name'] ?? ( $job['product_name'] ?? '' ),
                     'product_description' => $validated['product_description'] ?? ( $job['product_description'] ?? '' ),
                 )
@@ -3076,12 +3073,90 @@ class STLAI_Video_Job_Service {
             $clean = preg_replace( $pattern, $replacement, $clean );
         }
 
+        $clean = preg_replace( '/\btopo de bolo de bolo personalizado\b/iu', 'topo de bolo personalizado', $clean );
+        $clean = preg_replace( '/\btopo de bolo de bolo\b/iu', 'topo de bolo', $clean );
+        $clean = preg_replace( '/\btopo de bolo de topo de bolo\b/iu', 'topo de bolo', $clean );
+        $clean = preg_replace( '/\bproduto de produto\b/iu', 'produto', $clean );
+        $clean = self::normalize_narration_numbers( $clean, $language );
+
         return trim( preg_replace( '/\s+/', ' ', (string) $clean ) );
     }
 
     private static function sanitize_video_language( $language ) {
         $language = sanitize_text_field( (string) $language );
         return in_array( $language, array( 'pt-BR', 'en-US', 'es-ES', 'fr-FR' ), true ) ? $language : 'pt-BR';
+    }
+
+    private static function sanitize_narration_style( $style ) {
+        $style = sanitize_key( (string) $style );
+        $map = array(
+            'persuasive'    => 'persuasiva',
+            'persuasiva'    => 'persuasiva',
+            'emotional'     => 'emocional',
+            'emocional'     => 'emocional',
+            'demo'          => 'demonstrativa',
+            'demonstrative' => 'demonstrativa',
+            'demonstrativa' => 'demonstrativa',
+            'premium'       => 'premium',
+        );
+
+        return $map[ $style ] ?? 'emocional';
+    }
+
+    private static function number_to_words_pt( $value ) {
+        $number = (int) $value;
+        $words = array(
+            0 => 'zero', 1 => 'um', 2 => 'dois', 3 => 'três', 4 => 'quatro', 5 => 'cinco',
+            6 => 'seis', 7 => 'sete', 8 => 'oito', 9 => 'nove', 10 => 'dez', 11 => 'onze',
+            12 => 'doze', 13 => 'treze', 14 => 'quatorze', 15 => 'quinze', 16 => 'dezesseis',
+            17 => 'dezessete', 18 => 'dezoito', 19 => 'dezenove', 20 => 'vinte', 30 => 'trinta',
+            40 => 'quarenta', 50 => 'cinquenta', 60 => 'sessenta', 70 => 'setenta',
+            80 => 'oitenta', 90 => 'noventa', 100 => 'cem', 200 => 'duzentos',
+            300 => 'trezentos', 400 => 'quatrocentos', 500 => 'quinhentos',
+            600 => 'seiscentos', 700 => 'setecentos', 800 => 'oitocentos', 900 => 'novecentos',
+        );
+        if ( isset( $words[ $number ] ) ) {
+            return $words[ $number ];
+        }
+        if ( $number < 100 ) {
+            return $words[ (int) floor( $number / 10 ) * 10 ] . ' e ' . $words[ $number % 10 ];
+        }
+        if ( $number < 1000 ) {
+            $hundreds = (int) floor( $number / 100 ) * 100;
+            return ( 100 === $hundreds ? 'cento' : $words[ $hundreds ] ) . ' e ' . self::number_to_words_pt( $number % 100 );
+        }
+
+        return (string) $value;
+    }
+
+    private static function normalize_narration_numbers( $text, $language = 'pt-BR' ) {
+        if ( 'pt-BR' !== self::sanitize_video_language( $language ) ) {
+            return (string) $text;
+        }
+
+        $text = preg_replace_callback( '/\b(\d+)\s*x\s*(\d+)\s*x\s*(\d+)\s*cm\b/iu', function ( $m ) {
+            return self::number_to_words_pt( $m[1] ) . ' por ' . self::number_to_words_pt( $m[2] ) . ' por ' . self::number_to_words_pt( $m[3] ) . ' centímetros';
+        }, (string) $text );
+        $text = preg_replace_callback( '/\b(\d+)\s*x\s*(\d+)\s*cm\b/iu', function ( $m ) {
+            return self::number_to_words_pt( $m[1] ) . ' por ' . self::number_to_words_pt( $m[2] ) . ' centímetros';
+        }, (string) $text );
+        $text = preg_replace_callback( '/\b(\d+)\s*cm\b/iu', function ( $m ) {
+            return self::number_to_words_pt( $m[1] ) . ' centímetros';
+        }, (string) $text );
+        $text = preg_replace_callback( '/\b(\d+)\s*W\b/u', function ( $m ) {
+            return self::number_to_words_pt( $m[1] ) . ' watts';
+        }, (string) $text );
+        $text = preg_replace_callback( '/\b(\d+)\s*(?:V|volts?)\b/iu', function ( $m ) {
+            return self::number_to_words_pt( $m[1] ) . ' volts';
+        }, (string) $text );
+        $text = preg_replace_callback( '/\b(\d+)\s+velocidades\b/iu', function ( $m ) {
+            return self::number_to_words_pt( $m[1] ) . ' velocidades';
+        }, (string) $text );
+        $text = preg_replace_callback( '/\b(\d+)\s+pás\b/iu', function ( $m ) {
+            return self::number_to_words_pt( $m[1] ) . ' pás';
+        }, (string) $text );
+
+        return preg_replace( '/\b3D\b/u', 'três D', (string) $text );
     }
 
     private static function build_script_pair( $public_script, $voice_style = 'persuasiva', $language = 'pt-BR' ) {
@@ -3128,7 +3203,14 @@ class STLAI_Video_Job_Service {
         }
 
         $parts = array();
-        $emotional = 'emocional' === sanitize_key( $voice_style );
+        $voice_style = self::sanitize_narration_style( $voice_style );
+        $directions = array(
+            'persuasiva'    => array( '[confident]', '[excited]', '[warmly]' ),
+            'emocional'     => array( '[thoughtful]', '[warmly]', '[softly]' ),
+            'demonstrativa' => array( '[confident]', '[warmly]', '[warmly]' ),
+            'premium'       => array( '[softly]', '[warmly]', '[softly]' ),
+        );
+        $style_directions = $directions[ $voice_style ] ?? $directions['emocional'];
         foreach ( array_values( $sentences ) as $index => $sentence ) {
             $sentence = trim( (string) $sentence );
             if ( '' === $sentence ) {
@@ -3136,16 +3218,16 @@ class STLAI_Video_Job_Service {
             }
 
             if ( 0 === $index ) {
-                $parts[] = ( $emotional ? '[thoughtful] ' : '[confident] ' ) . $sentence;
+                $parts[] = $style_directions[0] . ' ' . $sentence;
                 continue;
             }
 
             if ( 1 === $index ) {
-                $parts[] = '[short pause] ' . ( $emotional ? '[warmly] ' : '[excited] ' ) . $sentence;
+                $parts[] = '[short pause] ' . $style_directions[1] . ' ' . $sentence;
                 continue;
             }
 
-            $parts[] = $index === count( $sentences ) - 1 ? ( $emotional ? '[softly] ' : '[warmly] ' ) . $sentence : $sentence;
+            $parts[] = $index === count( $sentences ) - 1 ? $style_directions[2] . ' ' . $sentence : $sentence;
         }
 
         $script = trim( preg_replace( "/\n{3,}/", "\n\n", implode( "\n", $parts ) ) );
@@ -3173,10 +3255,7 @@ class STLAI_Video_Job_Service {
             return new WP_Error( 'stlai_video_invalid_images', 'Selecione de 4 a 8 imagens para o video.' );
         }
 
-        $narration_type = sanitize_key( $payload['narration_type'] ?? '' );
-        if ( ! in_array( $narration_type, array( 'persuasiva', 'emocional' ), true ) ) {
-            return new WP_Error( 'stlai_video_invalid_narration', 'Tipo de narracao invalido.' );
-        }
+        $narration_type = self::sanitize_narration_style( $payload['narration_type'] ?? ( $payload['narration_style'] ?? 'emocional' ) );
 
         $format = sanitize_text_field( $payload['format'] ?? '' );
         if ( ! in_array( $format, array( '16:9', '9:16', '1:1' ), true ) ) {
@@ -3185,10 +3264,8 @@ class STLAI_Video_Job_Service {
 
         $video_language = self::sanitize_video_language( wp_unslash( $payload['video_language'] ?? ( $payload['narration_language'] ?? 'pt-BR' ) ) );
         $narration_language = self::sanitize_video_language( wp_unslash( $payload['narration_language'] ?? $video_language ) );
-        $narration_style = sanitize_key( $payload['narration_style'] ?? $narration_type );
-        if ( ! in_array( $narration_style, array( 'persuasiva', 'emocional' ), true ) ) {
-            $narration_style = $narration_type;
-        }
+        $narration_style = self::sanitize_narration_style( $payload['narration_style'] ?? $narration_type );
+        $narration_type = $narration_style;
 
         $script = wp_kses_post( wp_unslash( $payload['script_public'] ?? ( $payload['script'] ?? '' ) ) );
         $script = self::normalize_script_terms( $script, $video_language );

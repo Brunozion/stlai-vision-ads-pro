@@ -1494,3 +1494,25 @@ Cada slot de imagem agora carrega `role` e `allows_text`. Apenas `technical_dime
 ### Status
 
 Decidido
+
+## 2026-05-24 - Roteiro de narração com quatro estilos
+
+### Decisao
+
+A narração do vídeo foi expandida para quatro estilos: `persuasiva`, `emocional`, `demonstrativa` e `premium`. O padrão da UI passa a ser `emocional`.
+
+`script_public` continua sendo o roteiro limpo exibido ao usuário. `script_tts` continua interno e otimizado para voz, com marcações discretas de direção quando útil.
+
+O roteiro de narração não deve reutilizar texto técnico/SEO de marketplace de forma bruta. Nomes de produto devem ser normalizados para evitar repetições ruins como "topo de bolo de Bolo Personalizado". Números e dimensões que permanecerem na narração devem ser escritos em forma falada, como "vinte por dez por sete centímetros".
+
+### Motivo
+
+A copy da narração estava misturando descrição técnica, SEO e roteiro falado, gerando frases artificiais e pouco humanas.
+
+### Impacto
+
+O frontend gera roteiros locais por estilo, com linguagem mais natural e estrutura de gancho, apresentação, benefício, diferencial e fechamento. O backend aceita os quatro estilos e normaliza scripts antigos/novos antes de gerar o áudio.
+
+### Status
+
+Decidido

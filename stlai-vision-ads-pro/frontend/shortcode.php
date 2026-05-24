@@ -341,17 +341,31 @@
     <div class="sl">Narracao do video</div>
     <div class="voice-grid">
       <label class="voice-card" for="voice-persuasive">
-        <input type="radio" name="voice_style" id="voice-persuasive" value="persuasiva" checked>
+        <input type="radio" name="voice_style" id="voice-persuasive" value="persuasiva">
         <span class="voice-card-body">
           <span class="voice-title">Persuasiva</span>
           <span class="voice-desc">Foco em venda, beneficios e decisao de compra.</span>
         </span>
       </label>
       <label class="voice-card" for="voice-emotional">
-        <input type="radio" name="voice_style" id="voice-emotional" value="emocional">
+        <input type="radio" name="voice_style" id="voice-emotional" value="emocional" checked>
         <span class="voice-card-body">
           <span class="voice-title">Emocional</span>
           <span class="voice-desc">Foco em desejo, conexao e experiencia de uso.</span>
+        </span>
+      </label>
+      <label class="voice-card" for="voice-demo">
+        <input type="radio" name="voice_style" id="voice-demo" value="demonstrativa">
+        <span class="voice-card-body">
+          <span class="voice-title">Demonstrativa</span>
+          <span class="voice-desc">Foco em explicar o produto, uso, detalhes e diferenciais.</span>
+        </span>
+      </label>
+      <label class="voice-card" for="voice-premium">
+        <input type="radio" name="voice_style" id="voice-premium" value="premium">
+        <span class="voice-card-body">
+          <span class="voice-title">Premium</span>
+          <span class="voice-desc">Foco em sofisticação, acabamento, exclusividade e valor percebido.</span>
         </span>
       </label>
     </div>
@@ -507,7 +521,7 @@
     <div class="card video-prep-side">
       <div class="sl">Configuração atual</div>
       <div class="video-meta-list">
-        <div class="video-meta-item"><span>Narração</span><strong id="video-voice-label">Persuasiva</strong></div>
+        <div class="video-meta-item"><span>Narração</span><strong id="video-voice-label">Emocional</strong></div>
         <div class="video-meta-item"><span>Vídeo</span><strong>Geração IA Premium</strong></div>
         <div class="video-meta-item"><span>Narração</span><strong>Voz profissional IA</strong></div>
       </div>
