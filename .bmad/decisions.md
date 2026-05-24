@@ -1474,3 +1474,23 @@ Os prompts do combo 2x2 agora são montados por quadrante e reforçam a preserva
 ### Status
 
 Decidido
+
+## 2026-05-24 - Slots informativos limitados na galeria
+
+### Decisao
+
+A galeria permite no máximo uma imagem informativa (`informative_features`) e, quando houver medidas reais, uma imagem técnica de medidas (`technical_dimensions`).
+
+Todos os demais slots são imagens visuais/comerciais sem texto sobreposto: capa, ambientadas, detalhe, benefício visual e hero. O slot "Destaque — Benefício" deve comunicar valor pela cena e composição, não por palavras, bullets, ícones ou títulos.
+
+### Motivo
+
+A primeira implementação da imagem informativa reforçou o contexto técnico no prompt geral do combo 2x2, e modelos de imagem passaram a espalhar textos e blocos informativos em outros quadrantes.
+
+### Impacto
+
+Cada slot de imagem agora carrega `role` e `allows_text`. Apenas `technical_dimensions` e `informative_features` podem ter texto. Slots visuais recebem instruções negativas explícitas contra texto, títulos, legendas, bullets, números, medidas, selos, stickers, banners, tipografia e elementos de interface.
+
+### Status
+
+Decidido

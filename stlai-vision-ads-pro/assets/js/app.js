@@ -424,28 +424,23 @@ function currentImageTypes(){
   const hasDims = S.x || S.y || S.z;
   const infoScene = buildInformativeImageScene();
   const dimsScene = hasDims ? buildTechnicalDimensionsScene(dimsText()) : "";
-  const basic = [
-    { key:"capa", label:"Capa — Fundo Branco", scene: S.cfg.sceneCapa || window.stlaiConfig.sceneCapa },
-    hasDims
-      ? { key:"dims", label:"Medidas", scene: dimsScene }
-      : { key:"info", label:"Características", scene: infoScene },
-    hasDims
-      ? { key:"info", label:"Informações Técnicas", scene: infoScene }
-      : { key:"amb1", label:"Ambientada — Uso 1", scene: S.cfg.sceneAmb1 || window.stlaiConfig.sceneAmb1 },
-    hasDims
-      ? { key:"amb1", label:"Ambientada — Uso 1", scene: S.cfg.sceneAmb1 || window.stlaiConfig.sceneAmb1 }
-      : { key:"amb2", label:"Ambientada — Uso 2", scene: S.cfg.sceneAmb2 || window.stlaiConfig.sceneAmb2 }
-  ];
+  const cover=makeImageSlot("capa", "Capa — Fundo Branco", "cover_white_background", S.cfg.sceneCapa || window.stlaiConfig.sceneCapa);
+  const dims=makeImageSlot("dims", "Medidas", "technical_dimensions", dimsScene, true);
+  const info=makeImageSlot("info", "Características", "informative_features", infoScene, true);
+  const amb1=makeImageSlot("amb1", "Ambientada — Uso 1", "ambient_use_1", S.cfg.sceneAmb1 || window.stlaiConfig.sceneAmb1);
+  const amb2=makeImageSlot("amb2", "Ambientada — Uso 2", "ambient_use_2", S.cfg.sceneAmb2 || window.stlaiConfig.sceneAmb2);
+  const amb3=makeImageSlot("amb3", "Ambientada — Uso 3", "ambient_use_3", S.cfg.sceneAmb3 || window.stlaiConfig.sceneAmb3);
+  const detail=makeImageSlot("detail", "Detalhe — Acabamento", "detail_finish", S.cfg.sceneDetail || window.stlaiConfig.sceneDetail);
+  const benefit=makeImageSlot("feature", "Destaque — Benefício", "benefit_visual", S.cfg.sceneFeature || window.stlaiConfig.sceneFeature);
+  const hero=makeImageSlot("hero", "Hero — Cena Final", "hero_final", S.cfg.sceneHero || window.stlaiConfig.sceneHero);
 
-  const premium = [
-    ...basic,
-    hasDims
-      ? { key:"amb2", label:"Ambientada — Uso 2", scene: S.cfg.sceneAmb2 || window.stlaiConfig.sceneAmb2 }
-      : { key:"amb3", label:"Ambientada — Uso 3", scene: S.cfg.sceneAmb3 || window.stlaiConfig.sceneAmb3 },
-    { key:"detail", label:"Detalhe — Acabamento", scene: S.cfg.sceneDetail || window.stlaiConfig.sceneDetail },
-    { key:"feature", label:"Destaque — Benefício", scene: S.cfg.sceneFeature || window.stlaiConfig.sceneFeature },
-    { key:"hero", label:"Hero — Cena Final", scene: S.cfg.sceneHero || window.stlaiConfig.sceneHero }
-  ];
+  const basic = hasDims
+    ? [cover, dims, info, amb1]
+    : [cover, info, amb1, amb2];
+
+  const premium = hasDims
+    ? [cover, dims, info, amb1, amb2, amb3, detail, hero]
+    : [cover, info, amb1, amb2, amb3, detail, benefit, hero];
 
   return S.plan === "premium" ? premium : basic;
 }
@@ -467,9 +462,43 @@ function productPreservationInstruction(){
   return "Preserve completamente o produto da imagem de referência, sem alterar formato, cor, estrutura, material, acabamento, textura, proporção, detalhes ou identidade. Não adicione, remova ou invente partes, acessórios, funções, textos técnicos falsos ou especificações não fornecidas.";
 }
 
+function noTextOverlayInstruction(){
+  return "Não adicione nenhum texto, título, legenda, label, callout, ícone, bullet point, tipografia, número, medida, interface, banner, selo, sticker, faixa ou elemento escrito. Do not add any text, titles, captions, labels, callouts, icons, bullet points, typography, numbers, measurements, interface elements, banners or stickers. A imagem deve ser puramente fotográfica/comercial visual, sem conteúdo escrito.";
+}
+
+function buildVisualSlotScene(role, baseScene){
+  const base=String(baseScene || "").trim();
+  const rolePrompts={
+    cover_white_background:"Crie uma imagem principal de produto em fundo branco limpo, comercial e realista.",
+    ambient_use_1:"Crie uma imagem comercial ambientada realista do produto em contexto de uso, premium e limpa.",
+    ambient_use_2:"Crie uma segunda imagem comercial ambientada realista do produto em contexto de uso, com composição diferente da anterior.",
+    ambient_use_3:"Crie uma terceira imagem comercial ambientada realista do produto em contexto de uso, com iluminação natural e cena elegante.",
+    detail_finish:"Crie uma imagem de detalhe/acabamento do produto, com foco em textura, material e qualidade visual.",
+    benefit_visual:"Crie uma imagem visual que comunique o principal benefício do produto pela cena e composição, sem usar texto.",
+    hero_final:"Crie uma imagem hero premium do produto em uma cena final comercial, visualmente forte e limpa."
+  };
+  return [
+    rolePrompts[role] || base || "Crie uma imagem comercial visual do produto.",
+    base,
+    productPreservationInstruction(),
+    noTextOverlayInstruction()
+  ].filter(Boolean).join(" ");
+}
+
+function makeImageSlot(key, label, role, scene, allowsText=false){
+  const canUseText=role==="technical_dimensions" || role==="informative_features";
+  return {
+    key,
+    label,
+    role,
+    allows_text: Boolean(allowsText && canUseText),
+    scene: canUseText ? scene : buildVisualSlotScene(role, scene)
+  };
+}
+
 function buildTechnicalDimensionsScene(dimsTxt){
   return [
-    "Crie uma imagem comercial técnica do produto.",
+    "Crie uma única imagem técnica com medidas reais do produto.",
     productPreservationInstruction(),
     "Mostre o produto em destaque com fundo claro, limpo e neutro.",
     `Inclua apenas estas dimensões reais fornecidas no contexto: ${dimsTxt || "não informado"}.`,
@@ -491,13 +520,14 @@ function buildInformativeImageScene(){
   ].filter(Boolean).join(" ");
 
   return [
-    "Crie uma imagem comercial informativa do produto.",
+    "Crie uma única arte informativa comercial do produto.",
     productPreservationInstruction(),
-    "Mostre o produto com destaque e organize visualmente poucas características, benefícios, usos ou especificações reais disponíveis no contexto.",
+    "Mostre o produto com destaque e organize no máximo 3 ou 4 características curtas, benefícios, usos ou especificações reais disponíveis no contexto.",
     facts ? `Use somente estas informações como fonte: ${facts}` : "Se faltarem especificações técnicas, use benefícios e contexto de uso de forma genérica, sem inventar dados.",
     "Pode combinar o produto com uma cena de uso ou utilidade quando fizer sentido, sem modificar o item.",
     "Layout limpo, elegante, comercial e fácil de entender, com texto curto e objetivo.",
     "Não invente potência, voltagem, material, dimensões, capacidade, quantidades ou qualquer especificação técnica.",
+    "Não use textos longos. Não repita essa lógica nas demais imagens.",
     "Proporção 1:1."
   ].join(" ");
 }
@@ -993,7 +1023,11 @@ async function genMoreImages(btn) {
   btn.innerHTML = `<div style="width:14px;height:14px;border:2px solid transparent;border-top-color:#000;border-bottom-color:#000;border-radius:50%;animation:sp 1s linear infinite;margin-right:6px"></div> Gerando mais 4 imagens...`;
 
   const prodName = S.name || "produto";
-  const scene = fillTpl(S.cfg.promptBatchMore || window.stlaiConfig.promptBatchMore, { name: prodName });
+  const scene = [
+    fillTpl(S.cfg.promptBatchMore || window.stlaiConfig.promptBatchMore, { name: prodName }),
+    productPreservationInstruction(),
+    noTextOverlayInstruction()
+  ].join(" ");
 
   try {
     const prompt = fillTpl(S.cfg.imagePrompt, {
@@ -1133,7 +1167,11 @@ function buildImageComboScene(combo){
   const quadrants=combo.items.map((item,index)=>{
     const position=positions[index] || `Quadrant ${index + 1}`;
     const label=item.label || `Imagem ${combo.start_index + index}`;
-    return `- ${position} (${label}): ${item.scene || label}`;
+    const allowsText=Boolean(item.allows_text && (item.role==="technical_dimensions" || item.role==="informative_features"));
+    const textRule=allowsText
+      ? "TEXT IS ALLOWED ONLY IN THIS QUADRANT, and only as short factual marketplace copy based on the provided context."
+      : "NO TEXT ALLOWED IN THIS QUADRANT: no titles, captions, labels, icons, bullets, numbers, measurements, callouts, banners, stickers or typography.";
+    return `- ${position} (${label}, role: ${item.role || "visual"}, allows_text: ${allowsText ? "true" : "false"}): ${textRule} ${item.scene || label}`;
   }).join("\n");
 
   return [
@@ -1144,9 +1182,13 @@ function buildImageComboScene(combo){
     "Do not add, remove, redesign, stylize, replace or invent any part of the product.",
     "Use only factual information provided here. Never invent dimensions, material, power, voltage, capacity, quantity or technical specifications.",
     facts ? `Available factual context: ${facts}` : "Available factual context is limited; use generic commercial benefits and usage context without inventing technical data.",
+    "There can be at most one informative/features quadrant. There can be at most one technical dimensions quadrant, and only if real dimensions were provided.",
+    "All visual quadrants must be purely photographic/commercial with absolutely no written content.",
     "Quadrant plan:",
     quadrants,
-    "For technical or informative quadrants, use short clean text only when needed, with professional e-commerce layout, legible arrows/markers and minimal visual clutter.",
+    "Do not copy the informative layout into visual quadrants. Do not add text to ambient, detail, benefit or hero images. The benefit image must communicate by scene and composition, not words.",
+    "For the technical dimensions quadrant, use only real dimensions from the context with subtle lines/arrows. If dimensions are missing, do not invent them.",
+    "For the informative/features quadrant, use at most 3 or 4 short real points. Do not use long text.",
     "Overall style: premium marketplace product imagery, realistic, clean, elegant, commercially useful, no watermark, no UI, no fake logos, no extra props attached to the product."
   ].join("\n");
 }
