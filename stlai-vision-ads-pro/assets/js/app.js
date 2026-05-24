@@ -1744,6 +1744,14 @@ function normalizeClipJobs(jobs, clips=S.video.clips){
   return Object.keys(byIndex).sort((a,b)=>Number(a)-Number(b)).map(key=>byIndex[key]);
 }
 
+function hasActiveVideoClipOperations(jobs, clips=S.video.clips){
+  return normalizeClipJobs(jobs || [], clips).some(job=>{
+    if(job.url || job.status==="ready") return false;
+    return Boolean(job.operation_id_exists || job.operation_id || job.operation_still_processing)
+      && (Boolean(job.operation_still_processing) || ["pending","queued","scheduled","generating","retrying"].includes(String(job.status || "")));
+  });
+}
+
 function clipStatusRank(status){
   const rank={pending:1,queued:2,scheduled:3,generating:4,retrying:5,error:6,error_final:7,ready:8};
   return rank[String(status || "pending")] || 1;
@@ -1786,6 +1794,24 @@ function strongerClipJob(existing={}, incoming={}){
   const right={...incoming};
   if(left.url) left.status="ready";
   if(right.url) right.status="ready";
+  const leftActiveOperation=Boolean(left.operation_id_exists || left.operation_id || left.operation_still_processing)
+    && !left.url
+    && (Boolean(left.operation_still_processing) || ["pending","queued","scheduled","generating","retrying"].includes(String(left.status || "")));
+  const rightActiveOperation=Boolean(right.operation_id_exists || right.operation_id || right.operation_still_processing)
+    && !right.url
+    && (Boolean(right.operation_still_processing) || ["pending","queued","scheduled","generating","retrying"].includes(String(right.status || "")));
+  if(left.status==="error_final" && rightActiveOperation){
+    left.status="generating";
+    left.error="";
+    right.status="generating";
+    right.error="";
+  }
+  if(right.status==="error_final" && leftActiveOperation){
+    left.status="generating";
+    left.error="";
+    right.status="generating";
+    right.error="";
+  }
   const winner=clipStatusRank(right.status)>=clipStatusRank(left.status) ? right : left;
   const merged={...left, ...winner};
   if(left.status==="ready" && left.url){
@@ -1910,8 +1936,14 @@ function deriveMergedVideoStatus(previous, incoming, merged){
   const clipsReady=Array.isArray(merged.clips) ? merged.clips.filter(clip=>clip && clip.url).length : 0;
   const compositionStatus=String(merged.compositionStatus || "");
   const composerStatus=String(merged.composerStatus || "");
+  const activeClipOperations=hasActiveVideoClipOperations(merged.clipJobs, merged.clips)
+    || Number(incoming.active_generating_count || incoming.diagnostics?.active_generating_count || 0) > 0
+    || (Array.isArray(incoming.polling_operation_indexes) && incoming.polling_operation_indexes.length > 0)
+    || (Array.isArray(incoming.diagnostics?.polling_operation_indexes) && incoming.diagnostics.polling_operation_indexes.length > 0);
 
   if(merged.finalVideoUrl || incomingStatus==="ready" || previousStatus==="ready" || compositionStatus==="complete" || compositionStatus==="ready" || composerStatus==="ready") return "ready";
+  if(activeClipOperations && ["clip_generation_error","clips_partial_error","error"].includes(incomingStatus)) return "generating_clips";
+  if(activeClipOperations && ["clip_generation_error","clips_partial_error","error"].includes(previousStatus)) return "generating_clips";
   if((compositionStatus==="timeout" || composerStatus==="timeout") && (incoming.render_job_id || previous.renderJobId || previous.render_job_id) && !incoming.hard_timeout_reached) return "composition_waiting";
   if(compositionStatus==="waiting" || composerStatus==="waiting" || incomingStatus==="composition_waiting" || previousStatus==="composition_waiting") return "composition_waiting";
   if(compositionStatus==="error" || compositionStatus==="timeout" || composerStatus==="error" || composerStatus==="timeout") return "composition_error";
@@ -1965,6 +1997,11 @@ function applyVideoState(payload={}, options={}){
   const incomingRank=videoStateRank({...incoming, clips:incomingClips});
   const mergedStatus=deriveMergedVideoStatus(previous, incoming, merged);
   const canUseIncomingStatus=!stale || incomingRank>=previousRank || videoPhaseRank(incoming.status)>=videoPhaseRank(previous.status);
+  const activeClipOperations=hasActiveVideoClipOperations(mergedClipJobs, mergedClips)
+    || Number(incoming.active_generating_count || incoming.diagnostics?.active_generating_count || 0) > 0
+    || (Array.isArray(incoming.polling_operation_indexes) && incoming.polling_operation_indexes.length > 0)
+    || (Array.isArray(incoming.diagnostics?.polling_operation_indexes) && incoming.diagnostics.polling_operation_indexes.length > 0)
+    || Boolean(incoming.diagnostics?.active_operations_suppress_error);
 
   const previousJobId=String(S.video.jobId || "");
   const incomingJobId=String(incoming.job_id || "");
@@ -1998,9 +2035,9 @@ function applyVideoState(payload={}, options={}){
   S.video.currentClipAttempt=Number((!stale && incoming.current_clip_attempt) || S.video.currentClipAttempt || 0);
   S.video.clipRetryCount=Number((!stale && incoming.clip_retry_count) || S.video.clipRetryCount || 0);
   S.video.lastClipError=(!stale && incoming.last_clip_error) || S.video.lastClipError || "";
-  S.video.failedClipIndex=Number((!stale && (incoming.failed_clip_index || incoming.failed_clip)) || S.video.failedClipIndex || 0);
-  S.video.failedClipRole=(!stale && incoming.failed_clip_role) || S.video.failedClipRole || "";
-  S.video.errorCode=(!stale && (incoming.error_code || incoming.code)) || S.video.errorCode || "";
+  S.video.failedClipIndex=activeClipOperations ? 0 : Number((!stale && (incoming.failed_clip_index || incoming.failed_clip)) || S.video.failedClipIndex || 0);
+  S.video.failedClipRole=activeClipOperations ? "" : ((!stale && incoming.failed_clip_role) || S.video.failedClipRole || "");
+  S.video.errorCode=activeClipOperations ? "" : ((!stale && (incoming.error_code || incoming.code)) || S.video.errorCode || "");
   S.video.compositionStatus=merged.compositionStatus;
   S.video.composerStatus=merged.composerStatus;
   S.video.renderJobId=incoming.render_job_id || S.video.renderJobId || "";
@@ -2031,9 +2068,9 @@ function applyVideoState(payload={}, options={}){
   S.video.maxConcurrentClipGenerations=Math.max(4, Number((!stale && incoming.max_concurrent_clip_generations) || incoming.diagnostics?.max_concurrent_clip_generations || S.video.maxConcurrentClipGenerations || 4));
   S.video.clipStartStaggerSeconds=Number((!stale && incoming.clip_start_stagger_seconds) || incoming.diagnostics?.clip_start_stagger_seconds || S.video.clipStartStaggerSeconds || 1);
   S.video.retryable=Boolean((!stale && incoming.retryable) || incoming.diagnostics?.retryable || false);
-  S.video.retryReason=(!stale && incoming.retry_reason) || incoming.diagnostics?.retry_reason || S.video.retryReason || "";
+  S.video.retryReason=activeClipOperations ? (incoming.diagnostics?.retry_reason || incoming.retry_reason || "operation_still_processing") : ((!stale && incoming.retry_reason) || incoming.diagnostics?.retry_reason || S.video.retryReason || "");
   S.video.willRetry=Boolean((!stale && incoming.will_retry) || incoming.diagnostics?.will_retry || false);
-  S.video.errorFinalReason=(!stale && incoming.error_final_reason) || incoming.diagnostics?.error_final_reason || S.video.errorFinalReason || "";
+  S.video.errorFinalReason=activeClipOperations ? "" : ((!stale && incoming.error_final_reason) || incoming.diagnostics?.error_final_reason || S.video.errorFinalReason || "");
   S.video.diagnostics=(!stale && incoming.diagnostics && typeof incoming.diagnostics==="object") ? incoming.diagnostics : (S.video.diagnostics || {});
   if(isVideoCompositionState(merged.status, S.video.compositionStatus)){
     ensureCompositionTimerStartedAt();
@@ -2916,9 +2953,12 @@ function renderVideoClipsGridMarkup(clips){
       const retrying=clipJob.status==="retrying" || (willRetry && ["pending","queued"].includes(clipJob.status)) || (String(videoStatusForDisplay()).startsWith("retrying_clip_") && isActive);
       const generating=clipJob.status==="generating" || isActive;
       const scheduled=clipJob.status==="scheduled";
-      const failed=clipJob.status==="error_final" || clipJob.status==="error" || (recoverableVideoErrorStatus(S.video.status) && index===Number(S.video.failedClipIndex || 0));
       const maxAttempts=Number(clipJob.max_attempts || clipJob.maxAttempts || S.video.maxClipAttempts || 3);
       const attempt=Number(clipJob.attempt || 0);
+      const clipActiveOperation=Boolean(clipJob.operation_id_exists || clipJob.operation_id || clipJob.operation_still_processing)
+        && !clipJob.url
+        && (Boolean(clipJob.operation_still_processing) || ["pending","queued","scheduled","generating","retrying"].includes(String(clipJob.status || "")));
+      const failed=!clipActiveOperation && (clipJob.status==="error_final" || clipJob.status==="error" || (recoverableVideoErrorStatus(S.video.status) && index===Number(S.video.failedClipIndex || 0)));
       const finalFailed=failed && !willRetry && attempt >= maxAttempts;
       const operationElapsed=Number(clipJob.operation_elapsed_seconds || clipJob.operationElapsedSeconds || 0);
       const label=finalFailed ? "Erro após tentativas" : (retrying || (willRetry && isActive) ? `Ajustando clipe ${index}` : (generating ? (operationElapsed >= 180 ? `Ainda processando clipe ${index}` : `Gerando clipe ${index}`) : (scheduled ? "Agendado" : "Pendente")));

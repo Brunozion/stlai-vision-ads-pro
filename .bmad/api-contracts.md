@@ -1680,3 +1680,23 @@ Rules:
 - 720p operation timeout: soft 180s, hard 600s.
 - 1080p operation timeout: soft 300s, hard 900s.
 - Only hard timeout, explicit operation error, or invalid/missing operation may consume another attempt.
+- A public `clip_generation_error` must be suppressed while any clip has an active `operation_id` and no URL.
+- Final clip error messaging is allowed only when no active operation can still complete the job and the failed clip has `attempt >= max_attempts`.
+
+Additional safe diagnostics for stale error suppression:
+
+```json
+{
+  "global_status_before_normalization": "clip_generation_error",
+  "global_status_after_normalization": "generating_clips",
+  "stale_error_suppressed": true,
+  "active_operations_suppress_error": true,
+  "final_error_allowed": false,
+  "final_error_blockers": {
+    "active_generating_count": 4,
+    "polling_operation_indexes": [1, 2, 3, 4],
+    "attempts_below_max": [1],
+    "operation_still_processing": true
+  }
+}
+```

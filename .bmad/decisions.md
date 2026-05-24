@@ -80,6 +80,30 @@ O painel admin passa a armazenar as credenciais e modelos futuros. Nenhuma chave
 
 Decidido
 
+## 2026-05-24 - Erro final de clipe não domina operação Veo ativa
+
+### Decisao
+
+Enquanto qualquer clipe comercial tiver `operation_id` ativo, sem URL e em `generating`/`processing`, o estado público do job deve continuar como `generating_clips`.
+
+`clip_generation_error` e mensagens como "após 3 tentativas" só podem aparecer quando não houver operação ativa em processamento e o clipe realmente estiver em `error_final` com `attempt >= max_attempts`.
+
+Erros antigos preservados no job, como `failed_clip_index`, `retry_reason` ou `error_final_reason`, devem ser suprimidos da resposta pública enquanto operações Veo válidas ainda estiverem em andamento.
+
+### Motivo
+
+Com os 4 clipes paralelos, uma resposta antiga podia preservar `clip_generation_error` mesmo quando os 4 `operation_id` já estavam vivos e processando. Isso gerava falso erro visual sem falha real.
+
+### Impacto
+
+Backend, storage e frontend passam a normalizar status por precedência: vídeo final, composição, clipes prontos, operações ativas/scheduled/retrying, e somente depois erro final real.
+
+Diagnostics passam a indicar `global_status_before_normalization`, `global_status_after_normalization`, `stale_error_suppressed`, `active_operations_suppress_error`, `final_error_allowed` e `final_error_blockers`.
+
+### Status
+
+Decidido
+
 ## 2026-05-22 - Timer visível e zoom sem asset quebrado
 
 ### Decisao

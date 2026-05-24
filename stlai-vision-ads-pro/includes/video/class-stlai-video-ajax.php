@@ -179,13 +179,37 @@ class STLAI_Video_Ajax {
             }
         }
         $polling_operation_indexes = self::public_index_list( ! empty( $job['polling_operation_indexes'] ) ? $job['polling_operation_indexes'] : $polling_operation_indexes );
+        $attempts_below_max = array();
+        $error_final_indexes = array();
+        foreach ( $clip_summary as $clip_item ) {
+            $index = (int) ( $clip_item['index'] ?? 0 );
+            $attempt = (int) ( $clip_item['attempt'] ?? 0 );
+            $max_attempts_for_item = max( 1, (int) ( $clip_item['max_attempts'] ?? 3 ) );
+            if ( in_array( sanitize_key( $clip_item['status'] ?? '' ), array( 'error', 'error_final' ), true ) ) {
+                $error_final_indexes[] = $index;
+                if ( $attempt < $max_attempts_for_item ) {
+                    $attempts_below_max[] = $index;
+                }
+            }
+        }
+        $active_operations_suppress_error = $active_generating_count > 0 || ! empty( $polling_operation_indexes );
+        $stale_error_suppressed = $active_operations_suppress_error && in_array( sanitize_key( $job['status'] ?? '' ), array( 'clip_generation_error', 'clips_partial_error', 'error' ), true );
+        $final_error_allowed = ! $active_operations_suppress_error && ! empty( $error_final_indexes ) && empty( $attempts_below_max );
+        $public_status = sanitize_key( $job['status'] ?? 'queued' );
+        $public_message = sanitize_text_field( $job['message'] ?? '' );
+        if ( $stale_error_suppressed || ( $active_operations_suppress_error && in_array( $public_status, array( 'clip_generation_error', 'clips_partial_error', 'error' ), true ) ) ) {
+            $public_status = 'generating_clips';
+            $public_message = 'Gerando clipes IA';
+        }
+        $public_failed_clip_index = $active_operations_suppress_error ? 0 : (int) ( $job['failed_clip_index'] ?? 0 );
+        $public_failed_clip_role = $active_operations_suppress_error ? '' : sanitize_key( $job['failed_clip_role'] ?? '' );
         $retryable = ! empty( $job['retryable'] ) || $summary_retryable;
         $will_retry = ! empty( $job['will_retry'] ) || $summary_will_retry;
         $retry_reason = sanitize_key( $job['retry_reason'] ?? $summary_retry_reason );
         if ( empty( $retry_reason ) ) {
             $retry_reason = $summary_retry_reason;
         }
-        $error_final_reason = sanitize_key( $job['error_final_reason'] ?? '' );
+        $error_final_reason = $active_operations_suppress_error ? '' : sanitize_key( $job['error_final_reason'] ?? '' );
         $max_clip_attempts = (int) ( $job['max_clip_attempts'] ?? 3 );
         $composer_elapsed_seconds = self::composer_elapsed_seconds( $job );
         $soft_timeout_seconds = (int) ( $job['soft_timeout_seconds'] ?? STLAI_Video_Composer_Provider::configured_timeout() );
@@ -195,7 +219,9 @@ class STLAI_Video_Ajax {
         $next_poll_seconds = (int) ( $job['next_poll_seconds'] ?? self::next_poll_seconds( $job, $composer_elapsed_seconds ) );
         $safe_diagnostics = array(
             'job_id'                       => sanitize_text_field( $job['job_id'] ?? '' ),
-            'status'                       => sanitize_key( $job['status'] ?? 'queued' ),
+            'status'                       => $public_status,
+            'global_status_before_normalization' => sanitize_key( $job['status'] ?? 'queued' ),
+            'global_status_after_normalization'  => $public_status,
             'audio_url_exists'             => ! empty( $job['audio_url'] ),
             'clips_ready_count'            => $normalized_ready_count,
             'missing_clips'                => $normalized_missing_clips,
@@ -225,8 +251,8 @@ class STLAI_Video_Ajax {
             'external_render_status'       => sanitize_key( $job['external_render_status'] ?? ( $job['composer_status'] ?? '' ) ),
             'external_render_checked_at'   => sanitize_text_field( $job['external_render_checked_at'] ?? '' ),
             'render_job_id_exists'         => ! empty( $job['render_job_id'] ),
-            'last_composer_error_code'     => sanitize_text_field( $job['last_composer_error_code'] ?? ( $job['error_code'] ?? '' ) ),
-            'last_composer_error_message'  => sanitize_text_field( $job['last_composer_error_message'] ?? ( $job['error_message'] ?? '' ) ),
+            'last_composer_error_code'     => $active_operations_suppress_error ? '' : sanitize_text_field( $job['last_composer_error_code'] ?? ( $job['error_code'] ?? '' ) ),
+            'last_composer_error_message'  => $active_operations_suppress_error ? '' : sanitize_text_field( $job['last_composer_error_message'] ?? ( $job['error_message'] ?? '' ) ),
             'script_public_exists'         => ! empty( $job['script_public'] ?? ( $job['script'] ?? '' ) ),
             'script_tts_exists'            => ! empty( $job['script_tts'] ) || ! empty( $job['script_narration'] ),
             'script_tts_used_for_tts'      => ! empty( $job['script_tts_used_for_tts'] ),
@@ -259,8 +285,8 @@ class STLAI_Video_Ajax {
             'max_concurrent_clip_generations' => $max_concurrent_clip_generations,
             'clip_start_stagger_seconds'   => $clip_start_stagger_seconds,
             'concurrency_blocked'          => $concurrency_blocked,
-            'failed_clip_index'            => (int) ( $job['failed_clip_index'] ?? 0 ),
-            'failed_clip_role'             => sanitize_key( $job['failed_clip_role'] ?? '' ),
+            'failed_clip_index'            => $public_failed_clip_index,
+            'failed_clip_role'             => $public_failed_clip_role,
             'current_clip_attempt'         => (int) ( $job['current_clip_attempt'] ?? 0 ),
             'max_clip_attempts'            => $max_clip_attempts,
             'retryable'                    => $retryable,
@@ -275,13 +301,22 @@ class STLAI_Video_Ajax {
             'clip_operation_hard_timeout_seconds' => (int) $operation_summary['clip_operation_hard_timeout_seconds'],
             'operation_still_processing'   => ! empty( $operation_summary['operation_still_processing'] ),
             'attempt_counts_operations_not_polls' => true,
+            'active_operations_suppress_error' => $active_operations_suppress_error,
+            'stale_error_suppressed'       => $stale_error_suppressed,
+            'final_error_allowed'          => $final_error_allowed,
+            'final_error_blockers'         => array(
+                'active_generating_count'  => $active_generating_count,
+                'polling_operation_indexes' => $polling_operation_indexes,
+                'attempts_below_max'       => $attempts_below_max,
+                'operation_still_processing' => ! empty( $operation_summary['operation_still_processing'] ),
+            ),
         );
         return array(
             'job_id'          => $job['job_id'] ?? '',
-            'status'          => $job['status'] ?? 'queued',
+            'status'          => $public_status,
             'progress'        => (int) ( $job['progress'] ?? 0 ),
             'progress_hint'   => (int) ( $job['progress_hint'] ?? ( $job['progress'] ?? 0 ) ),
-            'message'         => $job['message'] ?? '',
+            'message'         => $public_message,
             'script_public'   => wp_strip_all_tags( $job['script_public'] ?? ( $job['script'] ?? '' ) ),
             'script_public_exists' => ! empty( $job['script_public'] ?? ( $job['script'] ?? '' ) ),
             'script_tts_exists' => ! empty( $job['script_tts'] ) || ! empty( $job['script_narration'] ),
@@ -381,13 +416,13 @@ class STLAI_Video_Ajax {
             'last_clip_error' => sanitize_text_field( $job['last_clip_error'] ?? '' ),
             'format'          => $job['format'] ?? '',
             'narration_type'  => $job['narration_type'] ?? '',
-            'failed_clip_index' => (int) ( $job['failed_clip_index'] ?? 0 ),
-            'failed_clip_role' => sanitize_key( $job['failed_clip_role'] ?? '' ),
-            'last_composer_error_code' => sanitize_text_field( $job['last_composer_error_code'] ?? ( $job['error_code'] ?? '' ) ),
-            'last_composer_error_message' => sanitize_text_field( $job['last_composer_error_message'] ?? ( $job['error_message'] ?? '' ) ),
-            'error_code'      => $job['error_code'] ?? '',
-            'error_message'   => $job['error_message'] ?? '',
-            'debug'           => $job['error_debug'] ?? '',
+            'failed_clip_index' => $public_failed_clip_index,
+            'failed_clip_role' => $public_failed_clip_role,
+            'last_composer_error_code' => $active_operations_suppress_error ? '' : sanitize_text_field( $job['last_composer_error_code'] ?? ( $job['error_code'] ?? '' ) ),
+            'last_composer_error_message' => $active_operations_suppress_error ? '' : sanitize_text_field( $job['last_composer_error_message'] ?? ( $job['error_message'] ?? '' ) ),
+            'error_code'      => $active_operations_suppress_error ? '' : ( $job['error_code'] ?? '' ),
+            'error_message'   => $active_operations_suppress_error ? '' : ( $job['error_message'] ?? '' ),
+            'debug'           => $active_operations_suppress_error ? '' : ( $job['error_debug'] ?? '' ),
         );
     }
 
@@ -732,6 +767,7 @@ class STLAI_Video_Ajax {
             $retryable = empty( $clip_job['url'] ) && self::is_retryable_clip_error_summary( $error );
             $will_retry = $retryable && $attempt > 0 && $attempt < 3 && 'ready' !== $status;
             $operation_id = sanitize_text_field( $clip_job['operation_id'] ?? '' );
+            $operation_active = ! empty( $operation_id ) && empty( $clip_job['url'] ) && ! empty( $clip_job['operation_still_processing'] );
             $effective_resolution = sanitize_key( $clip_job['effective_resolution'] ?? ( $clip_job['output_resolution'] ?? '720p' ) );
             $soft_timeout = '1080p' === $effective_resolution ? 300 : 180;
             $hard_timeout = '1080p' === $effective_resolution ? 900 : 600;
@@ -739,7 +775,7 @@ class STLAI_Video_Ajax {
             $is_stale = $is_stale && ( ! empty( $operation_id ) ? $age >= $hard_timeout : $age >= self::CLIP_GENERATION_STALE_SECONDS );
             $summary[] = array(
                 'index'       => $index,
-                'status'      => $status ?: 'pending',
+                'status'      => $operation_active && 'error_final' === $status ? 'generating' : ( $status ?: 'pending' ),
                 'attempt'     => $attempt,
                 'max_attempts' => 3,
                 'has_url'     => ! empty( $clip_job['url'] ),
@@ -748,7 +784,7 @@ class STLAI_Video_Ajax {
                 'retryable'   => $retryable,
                 'will_retry'  => $will_retry,
                 'retry_reason' => $retryable ? self::clip_retry_reason_from_summary( $error ) : '',
-                'error_final_reason' => 'error_final' === $status ? ( $will_retry ? '' : ( $retryable ? 'max_attempts_exhausted' : 'non_retryable_error' ) ) : '',
+                'error_final_reason' => $operation_active ? '' : ( 'error_final' === $status ? ( $will_retry ? '' : ( $retryable ? 'max_attempts_exhausted' : 'non_retryable_error' ) ) : '' ),
                 'scheduled_start_at' => sanitize_text_field( $clip_job['scheduled_start_at'] ?? '' ),
                 'started_at'  => $started_at,
                 'age_seconds' => $age,

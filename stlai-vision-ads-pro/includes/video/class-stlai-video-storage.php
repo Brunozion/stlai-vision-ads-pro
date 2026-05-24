@@ -198,6 +198,10 @@ class STLAI_Video_Storage {
 	        $finished = array();
 	        $missing = array();
 	        $ready = 0;
+	        $active_clip_operations = 0;
+	        $scheduled_clip_indexes = array();
+	        $retrying_clip_indexes = array();
+	        $error_final_clip_indexes = array();
 
 	        foreach ( $clip_jobs as $clip_job ) {
 	            $index = (int) ( $clip_job['index'] ?? 0 );
@@ -211,6 +215,18 @@ class STLAI_Video_Storage {
 	                $ready++;
 	            } else {
 	                $missing[] = $index;
+	            }
+	            if ( ! empty( $clip_job['operation_id'] ) && empty( $clip_job['url'] ) && in_array( $status, array( 'pending', 'generating', 'retrying' ), true ) ) {
+	                $active_clip_operations++;
+	            }
+	            if ( 'scheduled' === $status ) {
+	                $scheduled_clip_indexes[] = $index;
+	            }
+	            if ( 'retrying' === $status ) {
+	                $retrying_clip_indexes[] = $index;
+	            }
+	            if ( 'error_final' === $status && (int) ( $clip_job['attempt'] ?? 0 ) >= 3 && empty( $clip_job['operation_id'] ) ) {
+	                $error_final_clip_indexes[] = $index;
 	            }
 	        }
 
@@ -242,12 +258,23 @@ class STLAI_Video_Storage {
 	        } elseif ( $ready >= 4 && ! empty( $job['audio_url'] ) && ! in_array( $current_status, array( 'composition_error', 'composition_pending' ), true ) ) {
 	            $job['status'] = 'clips_ready';
 	            $job['progress'] = max( (int) ( $job['progress'] ?? 0 ), 78 );
+	        } elseif ( $active_clip_operations > 0 || ! empty( $scheduled_clip_indexes ) || ! empty( $retrying_clip_indexes ) ) {
+	            $job['status'] = 'generating_clips';
+	            $job['message'] = 'Gerando clipes IA';
+	            $job['failed_clip_index'] = 0;
+	            $job['failed_clip_role'] = '';
+	            $job['error_final_reason'] = '';
+	            $job['error_code'] = '';
+	            $job['error_message'] = '';
+	            $job['progress'] = max( (int) ( $job['progress'] ?? 0 ), self::clip_progress_for_ready_count( $ready ) );
 	        } elseif ( $ready > 0 && $ready < 4 && ! in_array( $current_status, array( 'clip_generation_error', 'clips_partial_error' ), true ) ) {
 	            $job['status'] = 'generating_clips';
 	            $job['progress'] = max( (int) ( $job['progress'] ?? 0 ), self::clip_progress_for_ready_count( $ready ) );
 	        } elseif ( ! empty( $job['audio_url'] ) && $ready <= 0 && in_array( $current_status, array( 'generating_audio', 'generating_narration', 'queued' ), true ) ) {
 	            $job['status'] = 'generating_clips';
 	            $job['progress'] = max( (int) ( $job['progress'] ?? 0 ), 25 );
+	        } elseif ( empty( $active_clip_operations ) && empty( $scheduled_clip_indexes ) && empty( $retrying_clip_indexes ) && ! empty( $error_final_clip_indexes ) ) {
+	            $job['status'] = 'clip_generation_error';
 	        }
 
 	        return $job;
@@ -366,6 +393,21 @@ class STLAI_Video_Storage {
 	    private static function recover_premature_final_clip_job( array $clip_job ) {
 	        $status = sanitize_key( $clip_job['status'] ?? 'pending' );
 	        $attempt = max( 0, (int) ( $clip_job['attempt'] ?? 0 ) );
+	        $operation_id = sanitize_text_field( $clip_job['operation_id'] ?? '' );
+	        if ( 'error_final' === $status && ! empty( $operation_id ) && empty( $clip_job['url'] ) ) {
+	            $started_at = sanitize_text_field( $clip_job['started_at'] ?? '' );
+	            $age = self::clip_job_age_seconds( $started_at );
+	            $hard_timeout = '1080p' === sanitize_key( $clip_job['effective_resolution'] ?? ( $clip_job['output_resolution'] ?? '' ) ) ? 900 : 600;
+	            if ( empty( $started_at ) || $age < $hard_timeout ) {
+	                $clip_job['status'] = 'generating';
+	                $clip_job['attempt'] = max( 1, $attempt );
+	                $clip_job['error'] = '';
+	                $clip_job['finished_at'] = '';
+	                $clip_job['operation_still_processing'] = true;
+	                return $clip_job;
+	            }
+	        }
+
 	        if ( 'error_final' !== $status || ! empty( $clip_job['url'] ) || $attempt >= 3 ) {
 	            return $clip_job;
 	        }

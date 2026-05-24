@@ -851,6 +851,30 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-24 - Supressão de erro stale durante operações Veo ativas
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/assets/js/app.js
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- Operações Veo ativas (`operation_id` + sem URL + `generating`/processing) agora têm precedência sobre `clip_generation_error`.
+- `error_final` prematuro com `operation_id` vivo volta para `generating` e limpa erro público stale.
+- A mensagem "após 3 tentativas" só pode aparecer quando `attempt >= max_attempts` e não há operação ativa.
+- O frontend não deixa `error_final` antigo ganhar de um `operation_id` ativo no merge monotônico.
+- Diagnostics indicam quando erro stale foi suprimido por operação ativa.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Clipes comerciais em stagger paralelo 4x
 
 Arquivos alterados:

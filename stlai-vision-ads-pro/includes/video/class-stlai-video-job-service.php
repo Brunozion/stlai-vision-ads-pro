@@ -700,7 +700,7 @@ class STLAI_Video_Job_Service {
             $has_error = false;
             $active_generating_count = 0;
             foreach ( $clip_jobs as $clip_job ) {
-                if ( in_array( sanitize_key( $clip_job['status'] ?? '' ), array( 'error', 'error_final' ), true ) ) {
+                if ( self::is_final_clip_error_allowed( $clip_job ) ) {
                     $has_error = true;
                 }
                 if ( self::is_active_generating_clip_job( $clip_job ) ) {
@@ -953,6 +953,21 @@ class STLAI_Video_Job_Service {
     private static function recover_premature_final_clip_job( array $clip_job ) {
         $status = sanitize_key( $clip_job['status'] ?? 'pending' );
         $attempt = max( 0, (int) ( $clip_job['attempt'] ?? 0 ) );
+        $operation_id = sanitize_text_field( $clip_job['operation_id'] ?? '' );
+        if ( 'error_final' === $status && ! empty( $operation_id ) && empty( $clip_job['url'] ) ) {
+            $started_at = sanitize_text_field( $clip_job['started_at'] ?? '' );
+            $age = self::clip_job_age_seconds( $started_at );
+            $timeouts = self::clip_operation_timeouts( $clip_job['effective_resolution'] ?? ( $clip_job['output_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ) );
+            if ( empty( $started_at ) || $age < $timeouts['hard'] ) {
+                $clip_job['status'] = 'generating';
+                $clip_job['attempt'] = max( 1, $attempt );
+                $clip_job['error'] = '';
+                $clip_job['finished_at'] = '';
+                $clip_job['operation_still_processing'] = true;
+                return $clip_job;
+            }
+        }
+
         if ( 'error_final' !== $status || ! empty( $clip_job['url'] ) || $attempt >= self::CLIP_MAX_ATTEMPTS ) {
             return $clip_job;
         }
@@ -1426,13 +1441,40 @@ class STLAI_Video_Job_Service {
     }
 
     private static function has_final_clip_errors( array $clip_jobs ) {
+        if ( self::has_active_clip_operations( $clip_jobs ) || self::active_generating_count( $clip_jobs ) > 0 ) {
+            return false;
+        }
+
         foreach ( $clip_jobs as $clip_job ) {
-            if ( 'error_final' === sanitize_key( $clip_job['status'] ?? '' ) ) {
+            if ( self::is_final_clip_error_allowed( $clip_job ) ) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private static function has_active_clip_operations( array $clip_jobs ) {
+        return ! empty( self::active_operation_clip_indexes( $clip_jobs ) );
+    }
+
+    private static function is_final_clip_error_allowed( array $clip_job ) {
+        if ( 'error_final' !== sanitize_key( $clip_job['status'] ?? '' ) || ! empty( $clip_job['url'] ) ) {
+            return false;
+        }
+
+        $attempt = max( 0, (int) ( $clip_job['attempt'] ?? 0 ) );
+        $operation_id = sanitize_text_field( $clip_job['operation_id'] ?? '' );
+        if ( ! empty( $operation_id ) ) {
+            $started_at = sanitize_text_field( $clip_job['started_at'] ?? '' );
+            $age = self::clip_job_age_seconds( $started_at );
+            $timeouts = self::clip_operation_timeouts( $clip_job['effective_resolution'] ?? ( $clip_job['output_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ) );
+            if ( empty( $started_at ) || $age < $timeouts['hard'] ) {
+                return false;
+            }
+        }
+
+        return $attempt >= self::CLIP_MAX_ATTEMPTS;
     }
 
     private static function process_single_clip_job( array $job, $clip_index ) {
@@ -1457,7 +1499,7 @@ class STLAI_Video_Job_Service {
                 continue;
             }
             $previous_attempt = max( 0, (int) ( $clip_job['attempt'] ?? 0 ) );
-            if ( 'error_final' === sanitize_key( $clip_job['status'] ?? '' ) ) {
+            if ( self::is_final_clip_error_allowed( $clip_job ) ) {
                 return STLAI_Video_Storage::update_job(
                     $job['job_id'],
                     array_merge(
@@ -1702,7 +1744,7 @@ class STLAI_Video_Job_Service {
             }
             $retryable = self::is_retryable_clip_error( $clip );
             $retry_reason = is_array( $error_data ) ? sanitize_key( $error_data['retry_reason'] ?? self::clip_retry_reason( $clip ) ) : self::clip_retry_reason( $clip );
-            if ( $retryable && $failed_attempt < self::CLIP_MAX_ATTEMPTS ) {
+            if ( $failed_attempt < self::CLIP_MAX_ATTEMPTS ) {
                 $clip_jobs = self::replace_clip_job(
                     $clip_jobs,
                     $clip_index,
@@ -1712,6 +1754,9 @@ class STLAI_Video_Job_Service {
                         'error'       => $last_error,
                         'scheduled_start_at' => self::mysql_from_timestamp( current_time( 'timestamp' ) + self::CLIP_START_STAGGER_SECONDS ),
                         'finished_at' => '',
+                        'operation_id' => '',
+                        'operation_poll_count' => 0,
+                        'operation_still_processing' => false,
                     )
                 );
 
@@ -1736,7 +1781,7 @@ class STLAI_Video_Job_Service {
                             'failed_clip_role'     => '',
                             'max_clip_attempts'    => self::CLIP_MAX_ATTEMPTS,
                             'retryable'            => true,
-                            'retry_reason'         => $retry_reason,
+                            'retry_reason'         => $retry_reason ?: 'temporary_or_unknown',
                             'will_retry'           => true,
                             'error_final_reason'   => '',
                             'next_clip_action'     => 'retry_clip',
