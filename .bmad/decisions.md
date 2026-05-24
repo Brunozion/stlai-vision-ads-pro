@@ -196,6 +196,30 @@ O frontend continua refletindo o estado por card: `scheduled` como "Agendado", `
 
 Decidido
 
+## 2026-05-24 - Paralelismo 16:9 e prompt de produto imutável
+
+### Decisao
+
+O fluxo de clipes comerciais não tem regra diferente por formato: `9:16` e `16:9` usam `MAX_CONCURRENT_CLIP_GENERATIONS = 4` e `CLIP_START_STAGGER_SECONDS = 1`.
+
+Não deve existir limite especial de 2 clipes para `16:9`, chunk em pares ou dependência de clipe anterior ficar pronto para iniciar o próximo.
+
+O prompt do Veo passa a tratar o produto como item sagrado: forma, material, cor, tamanho, textura, detalhes, rosto, cabelo, roupa, pose, base, suporte, acessórios e identidade não podem mudar. Produto não pode ser redesenhado, estilizado, substituído, deformado, transformado ou receber partes/props novos.
+
+O vídeo deve animar a cena inteira de forma sutil e realista: câmera, parallax, luz ambiente, reflexos, flores, tecidos, velas e pessoas ao fundo podem ter micro movimento somente se já existirem na imagem. O produto permanece estável, nítido e idêntico.
+
+### Motivo
+
+Alguns clipes 16:9 pareciam sair em dois lotes e alguns prompts ainda permitiam alteração visual do produto ou animação restrita demais ao objeto. O resultado comercial precisa ser vivo sem sacrificar fidelidade.
+
+### Impacto
+
+Diagnostics passam a expor `aspect_ratio` no job e em `clip_jobs_summary`. O teste 16:9 deve permitir confirmar 4 `operation_id` ativos por `polling_operation_indexes` e `clip_jobs_summary[].operation_id_exists`.
+
+### Status
+
+Decidido
+
 ## 2026-05-22 - Timer de composição e bônus de score do vídeo final
 
 ### Decisao

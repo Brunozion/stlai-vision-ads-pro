@@ -3232,22 +3232,22 @@ class STLAI_Video_Job_Service {
             array(
                 'role'      => 'apresentacao_geral',
                 'label'     => 'Clipe 1 — Apresentação geral',
-                'direction' => 'Use the selected image as-is. Start with the full product visible, stable product presentation, medium/wide framing, slow gentle zoom in. Do not create a new scene. Do not crop the product top, base, face, ring, support or display stand.',
+                'direction' => 'Use the selected image as-is. General presentation, smooth camera, product as the hero subject. Start with the full product visible, stable product presentation, medium/wide framing, slow gentle zoom in. Animate the scene subtly, but keep the product exactly identical. Do not create a new scene. Do not crop the product top, base, face, ring, support or display stand.',
             ),
             array(
                 'role'      => 'uso_contexto',
                 'label'     => 'Clipe 2 — Uso / contexto',
-                'direction' => 'Use the selected image as-is. Gentle camera drift showing the product in its existing context with the whole product safely inside frame. Do not create a new use case or tighter crop.',
+                'direction' => 'Use the selected image as-is. Existing context only, with subtle environment motion and natural background movement if already present. Gentle camera drift showing the product in its existing context with the whole product safely inside frame. Keep the product exactly identical. Do not create a new use case or tighter crop.',
             ),
             array(
                 'role'      => 'detalhe_acabamento',
                 'label'     => 'Clipe 3 — Detalhe / acabamento',
-                'direction' => 'Use the selected image as-is. Subtle detail emphasis, but keep the full product or all important product parts visible. Avoid aggressive close-up and do not cut head, top, base, ring, support or finish details.',
+                'direction' => 'Use the selected image as-is. Detail and finish emphasis with a careful closer camera, but keep the product exactly identical and keep the full product or all important product parts visible. Background can move subtly. Avoid aggressive close-up and do not cut head, top, base, ring, support or finish details.',
             ),
             array(
                 'role'      => 'hero_fechamento',
                 'label'     => 'Clipe 4 — Hero / fechamento',
-                'direction' => 'Use the selected image as-is. Premium slow zoom out or slight parallax, elegant final product shot with the entire product visible. Preserve the exact product presentation, support, base, hook, display stand, surface, attachment point and display position. Keep the product anchored exactly as shown. Do not detach, lift, pull, hang, place, attach, fit, remove or transform the product. Do not show any hand interaction unless a hand is already clearly present in the source image.',
+                'direction' => 'Use the selected image as-is. Premium hero closing shot, elegant scene motion, slow zoom out or slight parallax, with the entire product visible and exactly identical. Preserve the exact product presentation, support, base, hook, display stand, surface, attachment point and display position. Keep the product anchored exactly as shown. Do not detach, lift, pull, hang, place, attach, fit, remove or transform the product. Do not show any hand interaction unless a hand is already clearly present in the source image.',
             ),
         );
     }

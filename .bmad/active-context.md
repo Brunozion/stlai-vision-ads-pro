@@ -903,6 +903,29 @@ Status:
 
 - Correção concluida.
 
+## 2026-05-24 - Prompt fiel ao produto e 16:9 sem lote de 2
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/video/class-stlai-veo-provider.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- Confirmado que `9:16` e `16:9` usam a mesma regra global: `MAX_CONCURRENT_CLIP_GENERATIONS = 4` e `CLIP_START_STAGGER_SECONDS = 1`.
+- Não foi encontrada regra específica limitando `16:9` a 2 clipes ou processando em pares.
+- Diagnostics agora expõem `aspect_ratio` no job e em cada item de `clip_jobs_summary`.
+- Prompt do Veo reforçado para impedir alteração do produto, faces, cabelo, roupa, pose, base, suporte, textura, cor, proporções, acessórios e identidade.
+- Prompt do Veo agora pede animação da cena inteira com movimento natural e sutil, preservando o produto como hero estável e idêntico.
+
+Status:
+
+- Correção concluida.
+
 ## 2026-05-22 - Timer visível e zoom seguro da galeria
 
 Arquivos alterados:

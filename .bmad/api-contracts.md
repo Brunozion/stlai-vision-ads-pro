@@ -199,6 +199,7 @@ Resposta de sucesso:
       "clip_start_stagger_seconds": 1,
       "clip_generation_mode": "staggered_parallel",
       "format": "9:16",
+      "aspect_ratio": "9:16",
       "video_model": "veo-3.1-lite-generate-preview",
       "output_resolution": "720p",
       "next_clip_reason": "pending_stale_retry",
@@ -210,6 +211,7 @@ Resposta de sucesso:
           "status": "scheduled",
           "attempt": 1,
           "has_url": false,
+          "aspect_ratio": "9:16",
           "scheduled_start_at": "2026-05-21 10:00:00",
           "started_at": "2026-05-21 10:00:00",
           "age_seconds": 273,
@@ -255,6 +257,7 @@ Observações:
 - `cancelled` é status reservado para contrato futuro.
 - `scheduled` em `clip_jobs` significa que o clipe já foi reservado para geração com `scheduled_start_at`; o frontend deve iniciar o request quando chegar esse horário.
 - `max_concurrent_clip_generations` é `4` no fluxo comercial atual, com `clip_start_stagger_seconds = 1` e `clip_generation_mode = "staggered_parallel"`.
+- `format` e `aspect_ratio` devem refletir `9:16` ou `16:9`; não há limite de concorrência diferente por formato.
 - `started_clip_indexes_this_tick` lista somente os clipes iniciados na rodada atual; `started_clip_indexes` pode ser preservado por compatibilidade.
 - `polling_operation_indexes` lista clipes com `operation_id` ativo e sem URL, que devem continuar sendo consultados.
 - Attempts de clipe contam operações iniciadas, não polls de uma operação existente.
