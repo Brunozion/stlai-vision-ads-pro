@@ -240,7 +240,13 @@ function stlai_render_password_field( $args ) {
     $options = get_option( 'stlai_vision_ads_pro_settings' );
     $val = isset($options[$args['id']]) ? $options[$args['id']] : '';
     $placeholder = isset($args['placeholder']) ? ' placeholder="' . esc_attr($args['placeholder']) . '"' : '';
-    echo '<input type="password" id="' . esc_attr( $args['id'] ) . '" class="regular-text" style="width:100%; max-width:500px;" name="stlai_vision_ads_pro_settings[' . esc_attr( $args['id'] ) . ']" value="' . esc_attr( $val ) . '"' . $placeholder . '>';
+    echo '<div class="stlai-secret-field">';
+    echo '<input type="password" id="' . esc_attr( $args['id'] ) . '" class="regular-text stlai-secret-input" autocomplete="off" name="stlai_vision_ads_pro_settings[' . esc_attr( $args['id'] ) . ']" value="' . esc_attr( $val ) . '"' . $placeholder . '>';
+    echo '<button type="button" class="stlai-secret-toggle" data-stlai-secret-toggle aria-label="Mostrar chave" aria-pressed="false">';
+    echo '<svg class="stlai-secret-toggle__icon stlai-secret-toggle__icon--show" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 5c5.1 0 8.7 4.1 10 7-1.3 2.9-4.9 7-10 7S3.3 14.9 2 12c1.3-2.9 4.9-7 10-7Zm0 2C8.3 7 5.5 9.6 4.3 12c1.2 2.4 4 5 7.7 5s6.5-2.6 7.7-5C18.5 9.6 15.7 7 12 7Zm0 2.5A2.5 2.5 0 1 1 12 14a2.5 2.5 0 0 1 0-5Z"/></svg>';
+    echo '<svg class="stlai-secret-toggle__icon stlai-secret-toggle__icon--hide" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="m3.3 2 18.7 18.7-1.3 1.3-3.1-3.1A10.6 10.6 0 0 1 12 20C6.9 20 3.3 15.9 2 13c.7-1.6 2.2-3.5 4.2-4.9L2 3.3 3.3 2Zm4.4 7.6A11.1 11.1 0 0 0 4.3 13c1.2 2.4 4 5 7.7 5 1.5 0 2.9-.4 4-1.1l-2.1-2.1A3.5 3.5 0 0 1 10.2 11L7.7 9.6ZM12 6c5.1 0 8.7 4.1 10 7a12 12 0 0 1-2.8 3.9l-1.4-1.4A10.7 10.7 0 0 0 19.7 13c-1.2-2.4-4-5-7.7-5-.8 0-1.6.1-2.3.4L8.1 6.8A10.3 10.3 0 0 1 12 6Zm0 3.5A3.5 3.5 0 0 1 15.5 13v.2L11.8 9.5h.2Z"/></svg>';
+    echo '</button>';
+    echo '</div>';
     if (!empty($args['description'])) {
         echo '<p class="description">' . esc_html($args['description']) . '</p>';
     }
@@ -348,6 +354,15 @@ function stlai_config_ia_page() {
             .stlai-admin-card .form-table td{padding-right:20px}
             .stlai-provider-notice{margin:0;max-width:720px}
             .stlai-admin-provider-hidden{display:none}
+            .stlai-secret-field{display:flex;align-items:center;gap:8px;max-width:620px}
+            .stlai-secret-field input{flex:1;min-width:0}
+            .stlai-secret-toggle{height:36px;min-width:40px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #8c8f94;background:#fff;border-radius:4px;color:#3c434a;cursor:pointer}
+            .stlai-secret-toggle:hover{border-color:#5166E6;color:#5166E6}
+            .stlai-secret-toggle.is-visible{border-color:#9B51E6;color:#9B51E6;box-shadow:0 0 0 1px rgba(155,81,230,.12)}
+            .stlai-secret-toggle__icon{display:block}
+            .stlai-secret-toggle__icon--hide{display:none}
+            .stlai-secret-toggle.is-visible .stlai-secret-toggle__icon--show{display:none}
+            .stlai-secret-toggle.is-visible .stlai-secret-toggle__icon--hide{display:block}
         </style>
         <form action="options.php" method="post" class="stlai-admin-settings">
             <?php
@@ -449,6 +464,18 @@ function stlai_config_ia_page() {
                 provider.addEventListener("change", syncProviderRows);
                 syncProviderRows();
             }
+            document.addEventListener("click", function(event){
+                const toggle=event.target.closest("[data-stlai-secret-toggle]");
+                if(!toggle){ return; }
+                const wrap=toggle.closest(".stlai-secret-field");
+                const input=wrap ? wrap.querySelector(".stlai-secret-input") : null;
+                if(!input){ return; }
+                const visible=input.type === "text";
+                input.type=visible ? "password" : "text";
+                toggle.classList.toggle("is-visible", !visible);
+                toggle.setAttribute("aria-label", visible ? "Mostrar chave" : "Ocultar chave");
+                toggle.setAttribute("aria-pressed", visible ? "false" : "true");
+            });
         })();
         </script>
     </div>

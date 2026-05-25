@@ -1561,3 +1561,21 @@ O fluxo escolhe a chave de prompt pelo `format` do job antes de chamar o Veo. Ca
 ### Status
 
 Decidido
+
+## 2026-05-25 - Mostrar/ocultar campos sensíveis no admin
+
+### Decisao
+
+Campos sensíveis no painel de Configurações de IA agora possuem botão de mostrar/ocultar valor.
+
+### Motivo
+
+As API keys e secrets já eram mascaradas, mas o admin não tinha uma forma visual segura de conferir o valor digitado antes de salvar ou testar integrações.
+
+### Impacto
+
+O helper `stlai_render_password_field` renderiza o input como `password` por padrão e adiciona um botão local de alternância para `text`/`password`, preservando os mesmos option names e sem expor valores em JavaScript global ou logs.
+
+### Status
+
+Decidido
