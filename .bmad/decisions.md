@@ -1516,3 +1516,25 @@ O frontend gera roteiros locais por estilo, com linguagem mais natural e estrutu
 ### Status
 
 Decidido
+
+## 2026-05-25 - Prompt editável para clipes IA Veo
+
+### Decisao
+
+O prompt dos clipes IA foi exposto no painel de Prompts como "Vídeo — Clipes IA", usando a chave `video_clip_generation_prompt`.
+
+Clipes 16:9 devem iniciar com o produto inteiro visível, câmera aberta e margem segura para cabeça, base, laterais e detalhes importantes. O prompt também reforça movimento natural do ambiente para evitar efeito de foto estática com apenas movimento de câmera.
+
+Regras obrigatórias de preservação do produto são anexadas pelo backend mesmo quando o prompt é customizado no admin.
+
+### Motivo
+
+Alguns clipes horizontais começavam cortados e parte dos vídeos ficava visualmente parada. Além disso, o prompt precisava ficar editável para testes sem abrir risco de remover proteções críticas.
+
+### Impacto
+
+O Veo recebe o prompt customizado com placeholders e, em seguida, um bloco obrigatório que protege identidade do produto, bloqueia crop inicial em 16:9, remove overlays/efeitos e exige movimento realista no ambiente.
+
+### Status
+
+Decidido

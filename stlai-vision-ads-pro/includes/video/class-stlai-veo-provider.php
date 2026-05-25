@@ -11,6 +11,7 @@ class STLAI_Veo_Provider {
     const MAX_IMAGE_BYTES = 15728640;
     const POLL_ATTEMPTS = 10;
     const POLL_INTERVAL = 5;
+    const VIDEO_CLIP_PROMPT_KEY = 'video_clip_generation_prompt';
 
     public static function generate_test_clip( array $payload ) {
         $clip = self::generate_clip(
@@ -91,7 +92,9 @@ class STLAI_Veo_Provider {
             return $prepared_frame;
         }
 
-        $prompt = self::build_prompt( $payload );
+        $prompt_package = self::build_prompt_package( $payload );
+        $prompt = $prompt_package['prompt'];
+        $prompt_meta = $prompt_package['meta'];
         $body = array(
             'instances'  => array(
                 array(
@@ -110,6 +113,11 @@ class STLAI_Veo_Provider {
         );
 
         $safe_debug = self::payload_debug( $config, $aspect_ratio['value'], $prepared_frame, $payload );
+        $safe_debug = self::join_debug(
+            $safe_debug,
+            'video_clip_prompt_key=' . self::VIDEO_CLIP_PROMPT_KEY,
+            'video_clip_prompt_source=' . $prompt_meta['video_clip_prompt_source']
+        );
 
         $operation = self::create_operation( $config, $body, $safe_debug );
         if ( is_wp_error( $operation ) ) {
@@ -142,6 +150,11 @@ class STLAI_Veo_Provider {
             'operation_name' => $operation_name,
             'status'         => 'processing',
             'debug'          => $operation_debug,
+            'video_clip_prompt_source' => $prompt_meta['video_clip_prompt_source'],
+            'video_clip_prompt_key' => self::VIDEO_CLIP_PROMPT_KEY,
+            'prompt_contains_full_product_rule' => $prompt_meta['prompt_contains_full_product_rule'],
+            'prompt_contains_environment_motion_rule' => $prompt_meta['prompt_contains_environment_motion_rule'],
+            'prompt_contains_no_crop_rule' => $prompt_meta['prompt_contains_no_crop_rule'],
         );
     }
 
@@ -394,6 +407,11 @@ class STLAI_Veo_Provider {
     }
 
     private static function build_prompt( array $payload ) {
+        $package = self::build_prompt_package( $payload );
+        return $package['prompt'];
+    }
+
+    private static function build_prompt_package( array $payload ) {
         $product_name = trim( wp_strip_all_tags( (string) ( $payload['product_name'] ?? '' ) ) );
         $product_description = trim( wp_strip_all_tags( (string) ( $payload['product_description'] ?? '' ) ) );
         $script = trim( wp_strip_all_tags( (string) ( $payload['script'] ?? '' ) ) );
@@ -401,15 +419,16 @@ class STLAI_Veo_Provider {
         $product_name = self::compact_text( $product_name, 140 );
         $product_description = self::compact_text( $product_description, 320 );
         $script_context = self::compact_text( $script, 260 );
+        $role = sanitize_key( $payload['role'] ?? 'clip' );
         $role_label = self::compact_text( sanitize_text_field( $payload['role_label'] ?? '' ), 120 );
         $role_direction = self::compact_text( sanitize_text_field( $payload['role_direction'] ?? '' ), 520 );
         $format = sanitize_text_field( $payload['format'] ?? '' );
         $format_direction = 'Keep the full product visible with safe space around all important edges. Stable camera, natural professional smartphone movement, no scene change, no internal fade. Animate the whole scene with subtle realistic motion while the product remains unchanged.';
 
         if ( '16:9' === $format ) {
-            $format_direction = 'Horizontal 16:9 commercial product video. Use the prepared 16:9 frame as the exact visual reference. Preserve the product exactly. Use a wider horizontal commercial composition with subtle cinematic parallax across the full scene. Center the product or place it cleanly on rule of thirds with safe space above, below and on both sides. Keep the product fully visible and stable. If the product has a character, face, head, hair, clothing, top ornament, cake topper shape, keychain ring, base or stand, keep the whole object inside the frame. Start with a medium or wide shot and use only a very gentle push-in, dolly or parallax. Avoid close-ups that cut the head, face, top, base or important product details. Do not add black bars. Do not create a blurred artificial canvas. Do not change the product to fill the frame. The background can have natural movement, but the product must not change.';
+            $format_direction = 'Horizontal 16:9 commercial product video. Use the prepared 16:9 frame as the exact visual reference. The first frame must show the full product clearly. Start with a wide enough shot to show the entire product clearly in the first frame. Do not start cropped in. Do not cut off the product, head, base, sides, edges or important details. If needed, move the camera farther away before starting the shot so the entire product fits safely inside the frame. Begin with a full product view, then slowly push in or dolly slightly while keeping the product visible and recognizable. Avoid aggressive zoom. Avoid close-up as the first frame. Avoid crop. Avoid sudden reframing. Use a gentle handheld commercial camera movement with subtle cinematic parallax across the full scene. Center the product or place it cleanly on rule of thirds with safe space above, below and on both sides. Preserve the product exactly. The background can have natural movement, but the product must not change. Do not add black bars. Do not create a blurred artificial canvas. Do not change the product to fill the frame.';
         } elseif ( '9:16' === $format || '1:1' === $format ) {
-            $format_direction = 'Vertical 9:16 commercial product video. Use the prepared 9:16 frame as the exact visual reference. Preserve the product exactly. Keep the product centered vertically with safe space at the top and base. No black borders. No artificial frame inside frame. Animate the scene naturally with subtle background motion and gentle camera movement. Use only a light natural zoom, push-in or slight parallax and never crop the product top, base, ring, support or display position.';
+            $format_direction = 'Vertical 9:16 commercial product video. Use the prepared 9:16 frame as the exact visual reference. Preserve the product exactly. Keep the product fully visible whenever possible and centered vertically with safe space at the top and base. Animate the full environment with subtle realistic motion. The scene should feel like a real video recording, not a static image. No black borders. No artificial frame inside frame. Use only a light natural zoom, push-in or slight parallax and never crop the product top, base, ring, support or display position.';
         }
 
         $product_line = $product_name ?: 'Commercial product shown in the reference image.';
@@ -422,7 +441,7 @@ class STLAI_Veo_Provider {
             $purpose_line .= ' Marketing context only: ' . $script_context;
         }
 
-        return implode(
+        $mandatory_prompt = implode(
             "\n\n",
             array(
                 'Product:',
@@ -434,9 +453,9 @@ class STLAI_Veo_Provider {
                 'Clip role:',
                 ( $role_label ?: 'Product visual clip' ) . ( $role_direction ? '. Direction: ' . $role_direction : '' ),
                 'Product identity lock:',
-                'The product must remain exactly identical to the source image in every frame. The product from the input image is sacred. Do not modify the product shape, material, color, size, texture, details, face, clothing, hair, pose, structure, printed elements, accessories, base, support, stand, ring, hook, attachment point or identity. Do not add new product parts. Do not remove any product parts. Do not replace the product with a different object. Do not redesign the product. Do not stylize the product. Do not change the product into another version. Do not add props attached to the product. Do not invent product features. The product must look like the same physical item from the input image in every frame. For 3D printed personalized products, cake toppers, figurines, characters or wedding toppers: do not change faces, hair, clothing, body proportions, main pose, base, format, printed details or any personalized element. Do not transform it into a toy, tool, keychain, bottle opener, gadget, different figurine or another object.',
+                'The product is the hero and must remain exactly identical to the source image. The product must remain exactly identical to the source image in every frame. The product from the input image is sacred. Do not modify the product shape, material, colors, size, texture, details, face, clothing, hair, pose, structure, printed elements, accessories, base, support, stand, ring, hook, attachment point, proportions or identity. Do not add new product parts. Do not remove any product parts. Do not replace the product with a different object. Do not redesign the product. Do not stylize the product. Do not change the product into another version. Do not add props attached to the product. Do not invent product features. The product must look like the same physical item from the input image in every frame. For 3D printed personalized products, cake toppers, figurines, characters or wedding toppers: do not change faces, hair, clothing, body proportions, main pose, base, format, printed details or any personalized element. Do not transform it into a toy, tool, keychain, bottle opener, gadget, different figurine or another object.',
                 'Scene animation:',
-                'Animate the entire scene with subtle realistic motion. Keep the product stable and unchanged as the hero subject. Add gentle cinematic camera movement such as slow dolly, soft parallax, natural push-in or a very light handheld product-video feel. Background people may move subtly and naturally only if they are already present in the source image. Do not invent new crowds or make background people the main characters. Ambient lights can softly shimmer. Flowers, fabric, candles, reflections, depth, shadows or background details may have very subtle movement only if they exist in the source image. The environment should feel alive, premium and realistic, but never distracting. The main product must stay sharp, consistent and recognizable. No sudden scene changes. No object transformation. No product morphing. No new objects appearing. No fantasy animation.',
+                'Animate the whole environment naturally, not only the camera. The scene should feel like a real video recording, not a static photo with camera motion. Keep the product stable and unchanged as the hero subject. Add gentle cinematic camera movement such as slow dolly, soft parallax, natural push-in or a very light handheld product-video feel. Background people may move subtly and naturally only if they are already present in the source image. Do not invent new crowds or make background people the main characters. Ambient lights can softly shimmer. Flowers, fabric, candles, reflections, depth, shadows or background details may have very subtle movement only if they exist in the source image. The environment should feel alive, premium and realistic, but never distracting. The main product must stay sharp, consistent and recognizable. No sudden scene changes. No object transformation. No product morphing. No new objects appearing. No fantasy animation.',
                 'Visual direction:',
                 'Create one continuous 8-second silent, visual-only product video from the provided formatted image. The first video frame must match the formatted image composition and aspect ratio. Maintain the exact same aspect ratio from the first frame to the last frame. Do not transition from a square image into a vertical or horizontal layout. Do not reveal square source framing. Do not place the subject inside a smaller centered square. Do not create blurred background framing. Do not reveal padding, canvas changes, reframing, format conversion or layout changes inside the clip. The full frame must feel natively composed for the selected aspect ratio. Single continuous shot. No scene changes. No cuts. No internal transitions. No fade inside the clip. No before/after. No montage. No new location. Do not create a new scene. Do not change the product, product presentation or product identity. Do not cut to another shot. Do not fade to another scene. Do not transition inside the clip. Keep the product visually stable and exactly consistent, like a clean commercial product video. Animate the whole scene around it with subtle realistic camera and background motion. Only add subtle camera movement, gentle handheld feel, slow zoom in or slow zoom out, and slight natural parallax. Avoid exaggerated animation. Do not add fake recording indicators, camera UI, phone interface, viewfinder graphics or any production overlay.',
                 'Framing and safe area:',
@@ -444,11 +463,91 @@ class STLAI_Veo_Provider {
                 'Product anchoring rules:',
                 'Preserve the exact product presentation from the reference image. Do not detach the product from its support or display position. Do not show a hand picking it up, removing it, lifting it, hanging it, placing it, or transforming its usage. Keep the product anchored exactly as shown in the reference image. No interaction action unless already clearly present in the source image.',
                 'Overlay restrictions:',
-                'Clean commercial product video only. Realistic premium marketplace style. Product focused, natural lighting, neutral color balance, no overlays, no text, no visual effects. No glitter. No artificial glitter. No sparkles. No magical sparkles. No purple particles. No purple tint. No fantasy glow. No magic effects. No animated overlays. No REC icon. No recording overlay. No camera HUD. No viewfinder overlay. No timestamp. No watermark. No logo. No subtitles. No captions. No text. No labels. No badges. No stickers. No icons. No UI elements. No camera screen graphics. No phone camera interface. No fake recording indicators. No red dot. No frame counter. No focus box. No battery icon. No interface chrome. No glitter overlay. No sparkle overlay. No particles. No dust overlay. No snow overlay. No confetti overlay. No smoke. No neon effects. No color cast. No excessive lens flare. No artificial bokeh particles crossing the product. No excessive cinematic filter. No fake lens dirt. No fake film grain. No decorative overlay. No magical effects. No frame border. No black bars. Do not add any graphic overlay or visual effect of any kind.',
+                'Clean commercial product video only. Realistic premium marketplace style. Product focused, natural lighting, neutral color balance, no overlays, no text, no visual effects. No crop at the first frame. No close-up at the first frame. No product cut off. No head cut off. No base cut off. No static photo effect. No frozen background. No motionless environment. No glitter. No artificial glitter. No sparkles. No magical sparkles. No purple particles. No purple tint. No fantasy glow. No magic effects. No animated overlays. No REC icon. No recording overlay. No camera HUD. No viewfinder overlay. No timestamp. No watermark. No logo. No subtitles. No captions. No text. No labels. No badges. No stickers. No icons. No UI elements. No camera screen graphics. No phone camera interface. No fake recording indicators. No red dot. No frame counter. No focus box. No battery icon. No interface chrome. No glitter overlay. No sparkle overlay. No particles. No dust overlay. No snow overlay. No confetti overlay. No smoke. No neon effects. No color cast. No excessive lens flare. No artificial bokeh particles crossing the product. No excessive cinematic filter. No fake lens dirt. No fake film grain. No decorative overlay. No magical effects. No frame border. No black bars. Do not add any graphic overlay or visual effect of any kind.',
                 'Strict restrictions:',
                 'Keep the exact object from the reference image. Preserve exact product identity, shape, color, material, texture and proportions. Preserve the exact product presentation from the reference image. Preserve the exact support, base, hook, display stand, surface, attachment point, and display position if present. Keep the product anchored exactly as shown in the reference image. Do not detach the product from its support or display position. Do not show a hand picking it up, removing it, lifting it, pulling it, hanging it, placing it, attaching it, fitting it, removing it, opening it, using it as a tool, or transforming its usage. No interaction action unless already clearly present in the source image and explicitly needed. Do not change the product. Do not deform the product. Do not morph the product. Do not replace the product. Do not change the product purpose. Do not introduce new objects, extra accessories, extra props or invented functions. Do not create a new product. Do not transform the product. Do not hallucinate bottle opener, tool, hardware, toy, keychain, cake topper, figurine or other usage unless the original product context explicitly says so. No spinning product. No moving body parts. No changing pose. No changing expression. No cinematic transition. No fade to another shot. No logos, no captions, no text, no watermarks, no new people, no hands unless already present in the reference image, no voiceover, no speech, no music, no sound effects, no REC, no HUD, no camera overlay, no viewfinder, no timestamp, no UI, no glitter, no sparkles, no particles, no purple tint, no neon, no confetti, no smoke, no fake dust, no film grain, no lens dirt, no magical effects, no extra props, no extra accessories, no invented elements, no scene cuts inside the 8 second clip.',
             )
         );
+
+        $editable_prompt = self::configured_video_clip_prompt_template();
+        $prompt_source = 'custom';
+        if ( '' === trim( $editable_prompt ) ) {
+            $editable_prompt = self::default_video_clip_generation_prompt();
+            $prompt_source = 'default';
+        }
+
+        $negative_prompt = self::video_clip_negative_prompt();
+        $editable_prompt = self::fill_video_clip_prompt_template(
+            $editable_prompt,
+            array(
+                'product_name' => $product_name,
+                'product_context' => $product_description,
+                'aspect_ratio' => $format ?: '16:9',
+                'clip_role' => $role,
+                'clip_label' => $role_label ?: 'Product visual clip',
+                'narration_style' => sanitize_text_field( $payload['narration_style'] ?? '' ),
+                'tone' => sanitize_text_field( $payload['tone'] ?? '' ),
+                'target_audience' => sanitize_text_field( $payload['target_audience'] ?? '' ),
+                'image_description' => sanitize_text_field( $payload['image_description'] ?? '' ),
+                'negative_prompt' => $negative_prompt,
+            )
+        );
+
+        $final_prompt = implode(
+            "\n\n",
+            array_filter(
+                array(
+                    'Editable clip prompt:',
+                    trim( $editable_prompt ),
+                    'Mandatory safety rules appended by STLAI Seller:',
+                    $mandatory_prompt,
+                )
+            )
+        );
+
+        return array(
+            'prompt' => $final_prompt,
+            'meta' => array(
+                'video_clip_prompt_source' => $prompt_source,
+                'video_clip_prompt_key' => self::VIDEO_CLIP_PROMPT_KEY,
+                'prompt_contains_full_product_rule' => self::prompt_contains_any( $final_prompt, array( 'full product', 'entire product', 'produto inteiro', 'fully visible' ) ),
+                'prompt_contains_environment_motion_rule' => self::prompt_contains_any( $final_prompt, array( 'Animate the whole environment', 'Animate the entire scene', 'ambiente inteiro', 'real video recording' ) ),
+                'prompt_contains_no_crop_rule' => self::prompt_contains_any( $final_prompt, array( 'No crop at the first frame', 'Do not start cropped', 'Do not crop the product', 'sem crop' ) ),
+            ),
+        );
+    }
+
+    private static function configured_video_clip_prompt_template() {
+        $settings = get_option( 'stlai_vision_ads_pro_settings', array() );
+        if ( ! is_array( $settings ) ) {
+            return '';
+        }
+        return trim( (string) ( $settings[ self::VIDEO_CLIP_PROMPT_KEY ] ?? '' ) );
+    }
+
+    private static function default_video_clip_generation_prompt() {
+        return "Create an 8-second commercial AI video clip from the selected product image.\n\nProduct: {{product_name}}\nContext: {{product_context}}\nAspect ratio: {{aspect_ratio}}\nClip role: {{clip_label}} ({{clip_role}})\nNarration style: {{narration_style}}\nTone: {{tone}}\nTarget audience: {{target_audience}}\nImage notes: {{image_description}}\n\nPreserve the product exactly as shown. Animate the whole environment naturally with subtle realistic motion. The clip must look like a real commercial product recording, not a static photo with only camera movement.\n\nNegative prompt:\n{{negative_prompt}}";
+    }
+
+    private static function video_clip_negative_prompt() {
+        return 'No crop at the first frame. No close-up at the first frame. No product cut off. No head cut off. No base cut off. No black bars. No frame inside frame. No static photo effect. No frozen background. No motionless environment. No product morphing. No product deformation. No product replacement. No new product features. No extra accessories. No text. No subtitles. No logos. No watermark. No UI overlay. No REC indicator. No camera HUD. No stickers. No glitter. No sparkles. No purple particles. No fantasy glow. No magic effects. No sudden scene cuts.';
+    }
+
+    private static function fill_video_clip_prompt_template( $template, array $vars ) {
+        $replacements = array();
+        foreach ( $vars as $key => $value ) {
+            $replacements[ '{{' . $key . '}}' ] = self::compact_text( wp_strip_all_tags( (string) $value ), 800 );
+        }
+        return strtr( (string) $template, $replacements );
+    }
+
+    private static function prompt_contains_any( $prompt, array $needles ) {
+        foreach ( $needles as $needle ) {
+            if ( '' !== $needle && false !== stripos( (string) $prompt, $needle ) ) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static function prepare_frame_for_aspect_ratio( array $image, $aspect_ratio ) {

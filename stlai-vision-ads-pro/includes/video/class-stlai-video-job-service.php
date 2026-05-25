@@ -1585,6 +1585,10 @@ class STLAI_Video_Job_Service {
             'script'               => $job['script_public'] ?? ( $job['script'] ?? '' ),
             'product_name'         => $job['product_name'] ?? '',
             'product_description'  => $job['product_description'] ?? '',
+            'narration_style'      => $job['narration_style'] ?? ( $job['narration_type'] ?? '' ),
+            'tone'                 => $job['tone'] ?? '',
+            'target_audience'      => $job['target_audience'] ?? '',
+            'image_description'    => $selected_images[ $clip_index - 1 ]['label'] ?? ( $selected_images[ $clip_index - 1 ]['role'] ?? '' ),
             'index'                => $clip_index,
             'role'                 => $role['role'] ?? '',
             'role_label'           => $role['label'] ?? '',
@@ -1622,6 +1626,8 @@ class STLAI_Video_Job_Service {
                         'operation_poll_count' => 0,
                         'operation_still_processing' => true,
                         'operation_checked_at' => current_time( 'mysql' ),
+                        'role' => sanitize_key( $operation['role'] ?? ( $role['role'] ?? '' ) ),
+                        'label' => sanitize_text_field( $operation['label'] ?? ( $role['label'] ?? '' ) ),
                         'provider' => sanitize_key( $operation['provider'] ?? ( $job['video_provider'] ?? self::DEFAULT_VIDEO_PROVIDER ) ),
                         'model' => sanitize_text_field( $operation['model'] ?? ( $job['video_model'] ?? self::DEFAULT_VIDEO_MODEL ) ),
                         'output_resolution' => sanitize_key( $operation['output_resolution'] ?? ( $job['output_resolution'] ?? self::DEFAULT_OUTPUT_RESOLUTION ) ),
@@ -1633,6 +1639,11 @@ class STLAI_Video_Job_Service {
                         'prepared_frame_width' => (int) ( $operation['prepared_frame_width'] ?? 0 ),
                         'prepared_frame_height' => (int) ( $operation['prepared_frame_height'] ?? 0 ),
                         'operation_debug' => sanitize_text_field( $operation['debug'] ?? '' ),
+                        'video_clip_prompt_source' => sanitize_key( $operation['video_clip_prompt_source'] ?? '' ),
+                        'video_clip_prompt_key' => sanitize_key( $operation['video_clip_prompt_key'] ?? 'video_clip_generation_prompt' ),
+                        'prompt_contains_full_product_rule' => ! empty( $operation['prompt_contains_full_product_rule'] ),
+                        'prompt_contains_environment_motion_rule' => ! empty( $operation['prompt_contains_environment_motion_rule'] ),
+                        'prompt_contains_no_crop_rule' => ! empty( $operation['prompt_contains_no_crop_rule'] ),
                     )
                 );
 
@@ -1655,6 +1666,11 @@ class STLAI_Video_Job_Service {
                             'operation_still_processing' => true,
                             'operation_id' => sanitize_text_field( $operation['operation_id'] ?? '' ),
                             'operation_poll_count' => 0,
+                            'video_clip_prompt_source' => sanitize_key( $operation['video_clip_prompt_source'] ?? '' ),
+                            'video_clip_prompt_key' => sanitize_key( $operation['video_clip_prompt_key'] ?? 'video_clip_generation_prompt' ),
+                            'prompt_contains_full_product_rule' => ! empty( $operation['prompt_contains_full_product_rule'] ),
+                            'prompt_contains_environment_motion_rule' => ! empty( $operation['prompt_contains_environment_motion_rule'] ),
+                            'prompt_contains_no_crop_rule' => ! empty( $operation['prompt_contains_no_crop_rule'] ),
                             'polling_operation_indexes' => self::active_operation_clip_indexes( $clip_jobs ),
                             'clip_operation_soft_timeout_seconds' => $operation_timeouts['soft'],
                             'clip_operation_hard_timeout_seconds' => $operation_timeouts['hard'],
@@ -3354,22 +3370,22 @@ class STLAI_Video_Job_Service {
             array(
                 'role'      => 'apresentacao_geral',
                 'label'     => 'Clipe 1 — Apresentação geral',
-                'direction' => 'Use the selected image as-is. General presentation, smooth camera, product as the hero subject. Start with the full product visible, stable product presentation, medium/wide framing, slow gentle zoom in. Animate the scene subtly, but keep the product exactly identical. Do not create a new scene. Do not crop the product top, base, face, ring, support or display stand.',
+                'direction' => 'Use the selected image as-is. General presentation, smooth camera, product as the hero subject. Start with the full product visible, stable product presentation, medium/wide framing, slow gentle zoom in. Animate the whole environment with subtle realistic motion, but keep the product exactly identical. Do not create a new scene. Do not crop the product top, base, face, ring, support or display stand.',
             ),
             array(
                 'role'      => 'uso_contexto',
                 'label'     => 'Clipe 2 — Uso / contexto',
-                'direction' => 'Use the selected image as-is. Existing context only, with subtle environment motion and natural background movement if already present. Gentle camera drift showing the product in its existing context with the whole product safely inside frame. Keep the product exactly identical. Do not create a new use case or tighter crop.',
+                'direction' => 'Use the selected image as-is. Existing context only, with subtle environment motion and natural background movement if already present. Flowers, fabric, reflections, lights or background people may move subtly only if already present. Gentle camera drift showing the product in its existing context with the whole product safely inside frame. Keep the product exactly identical. Do not create a new use case or tighter crop.',
             ),
             array(
                 'role'      => 'detalhe_acabamento',
                 'label'     => 'Clipe 3 — Detalhe / acabamento',
-                'direction' => 'Use the selected image as-is. Detail and finish emphasis with a careful closer camera, but keep the product exactly identical and keep the full product or all important product parts visible. Background can move subtly. Avoid aggressive close-up and do not cut head, top, base, ring, support or finish details.',
+                'direction' => 'Use the selected image as-is. Detail and finish emphasis with a careful closer camera, but keep the product exactly identical and keep the full product or all important product parts visible. Background and ambient details can move subtly so the clip feels like a real recording. Avoid aggressive close-up and do not cut head, top, base, ring, support or finish details.',
             ),
             array(
                 'role'      => 'hero_fechamento',
                 'label'     => 'Clipe 4 — Hero / fechamento',
-                'direction' => 'Use the selected image as-is. Premium hero closing shot, elegant scene motion, slow zoom out or slight parallax, with the entire product visible and exactly identical. Preserve the exact product presentation, support, base, hook, display stand, surface, attachment point and display position. Keep the product anchored exactly as shown. Do not detach, lift, pull, hang, place, attach, fit, remove or transform the product. Do not show any hand interaction unless a hand is already clearly present in the source image.',
+                'direction' => 'Use the selected image as-is. Premium hero closing shot, elegant scene motion, slow zoom out or slight parallax, with the entire product visible and exactly identical. Animate the full scene subtly like a real commercial recording. Preserve the exact product presentation, support, base, hook, display stand, surface, attachment point and display position. Keep the product anchored exactly as shown. Do not detach, lift, pull, hang, place, attach, fit, remove or transform the product. Do not show any hand interaction unless a hand is already clearly present in the source image.',
             ),
         );
     }

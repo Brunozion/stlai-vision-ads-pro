@@ -1717,3 +1717,45 @@ Additional safe diagnostics for stale error suppression:
   }
 }
 ```
+
+## Editable prompt: Veo AI clip generation
+
+Admin prompt key:
+
+```text
+video_clip_generation_prompt
+```
+
+Label:
+
+```text
+Vídeo — Clipes IA
+```
+
+Purpose:
+
+```text
+Prompt usado para transformar imagens selecionadas em clipes comerciais com IA.
+```
+
+Supported placeholders:
+
+```text
+{{product_name}}
+{{product_context}}
+{{aspect_ratio}}
+{{clip_role}}
+{{clip_label}}
+{{narration_style}}
+{{tone}}
+{{target_audience}}
+{{image_description}}
+{{negative_prompt}}
+```
+
+Runtime rules:
+
+- The custom prompt is applied before sending the request to Gemini Veo.
+- STLAI Seller always appends mandatory safety rules after the custom prompt.
+- Mandatory rules preserve product identity, require safe first-frame framing for 16:9, block overlays/text/glitter/magic effects, and ask for natural motion across the environment.
+- AJAX diagnostics may include `video_clip_prompt_source`, `video_clip_prompt_key`, `prompt_contains_full_product_rule`, `prompt_contains_environment_motion_rule`, and `prompt_contains_no_crop_rule`.

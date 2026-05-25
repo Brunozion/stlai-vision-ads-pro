@@ -153,6 +153,14 @@ class STLAI_Video_Ajax {
             'operation_still_processing' => false,
         );
         $polling_operation_indexes = array();
+        $prompt_diagnostics = array(
+            'video_clip_prompt_source' => '',
+            'video_clip_prompt_key' => 'video_clip_generation_prompt',
+            'prompt_contains_full_product_rule' => false,
+            'prompt_contains_environment_motion_rule' => false,
+            'prompt_contains_no_crop_rule' => false,
+            'clip_role' => '',
+        );
         foreach ( $clip_summary as $clip_item ) {
             if ( ! empty( $clip_item['retryable'] ) ) {
                 $summary_retryable = true;
@@ -176,6 +184,14 @@ class STLAI_Video_Ajax {
             }
             if ( ! empty( $clip_item['operation_id_exists'] ) && empty( $clip_item['has_url'] ) ) {
                 $polling_operation_indexes[] = (int) ( $clip_item['index'] ?? 0 );
+            }
+            if ( empty( $prompt_diagnostics['video_clip_prompt_source'] ) && ! empty( $clip_item['video_clip_prompt_source'] ) ) {
+                $prompt_diagnostics['video_clip_prompt_source'] = sanitize_key( $clip_item['video_clip_prompt_source'] );
+                $prompt_diagnostics['video_clip_prompt_key'] = sanitize_key( $clip_item['video_clip_prompt_key'] ?? 'video_clip_generation_prompt' );
+                $prompt_diagnostics['prompt_contains_full_product_rule'] = ! empty( $clip_item['prompt_contains_full_product_rule'] );
+                $prompt_diagnostics['prompt_contains_environment_motion_rule'] = ! empty( $clip_item['prompt_contains_environment_motion_rule'] );
+                $prompt_diagnostics['prompt_contains_no_crop_rule'] = ! empty( $clip_item['prompt_contains_no_crop_rule'] );
+                $prompt_diagnostics['clip_role'] = sanitize_key( $clip_item['role'] ?? '' );
             }
         }
         $polling_operation_indexes = self::public_index_list( ! empty( $job['polling_operation_indexes'] ) ? $job['polling_operation_indexes'] : $polling_operation_indexes );
@@ -265,6 +281,12 @@ class STLAI_Video_Ajax {
             'requested_resolution'          => sanitize_key( $job['requested_resolution'] ?? ( $job['output_resolution'] ?? '720p' ) ),
             'effective_resolution'          => sanitize_key( $job['effective_resolution'] ?? ( $job['output_resolution'] ?? '720p' ) ),
             'resolution_fallback_reason'    => sanitize_key( $job['resolution_fallback_reason'] ?? '' ),
+            'video_clip_prompt_source'       => $prompt_diagnostics['video_clip_prompt_source'],
+            'video_clip_prompt_key'          => $prompt_diagnostics['video_clip_prompt_key'],
+            'clip_role'                      => $prompt_diagnostics['clip_role'],
+            'prompt_contains_full_product_rule' => ! empty( $prompt_diagnostics['prompt_contains_full_product_rule'] ),
+            'prompt_contains_environment_motion_rule' => ! empty( $prompt_diagnostics['prompt_contains_environment_motion_rule'] ),
+            'prompt_contains_no_crop_rule'   => ! empty( $prompt_diagnostics['prompt_contains_no_crop_rule'] ),
             'can_start_composition'        => ! empty( $composition_start['can_start_composition'] ),
             'composition_start_blocker'    => sanitize_key( $composition_start['composition_start_blocker'] ?? '' ),
             'clip_jobs_summary'            => $clip_summary,
@@ -801,6 +823,12 @@ class STLAI_Video_Ajax {
                 'requested_resolution' => sanitize_key( $clip_job['requested_resolution'] ?? $effective_resolution ),
                 'effective_resolution' => $effective_resolution,
                 'video_model' => sanitize_text_field( $clip_job['model'] ?? '' ),
+                'role' => sanitize_key( $clip_job['role'] ?? '' ),
+                'video_clip_prompt_source' => sanitize_key( $clip_job['video_clip_prompt_source'] ?? '' ),
+                'video_clip_prompt_key' => sanitize_key( $clip_job['video_clip_prompt_key'] ?? '' ),
+                'prompt_contains_full_product_rule' => ! empty( $clip_job['prompt_contains_full_product_rule'] ),
+                'prompt_contains_environment_motion_rule' => ! empty( $clip_job['prompt_contains_environment_motion_rule'] ),
+                'prompt_contains_no_crop_rule' => ! empty( $clip_job['prompt_contains_no_crop_rule'] ),
             );
         }
         return $summary;

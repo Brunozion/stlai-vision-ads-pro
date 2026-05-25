@@ -27,6 +27,10 @@ function stlai_vision_ads_pro_admin_menu() {
     add_submenu_page('stlai_vision_ads_pro', 'Logs', 'Logs', 'manage_options', 'stlai_logs', 'stlai_logs_page');
 }
 
+function stlai_default_video_clip_generation_prompt() {
+    return "Create an 8-second commercial AI video clip from the selected product image.\n\nProduct: {{product_name}}\nContext: {{product_context}}\nAspect ratio: {{aspect_ratio}}\nClip role: {{clip_label}} ({{clip_role}})\nNarration style: {{narration_style}}\nTone: {{tone}}\nTarget audience: {{target_audience}}\nImage notes: {{image_description}}\n\nPreserve the product exactly as shown. Animate the whole environment naturally with subtle realistic motion. The clip must look like a real commercial product recording, not a static photo with only camera movement.\n\nNegative prompt:\n{{negative_prompt}}";
+}
+
 function stlai_vision_ads_pro_settings_init() {
     // Registra a configuração com callback de merge para evitar perda de dados em formulários parciais (páginas diferentes)
     register_setting( 'stlai_settings_group', 'stlai_vision_ads_pro_settings', array('sanitize_callback' => 'stlai_vision_ads_pro_sanitize_settings') );
@@ -108,6 +112,19 @@ function stlai_vision_ads_pro_settings_init() {
     add_settings_field('promptBatch2', 'Lote 2 (Premium)', 'stlai_render_textarea_field', 'stlai_prompts_page', 'stlai_prompts_adv_section', array('id' => 'promptBatch2'));
     add_settings_field('promptBatchMore', 'Lote Extra (+4)', 'stlai_render_textarea_field', 'stlai_prompts_page', 'stlai_prompts_adv_section', array('id' => 'promptBatchMore'));
     add_settings_field('promptFallback', 'Fallback Anti-Bloqueio', 'stlai_render_textarea_field', 'stlai_prompts_page', 'stlai_prompts_adv_section', array('id' => 'promptFallback'));
+    add_settings_field(
+        'video_clip_generation_prompt',
+        'Vídeo — Clipes IA',
+        'stlai_render_textarea_field',
+        'stlai_prompts_page',
+        'stlai_prompts_adv_section',
+        array(
+            'id' => 'video_clip_generation_prompt',
+            'rows' => 12,
+            'default' => stlai_default_video_clip_generation_prompt(),
+            'description' => 'Prompt usado para transformar imagens selecionadas em clipes comerciais com IA. Placeholders: {{product_name}}, {{product_context}}, {{aspect_ratio}}, {{clip_role}}, {{clip_label}}, {{narration_style}}, {{tone}}, {{target_audience}}, {{image_description}}, {{negative_prompt}}.',
+        )
+    );
 
     add_settings_section('stlai_scenes_section', 'Configurações de Cenas Individuais', '__return_empty_string', 'stlai_prompts_page');
     add_settings_field('sceneCapa', 'Capa', 'stlai_render_textarea_field', 'stlai_prompts_page', 'stlai_scenes_section', array('id' => 'sceneCapa', 'rows' => 3));
@@ -164,6 +181,10 @@ function stlai_vision_ads_pro_sanitize_settings($input) {
                 $existing[$key] = sanitize_text_field($value);
                 continue;
             }
+            if ('video_clip_generation_prompt' === $key) {
+                $existing[$key] = sanitize_textarea_field($value);
+                continue;
+            }
             $existing[$key] = $value;
         }
     }
@@ -193,9 +214,12 @@ function stlai_render_password_field( $args ) {
 
 function stlai_render_textarea_field( $args ) {
     $options = get_option( 'stlai_vision_ads_pro_settings' );
-    $val = isset($options[$args['id']]) ? $options[$args['id']] : '';
+    $val = isset($options[$args['id']]) && '' !== (string) $options[$args['id']] ? $options[$args['id']] : ($args['default'] ?? '');
     $rows = isset($args['rows']) ? $args['rows'] : 8;
     echo '<textarea id="' . esc_attr( $args['id'] ) . '" class="large-text" style="width:100%; max-width:800px;" rows="' . esc_attr($rows) . '" name="stlai_vision_ads_pro_settings[' . esc_attr( $args['id'] ) . ']">' . esc_textarea( $val ) . '</textarea>';
+    if (!empty($args['description'])) {
+        echo '<p class="description">' . esc_html($args['description']) . '</p>';
+    }
 }
 
 function stlai_render_select_field( $args ) {
