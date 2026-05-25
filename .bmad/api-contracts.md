@@ -1726,6 +1726,13 @@ Admin prompt key:
 video_clip_generation_prompt
 ```
 
+Format-specific admin prompt keys:
+
+```text
+video_clip_generation_prompt_vertical
+video_clip_generation_prompt_horizontal
+```
+
 Label:
 
 ```text
@@ -1741,6 +1748,7 @@ Prompt usado para transformar imagens selecionadas em clipes comerciais com IA.
 Supported placeholders:
 
 ```text
+{{clip_index}}
 {{product_name}}
 {{product_context}}
 {{aspect_ratio}}
@@ -1755,7 +1763,10 @@ Supported placeholders:
 
 Runtime rules:
 
-- The custom prompt is applied before sending the request to Gemini Veo.
+- 9:16 jobs use `video_clip_generation_prompt_vertical`.
+- 16:9 jobs use `video_clip_generation_prompt_horizontal`.
+- The selected custom prompt is applied before sending the request to Gemini Veo.
 - STLAI Seller always appends mandatory safety rules after the custom prompt.
 - Mandatory rules preserve product identity, require safe first-frame framing for 16:9, block overlays/text/glitter/magic effects, and ask for natural motion across the environment.
-- AJAX diagnostics may include `video_clip_prompt_source`, `video_clip_prompt_key`, `prompt_contains_full_product_rule`, `prompt_contains_environment_motion_rule`, and `prompt_contains_no_crop_rule`.
+- The 16:9 mandatory block also prevents face changes, hair color/style changes, clothing changes, material changes, prop/accessory changes, alternate character versions, product redesign, product morphing and identity drift between clips.
+- AJAX diagnostics may include `video_clip_prompt_source`, `video_clip_prompt_key`, `prompt_key_used`, `custom_or_default_prompt`, `preservation_rules_attached`, `opening_frame_protection_attached`, `identity_lock_attached`, `prompt_contains_full_product_rule`, `prompt_contains_environment_motion_rule`, and `prompt_contains_no_crop_rule`.

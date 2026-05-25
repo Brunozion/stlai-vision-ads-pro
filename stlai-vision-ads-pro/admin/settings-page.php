@@ -31,6 +31,14 @@ function stlai_default_video_clip_generation_prompt() {
     return "Create an 8-second commercial AI video clip from the selected product image.\n\nProduct: {{product_name}}\nContext: {{product_context}}\nAspect ratio: {{aspect_ratio}}\nClip role: {{clip_label}} ({{clip_role}})\nNarration style: {{narration_style}}\nTone: {{tone}}\nTarget audience: {{target_audience}}\nImage notes: {{image_description}}\n\nPreserve the product exactly as shown. Animate the whole environment naturally with subtle realistic motion. The clip must look like a real commercial product recording, not a static photo with only camera movement.\n\nNegative prompt:\n{{negative_prompt}}";
 }
 
+function stlai_default_video_clip_generation_prompt_vertical() {
+    return "Create a vertical 9:16 commercial video clip from the selected source image.\n\nProduct: {{product_name}}\nContext: {{product_context}}\nClip {{clip_index}}: {{clip_label}} ({{clip_role}})\nDirection: {{image_description}}\nNarration style: {{narration_style}}\nTone: {{tone}}\n\nUse the uploaded source image as the strict visual reference for the product. Preserve the product exactly as shown: same colors, face, hair, clothing, pose, proportions, material, base and identity. Animate the full environment with subtle realistic motion so the scene feels like a real video recording, while the product remains stable, sharp and unchanged.\n\nNegative prompt:\n{{negative_prompt}}";
+}
+
+function stlai_default_video_clip_generation_prompt_horizontal() {
+    return "Create a horizontal 16:9 commercial video from the provided square source image.\n\nProduct: {{product_name}}\nContext: {{product_context}}\nClip {{clip_index}}: {{clip_label}} ({{clip_role}})\nDirection: {{image_description}}\nNarration style: {{narration_style}}\nTone: {{tone}}\n\nThe uploaded image is the strict visual reference for the product. Preserve the exact product identity with absolute fidelity. The product must remain exactly the same as the source image in all frames: same face, same hair color, same hairstyle, same facial features, same skin tone, same clothing, same pose, same proportions, same base, same cake, same materials, same colors and same overall look.\n\nDo not redesign or reinterpret the product. Do not create a different version of the couple, character, figurine or item. Do not alter the character design in any way.\n\nStart with a composition wide enough to show the product clearly and fully. Do not crop the top, base or important details in the opening frame. If necessary, pull the camera back to keep the full product visible.\n\nAnimate the environment naturally, while keeping the product visually locked and unchanged. Background motion may include subtle movement of lights, reflections, candles, flowers, fabric and background people if already appropriate. The product remains the fixed hero element.\n\nNegative prompt:\n{{negative_prompt}}";
+}
+
 function stlai_vision_ads_pro_settings_init() {
     // Registra a configuração com callback de merge para evitar perda de dados em formulários parciais (páginas diferentes)
     register_setting( 'stlai_settings_group', 'stlai_vision_ads_pro_settings', array('sanitize_callback' => 'stlai_vision_ads_pro_sanitize_settings') );
@@ -113,6 +121,32 @@ function stlai_vision_ads_pro_settings_init() {
     add_settings_field('promptBatchMore', 'Lote Extra (+4)', 'stlai_render_textarea_field', 'stlai_prompts_page', 'stlai_prompts_adv_section', array('id' => 'promptBatchMore'));
     add_settings_field('promptFallback', 'Fallback Anti-Bloqueio', 'stlai_render_textarea_field', 'stlai_prompts_page', 'stlai_prompts_adv_section', array('id' => 'promptFallback'));
     add_settings_field(
+        'video_clip_generation_prompt_vertical',
+        'Vídeo — Clipes IA 9:16',
+        'stlai_render_textarea_field',
+        'stlai_prompts_page',
+        'stlai_prompts_adv_section',
+        array(
+            'id' => 'video_clip_generation_prompt_vertical',
+            'rows' => 12,
+            'default' => stlai_default_video_clip_generation_prompt_vertical(),
+            'description' => 'Prompt usado para gerar clipes comerciais verticais 9:16 a partir da imagem escolhida. Cada clipe usa a imagem escolhida como referência visual obrigatória. Placeholders: {{clip_index}}, {{product_name}}, {{product_context}}, {{aspect_ratio}}, {{clip_role}}, {{clip_label}}, {{narration_style}}, {{tone}}, {{target_audience}}, {{image_description}}, {{negative_prompt}}.',
+        )
+    );
+    add_settings_field(
+        'video_clip_generation_prompt_horizontal',
+        'Vídeo — Clipes IA 16:9',
+        'stlai_render_textarea_field',
+        'stlai_prompts_page',
+        'stlai_prompts_adv_section',
+        array(
+            'id' => 'video_clip_generation_prompt_horizontal',
+            'rows' => 14,
+            'default' => stlai_default_video_clip_generation_prompt_horizontal(),
+            'description' => 'Prompt usado para gerar clipes comerciais horizontais 16:9 a partir da imagem escolhida. Mais rígido para impedir alteração de rosto, cabelo, cor, acabamento, proporções e identidade do produto. Placeholders: {{clip_index}}, {{product_name}}, {{product_context}}, {{aspect_ratio}}, {{clip_role}}, {{clip_label}}, {{narration_style}}, {{tone}}, {{target_audience}}, {{image_description}}, {{negative_prompt}}.',
+        )
+    );
+    add_settings_field(
         'video_clip_generation_prompt',
         'Vídeo — Clipes IA',
         'stlai_render_textarea_field',
@@ -181,7 +215,7 @@ function stlai_vision_ads_pro_sanitize_settings($input) {
                 $existing[$key] = sanitize_text_field($value);
                 continue;
             }
-            if ('video_clip_generation_prompt' === $key) {
+            if (in_array($key, array('video_clip_generation_prompt', 'video_clip_generation_prompt_vertical', 'video_clip_generation_prompt_horizontal'), true)) {
                 $existing[$key] = sanitize_textarea_field($value);
                 continue;
             }

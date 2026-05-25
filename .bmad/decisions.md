@@ -1538,3 +1538,26 @@ O Veo recebe o prompt customizado com placeholders e, em seguida, um bloco obrig
 ### Status
 
 Decidido
+
+## 2026-05-25 - Prompts separados para clipes IA 9:16 e 16:9
+
+### Decisao
+
+Os clipes IA passam a usar prompts editáveis separados por formato:
+
+- `video_clip_generation_prompt_vertical` para 9:16.
+- `video_clip_generation_prompt_horizontal` para 16:9.
+
+O prompt horizontal é mais rígido porque parte de uma imagem 1:1 e o modelo tende a inventar informação ao expandir a cena. O bloco obrigatório anexado pelo backend reforça identidade visual do produto, bloqueia mudança de rosto, cabelo, cor, roupa, base, proporções, acabamento e impede `identity drift` entre clipes.
+
+### Motivo
+
+Os clipes 16:9 estavam alterando características do produto entre os quatro vídeos, enquanto o 9:16 já estava com boa consistência. Separar os prompts permite manter o vertical estável e endurecer somente o horizontal.
+
+### Impacto
+
+O fluxo escolhe a chave de prompt pelo `format` do job antes de chamar o Veo. Cada clipe continua recebendo placeholders por índice/função, mas as regras de preservação do produto são idênticas e obrigatórias para todos os clipes do lote.
+
+### Status
+
+Decidido

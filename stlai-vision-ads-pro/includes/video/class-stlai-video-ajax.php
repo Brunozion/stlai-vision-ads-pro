@@ -155,10 +155,15 @@ class STLAI_Video_Ajax {
         $polling_operation_indexes = array();
         $prompt_diagnostics = array(
             'video_clip_prompt_source' => '',
-            'video_clip_prompt_key' => 'video_clip_generation_prompt',
+            'video_clip_prompt_key' => '',
+            'prompt_key_used' => '',
+            'custom_or_default_prompt' => '',
             'prompt_contains_full_product_rule' => false,
             'prompt_contains_environment_motion_rule' => false,
             'prompt_contains_no_crop_rule' => false,
+            'preservation_rules_attached' => false,
+            'opening_frame_protection_attached' => false,
+            'identity_lock_attached' => false,
             'clip_role' => '',
         );
         foreach ( $clip_summary as $clip_item ) {
@@ -187,10 +192,15 @@ class STLAI_Video_Ajax {
             }
             if ( empty( $prompt_diagnostics['video_clip_prompt_source'] ) && ! empty( $clip_item['video_clip_prompt_source'] ) ) {
                 $prompt_diagnostics['video_clip_prompt_source'] = sanitize_key( $clip_item['video_clip_prompt_source'] );
-                $prompt_diagnostics['video_clip_prompt_key'] = sanitize_key( $clip_item['video_clip_prompt_key'] ?? 'video_clip_generation_prompt' );
+                $prompt_diagnostics['video_clip_prompt_key'] = sanitize_key( $clip_item['video_clip_prompt_key'] ?? '' );
+                $prompt_diagnostics['prompt_key_used'] = sanitize_key( $clip_item['prompt_key_used'] ?? ( $clip_item['video_clip_prompt_key'] ?? '' ) );
+                $prompt_diagnostics['custom_or_default_prompt'] = sanitize_key( $clip_item['custom_or_default_prompt'] ?? ( $clip_item['video_clip_prompt_source'] ?? '' ) );
                 $prompt_diagnostics['prompt_contains_full_product_rule'] = ! empty( $clip_item['prompt_contains_full_product_rule'] );
                 $prompt_diagnostics['prompt_contains_environment_motion_rule'] = ! empty( $clip_item['prompt_contains_environment_motion_rule'] );
                 $prompt_diagnostics['prompt_contains_no_crop_rule'] = ! empty( $clip_item['prompt_contains_no_crop_rule'] );
+                $prompt_diagnostics['preservation_rules_attached'] = ! empty( $clip_item['preservation_rules_attached'] );
+                $prompt_diagnostics['opening_frame_protection_attached'] = ! empty( $clip_item['opening_frame_protection_attached'] );
+                $prompt_diagnostics['identity_lock_attached'] = ! empty( $clip_item['identity_lock_attached'] );
                 $prompt_diagnostics['clip_role'] = sanitize_key( $clip_item['role'] ?? '' );
             }
         }
@@ -283,10 +293,15 @@ class STLAI_Video_Ajax {
             'resolution_fallback_reason'    => sanitize_key( $job['resolution_fallback_reason'] ?? '' ),
             'video_clip_prompt_source'       => $prompt_diagnostics['video_clip_prompt_source'],
             'video_clip_prompt_key'          => $prompt_diagnostics['video_clip_prompt_key'],
+            'prompt_key_used'                => $prompt_diagnostics['prompt_key_used'],
+            'custom_or_default_prompt'       => $prompt_diagnostics['custom_or_default_prompt'],
             'clip_role'                      => $prompt_diagnostics['clip_role'],
             'prompt_contains_full_product_rule' => ! empty( $prompt_diagnostics['prompt_contains_full_product_rule'] ),
             'prompt_contains_environment_motion_rule' => ! empty( $prompt_diagnostics['prompt_contains_environment_motion_rule'] ),
             'prompt_contains_no_crop_rule'   => ! empty( $prompt_diagnostics['prompt_contains_no_crop_rule'] ),
+            'preservation_rules_attached'    => ! empty( $prompt_diagnostics['preservation_rules_attached'] ),
+            'opening_frame_protection_attached' => ! empty( $prompt_diagnostics['opening_frame_protection_attached'] ),
+            'identity_lock_attached'         => ! empty( $prompt_diagnostics['identity_lock_attached'] ),
             'can_start_composition'        => ! empty( $composition_start['can_start_composition'] ),
             'composition_start_blocker'    => sanitize_key( $composition_start['composition_start_blocker'] ?? '' ),
             'clip_jobs_summary'            => $clip_summary,
@@ -826,9 +841,14 @@ class STLAI_Video_Ajax {
                 'role' => sanitize_key( $clip_job['role'] ?? '' ),
                 'video_clip_prompt_source' => sanitize_key( $clip_job['video_clip_prompt_source'] ?? '' ),
                 'video_clip_prompt_key' => sanitize_key( $clip_job['video_clip_prompt_key'] ?? '' ),
+                'prompt_key_used' => sanitize_key( $clip_job['prompt_key_used'] ?? ( $clip_job['video_clip_prompt_key'] ?? '' ) ),
+                'custom_or_default_prompt' => sanitize_key( $clip_job['custom_or_default_prompt'] ?? ( $clip_job['video_clip_prompt_source'] ?? '' ) ),
                 'prompt_contains_full_product_rule' => ! empty( $clip_job['prompt_contains_full_product_rule'] ),
                 'prompt_contains_environment_motion_rule' => ! empty( $clip_job['prompt_contains_environment_motion_rule'] ),
                 'prompt_contains_no_crop_rule' => ! empty( $clip_job['prompt_contains_no_crop_rule'] ),
+                'preservation_rules_attached' => ! empty( $clip_job['preservation_rules_attached'] ),
+                'opening_frame_protection_attached' => ! empty( $clip_job['opening_frame_protection_attached'] ),
+                'identity_lock_attached' => ! empty( $clip_job['identity_lock_attached'] ),
             );
         }
         return $summary;
