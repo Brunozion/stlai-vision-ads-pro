@@ -403,7 +403,6 @@ function applyAF(silent=false){
   const d = S.vData;
   S.name = d.name || S.name;
   S.desc = d.description || S.desc;
-  S.wt = d.weight || S.wt;
   S.feat = d.features || S.feat;
   S.volt = d.voltage || S.volt;
   const sv=(id,v)=>{const e=document.getElementById(id); if(e && v){ e.value=v; e.style.borderColor="var(--mint)"; setTimeout(()=>e.style.borderColor="",1600); }};
@@ -412,7 +411,6 @@ function applyAF(silent=false){
   if(d.material) dc += `${dc ? "\n" : ""}Material: ${d.material}.`;
   if(d.color) dc += `${dc ? "\n" : ""}Cor: ${d.color}.`;
   sv("f-dc", dc);
-  sv("f-wt", d.weight || "");
   sv("f-ft", d.features || "");
   const vm = {"110v":"v1","220v":"v2","bivolt":"v3","n/a":"v4"};
   const vk = vm[String(d.voltage || "N/A").toLowerCase()];
@@ -510,12 +508,13 @@ function buildTechnicalDimensionsScene(dimsTxt){
 }
 
 function buildInformativeImageScene(){
+  const hasManualWeight = Boolean(String(S.wt || "").trim());
   const facts=[
     S.name ? `Produto: ${S.name}.` : "",
     S.descTxt || S.desc ? `Contexto/descrição: ${S.descTxt || S.desc}.` : "",
     S.feat ? `Características reais: ${S.feat}.` : "",
     dimsText() ? `Dimensões disponíveis: ${dimsText()}.` : "",
-    S.wt ? `Peso informado: ${S.wt} g.` : "",
+    hasManualWeight ? `Peso informado manualmente: ${S.wt} g.` : "",
     S.volt && S.volt !== "N/A" ? `Voltagem informada: ${S.volt}.` : ""
   ].filter(Boolean).join(" ");
 
@@ -524,9 +523,12 @@ function buildInformativeImageScene(){
     productPreservationInstruction(),
     "Mostre o produto com destaque e organize no máximo 3 ou 4 características curtas, benefícios, usos ou especificações reais disponíveis no contexto.",
     facts ? `Use somente estas informações como fonte: ${facts}` : "Se faltarem especificações técnicas, use benefícios e contexto de uso de forma genérica, sem inventar dados.",
+    hasManualWeight ? `Se exibir peso, use exatamente este valor: ${S.wt} g.` : "NUNCA exiba peso, gramagem, gramas, kg, balança ou qualquer número de peso, pois esse dado não foi informado manualmente.",
+    "Todo texto, ícone, selo e elemento informativo deve ficar 100% dentro da área segura da imagem, com margens largas. Nada pode tocar, passar ou ser cortado pelas bordas.",
+    "Use fonte menor quando necessário para caber tudo. Se não couber, reduza a quantidade de texto em vez de cortar palavras ou informações.",
     "Pode combinar o produto com uma cena de uso ou utilidade quando fizer sentido, sem modificar o item.",
     "Layout limpo, elegante, comercial e fácil de entender, com texto curto e objetivo.",
-    "Não invente potência, voltagem, material, dimensões, capacidade, quantidades ou qualquer especificação técnica.",
+    "Não invente potência, voltagem, material, dimensões, peso, gramagem, capacidade, quantidades ou qualquer especificação técnica.",
     "Não use textos longos. Não repita essa lógica nas demais imagens.",
     "Proporção 1:1."
   ].join(" ");
@@ -1180,7 +1182,7 @@ function buildImageComboScene(combo){
     "The product from the reference image is mandatory and must remain exactly the same physical item in every quadrant.",
     "Do not modify the product shape, color, material, structure, texture, proportions, finish, printed details, accessories, identity or function.",
     "Do not add, remove, redesign, stylize, replace or invent any part of the product.",
-    "Use only factual information provided here. Never invent dimensions, material, power, voltage, capacity, quantity or technical specifications.",
+    "Use only factual information provided here. Never invent dimensions, material, power, voltage, capacity, quantity, weight, grams, kg or technical specifications.",
     facts ? `Available factual context: ${facts}` : "Available factual context is limited; use generic commercial benefits and usage context without inventing technical data.",
     "There can be at most one informative/features quadrant. There can be at most one technical dimensions quadrant, and only if real dimensions were provided.",
     "All visual quadrants must be purely photographic/commercial with absolutely no written content.",
@@ -1189,6 +1191,8 @@ function buildImageComboScene(combo){
     "Do not copy the informative layout into visual quadrants. Do not add text to ambient, detail, benefit or hero images. The benefit image must communicate by scene and composition, not words.",
     "For the technical dimensions quadrant, use only real dimensions from the context with subtle lines/arrows. If dimensions are missing, do not invent them.",
     "For the informative/features quadrant, use at most 3 or 4 short real points. Do not use long text.",
+    "For every informative text area, keep all text, icons and labels fully inside safe margins. Nothing may touch or be cropped by image borders. If content does not fit, shorten it instead of cropping.",
+    S.wt ? `Only show weight if needed using exactly this manually provided value: ${S.wt} g.` : "Do not show weight, grams, kg, scale icons or any weight value anywhere because no manual weight was provided.",
     "Overall style: premium marketplace product imagery, realistic, clean, elegant, commercially useful, no watermark, no UI, no fake logos, no extra props attached to the product."
   ].join("\n");
 }
@@ -1258,7 +1262,9 @@ function renderTile4(t,url){
   if(!tile)return;
   const imageUrl=resolveImageUrl(url);
   tile.classList.remove("gen", "error");
-  tile.innerHTML=`<img src="${imageUrl}" alt="${esc(t.label)}" style="opacity:0; transition:opacity 0.6s ease" onload="this.style.opacity=1"><div class="img4-tile-lbl">${esc(t.label)}</div>`;
+  tile.innerHTML=`<img src="${imageUrl}" alt="${esc(t.label)}" style="opacity:0; transition:opacity 0.6s ease" onload="this.style.opacity=1"><button class="img4-view-btn" type="button" title="Ver imagem maior" aria-label="Ver imagem maior"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg></button><div class="img4-tile-lbl">${esc(t.label)}</div>`;
+  const viewBtn=tile.querySelector(".img4-view-btn");
+  if(viewBtn) viewBtn.addEventListener("click", (e)=>{ e.preventDefault(); e.stopPropagation(); openLightbox(imageUrl, "image", t.label); });
   tile.onclick=(e)=>{ if(e.target.closest('button')) return; togVid(t.key,tile); };
 }
 
@@ -4322,7 +4328,7 @@ function ensureCfg(showToastOnFail=true){
     if(!S.cfg.apiKey && showToastOnFail) toast("Falta a chave OpenAI. Configure no painel WP.","warn");
     if(!S.cfg.apiKey) return false;
   }
-  if(S.cfg.txtApi === "gemini" || S.cfg.imgApi === "gemini") {
+  if(S.cfg.txtApi === "gemini") {
     if(!S.cfg.geminiKey && showToastOnFail) toast("Falta a chave Gemini. Configure no painel WP.","warn");
     if(!S.cfg.geminiKey) return false;
   }
@@ -4381,37 +4387,7 @@ function extractResponseText(d){
 
 async function apiGenerateImage(prompt, file){
   if(S.cfg.imgApi === "gemini") {
-    const baseUrl = S.cfg.geminiUrl || "https://generativelanguage.googleapis.com";
-    let body, url;
-    if(S.cfg.geminiImageModel.includes('gemini')) {
-      // Formato para modelos Gemini com suporte a imagem
-      url = `${baseUrl}/v1beta/models/${S.cfg.geminiImageModel}:generateContent?key=${S.cfg.geminiKey}`;
-      body = { 
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseModalities: ["IMAGE"] }
-      };
-    } else {
-      // Formato Imagen
-      url = `${baseUrl}/v1beta/models/${S.cfg.geminiImageModel}:predict?key=${S.cfg.geminiKey}`;
-      body = { instances: [{ prompt }], parameters: { sampleCount: 1 } };
-    }
-    
-    const r = await fetch(url, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const d = await r.json();
-    if(!r.ok) throw new Error(d.error?.message || `HTTP ${r.status}`);
-    
-    if (d.predictions && d.predictions[0]?.bytesBase64Encoded) {
-       return `data:image/png;base64,${d.predictions[0].bytesBase64Encoded}`;
-    }
-    if (d.candidates && d.candidates[0]?.content?.parts?.[0]?.inlineData) {
-       const inline = d.candidates[0].content.parts[0].inlineData;
-       return `data:${inline.mimeType};base64,${inline.data}`;
-    }
-    
-    throw new Error("Resposta vazia da IA Gemini (Imagem).");
+    return geminiImageViaWordPress(prompt);
   } else {
     // OpenAI
     const imageUrl = typeof file === "string" ? file : file.src || "";
@@ -4426,6 +4402,29 @@ async function apiGenerateImage(prompt, file){
       throw err;
     }
   }
+}
+
+async function geminiImageViaWordPress(prompt){
+  const ajaxurl = S.cfg.ajaxurl || window.stlaiConfig?.ajaxurl;
+  if(!ajaxurl) throw new Error("Endpoint AJAX do WordPress não encontrado.");
+
+  const form = new FormData();
+  form.append("action", "stlai_generate_gemini_image");
+  form.append("prompt", prompt);
+
+  const r = await fetch(ajaxurl, {
+    method: "POST",
+    body: form,
+    credentials: "same-origin"
+  });
+  const d = await r.json().catch(() => null);
+  if(!r.ok || !d?.success) {
+    throw new Error(d?.data?.message || d?.message || `HTTP ${r.status}`);
+  }
+  if(!d.data?.url) {
+    throw new Error("Resposta vazia da IA Gemini (imagem).");
+  }
+  return d.data.url;
 }
 
 async function openAIImageEdit(prompt, imageUrl){

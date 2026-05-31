@@ -379,6 +379,7 @@ function stlai_config_ia_page() {
 
             stlai_admin_settings_card( 'Provedores de Imagem', 'Configurações usadas na geração da galeria de imagens comerciais.', function() {
                 stlai_admin_field_row( 'IA para Imagens', 'stlai_render_select_field', array( 'id' => 'imgApi', 'options' => array( 'openai' => 'OpenAI', 'gemini' => 'Google Gemini' ) ) );
+                stlai_admin_notice_row( 'Ao usar Google Gemini para imagens, preencha o campo Gemini API Key no card Provedores de Texto/Credenciais acima. A geração de imagem usa essa mesma chave, lida diretamente do WordPress.', 'notice-info' );
                 stlai_admin_field_row( 'OpenAI Modelo Imagem', 'stlai_render_text_field', array( 'id' => 'imageModel' ) );
                 stlai_admin_field_row( 'Gemini Modelo Imagem', 'stlai_render_text_field', array( 'id' => 'geminiImageModel' ) );
                 stlai_admin_field_row( 'Quality', 'stlai_render_select_field', array( 'id' => 'imageQuality', 'default' => 'auto', 'options' => array( 'auto' => 'Auto', 'high' => 'Alta', 'medium' => 'Média', 'low' => 'Baixa' ) ) );

@@ -33,3 +33,7 @@ backups/
 # Ambiente
 .env
 .env.*
+# build artifacts
+dist/
+*.zip
+.DS_Store

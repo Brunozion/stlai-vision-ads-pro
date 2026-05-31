@@ -2,7 +2,7 @@
 /**
  * Plugin Name: STLAI Vision Ads Pro
  * Description: Plugin para geração de anúncios e inteligência de imagens 3D via IA.
- * Version: 1.3.12
+ * Version: 1.3.17
  * Author: NDB
  */
 
@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit; // Exit if accessed directly
 }
 
-define( 'STLAI_VISION_ADS_PRO_VERSION', '1.3.12' );
+define( 'STLAI_VISION_ADS_PRO_VERSION', '1.3.17' );
 define( 'STLAI_VISION_ADS_PRO_DIR', plugin_dir_path( __FILE__ ) );
 define( 'STLAI_VISION_ADS_PRO_URL', plugin_dir_url( __FILE__ ) );
 
@@ -28,15 +28,37 @@ require_once STLAI_VISION_ADS_PRO_DIR . 'includes/video/class-stlai-video-ajax.p
 
 // Register Shortcode
 add_shortcode( 'stlai_vision_ads_pro', 'stlai_vision_ads_pro_render_shortcode' );
+add_action( 'wp_enqueue_scripts', 'stlai_vision_ads_pro_maybe_enqueue_assets', 1000 );
 
-function stlai_vision_ads_pro_render_shortcode( $atts ) {
-    // Enqueue CSS
+add_action( 'wp_ajax_stlai_generate_gemini_image', 'stlai_vision_ads_pro_ajax_generate_gemini_image' );
+add_action( 'wp_ajax_nopriv_stlai_generate_gemini_image', 'stlai_vision_ads_pro_ajax_generate_gemini_image' );
+
+function stlai_vision_ads_pro_enqueue_assets() {
     wp_enqueue_style( 'stlai-vision-ads-pro-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap', array(), null );
     wp_enqueue_style( 'stlai-vision-ads-pro-style', STLAI_VISION_ADS_PRO_URL . 'assets/css/style.css', array(), STLAI_VISION_ADS_PRO_VERSION );
+    wp_add_inline_style(
+        'stlai-vision-ads-pro-style',
+        '.stlai-vision-ads-pro-wrapper{background:var(--bg,#000);color:var(--tx,#fff);min-height:100vh;overflow-x:hidden}.stlai-vision-ads-pro-wrapper .topbar{height:54px!important;max-height:54px!important;overflow:hidden}.stlai-vision-ads-pro-wrapper .tl img{width:auto!important;height:28px!important;max-width:140px!important;max-height:28px!important;object-fit:contain!important}.stlai-vision-ads-pro-wrapper .wrap{background:var(--bg,#000);color:var(--tx,#fff)}'
+    );
 
-    // Enqueue JS
     wp_enqueue_script( 'jszip', 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', array(), null, true );
     wp_enqueue_script( 'stlai-vision-ads-pro-script', STLAI_VISION_ADS_PRO_URL . 'assets/js/app.js', array('jszip'), STLAI_VISION_ADS_PRO_VERSION, true );
+}
+
+function stlai_vision_ads_pro_maybe_enqueue_assets() {
+    if ( is_admin() || ! is_singular() ) {
+        return;
+    }
+
+    $post = get_post();
+    if ( $post && has_shortcode( (string) $post->post_content, 'stlai_vision_ads_pro' ) ) {
+        stlai_vision_ads_pro_enqueue_assets();
+    }
+}
+
+function stlai_vision_ads_pro_render_shortcode( $atts ) {
+    // Fallback for builders/dynamic content where the shortcode is not visible during wp_enqueue_scripts.
+    stlai_vision_ads_pro_enqueue_assets();
 
     // Get settings
     $options = get_option( 'stlai_vision_ads_pro_settings', array() );
@@ -80,4 +102,115 @@ function stlai_vision_ads_pro_render_shortcode( $atts ) {
     ob_start();
     require STLAI_VISION_ADS_PRO_DIR . 'frontend/shortcode.php';
     return ob_get_clean();
+}
+
+function stlai_vision_ads_pro_ajax_generate_gemini_image() {
+    $options = get_option( 'stlai_vision_ads_pro_settings', array() );
+    $api_key = trim( (string) ( $options['geminiKey'] ?? '' ) );
+
+    if ( '' === $api_key ) {
+        wp_send_json_error(
+            array( 'message' => 'Chave Gemini não configurada. Preencha o campo Gemini API Key em STLAI Vision Ads > Config. de IA.' ),
+            400
+        );
+    }
+
+    $prompt = isset( $_POST['prompt'] ) ? sanitize_textarea_field( wp_unslash( $_POST['prompt'] ) ) : '';
+    if ( '' === $prompt ) {
+        wp_send_json_error( array( 'message' => 'Prompt de imagem vazio.' ), 400 );
+    }
+
+    $base_url = rtrim( (string) ( $options['geminiUrl'] ?? 'https://generativelanguage.googleapis.com' ), '/' );
+    if ( '' === $base_url ) {
+        $base_url = 'https://generativelanguage.googleapis.com';
+    }
+
+    $model = sanitize_text_field( (string) ( $options['geminiImageModel'] ?? 'gemini-3.1-flash-image-preview' ) );
+    if ( '' === $model ) {
+        $model = 'gemini-3.1-flash-image-preview';
+    }
+
+    if ( false !== stripos( $model, 'gemini' ) ) {
+        $endpoint = add_query_arg( 'key', rawurlencode( $api_key ), $base_url . '/v1beta/models/' . rawurlencode( $model ) . ':generateContent' );
+        $body = array(
+            'contents' => array(
+                array(
+                    'parts' => array(
+                        array( 'text' => $prompt ),
+                    ),
+                ),
+            ),
+            'generationConfig' => array(
+                'responseModalities' => array( 'IMAGE' ),
+            ),
+        );
+    } else {
+        $endpoint = add_query_arg( 'key', rawurlencode( $api_key ), $base_url . '/v1beta/models/' . rawurlencode( $model ) . ':predict' );
+        $body = array(
+            'instances' => array(
+                array( 'prompt' => $prompt ),
+            ),
+            'parameters' => array( 'sampleCount' => 1 ),
+        );
+    }
+
+    $response = wp_remote_post(
+        $endpoint,
+        array(
+            'headers' => array( 'Content-Type' => 'application/json' ),
+            'body'    => wp_json_encode( $body ),
+            'timeout' => 120,
+        )
+    );
+
+    if ( is_wp_error( $response ) ) {
+        wp_send_json_error( array( 'message' => $response->get_error_message() ), 500 );
+    }
+
+    $status = (int) wp_remote_retrieve_response_code( $response );
+    $data = json_decode( wp_remote_retrieve_body( $response ), true );
+
+    if ( $status < 200 || $status >= 300 ) {
+        wp_send_json_error(
+            array( 'message' => $data['error']['message'] ?? 'Erro ao gerar imagem no Gemini.' ),
+            $status ?: 500
+        );
+    }
+
+    $image = stlai_vision_ads_pro_extract_gemini_image( is_array( $data ) ? $data : array() );
+    if ( empty( $image['data'] ) ) {
+        wp_send_json_error( array( 'message' => 'Resposta vazia da IA Gemini (imagem).' ), 502 );
+    }
+
+    $mime = $image['mime'] ?: 'image/png';
+    wp_send_json_success(
+        array(
+            'url'  => 'data:' . $mime . ';base64,' . $image['data'],
+            'mime' => $mime,
+        )
+    );
+}
+
+function stlai_vision_ads_pro_extract_gemini_image( $data ) {
+    if ( ! empty( $data['predictions'][0]['bytesBase64Encoded'] ) ) {
+        return array(
+            'data' => $data['predictions'][0]['bytesBase64Encoded'],
+            'mime' => $data['predictions'][0]['mimeType'] ?? 'image/png',
+        );
+    }
+
+    $parts = $data['candidates'][0]['content']['parts'] ?? array();
+    if ( is_array( $parts ) ) {
+        foreach ( $parts as $part ) {
+            $inline = $part['inlineData'] ?? ( $part['inline_data'] ?? null );
+            if ( is_array( $inline ) && ! empty( $inline['data'] ) ) {
+                return array(
+                    'data' => $inline['data'],
+                    'mime' => $inline['mimeType'] ?? ( $inline['mime_type'] ?? 'image/png' ),
+                );
+            }
+        }
+    }
+
+    return array( 'data' => '', 'mime' => '' );
 }

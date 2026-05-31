@@ -1,0 +1,1306 @@
+.stlai-cost-dashboard {
+    --bg: #0b0a12;
+    --panel: #11101a;
+    --panel-2: #171520;
+    --panel-3: #1a1329;
+    --line: rgba(236, 245, 254, .1);
+    --line-strong: rgba(236, 245, 254, .16);
+    --text: #f7f7ff;
+    --muted: rgba(236, 245, 254, .58);
+    --soft: rgba(236, 245, 254, .34);
+    --purple: #9B51E6;
+    --blue: #5166E6;
+    --mint: #18e6ae;
+    --gold: #ffc400;
+    --pink: #ff4da6;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    min-height: 100vh;
+    padding: 0 0 48px;
+    overflow: visible;
+    transition: opacity .16s ease;
+}
+
+.stlai-cost-dashboard * {
+    box-sizing: border-box;
+}
+
+.stlai-cost-topbar {
+    align-items: center;
+    background: #11101a;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    gap: 18px;
+    justify-content: space-between;
+    min-height: 56px;
+    padding: 0 24px;
+}
+
+.stlai-cost-brand {
+    align-items: center;
+    display: flex;
+    gap: 12px;
+    min-width: 0;
+}
+
+.stlai-cost-brand img {
+    display: block;
+    height: 30px;
+    object-fit: contain;
+    width: auto;
+}
+
+.stlai-cost-brand span {
+    color: #9d83ff;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.stlai-cost-brand em {
+    border-left: 1px solid var(--line-strong);
+    color: var(--soft);
+    font-style: normal;
+    font-size: 13px;
+    padding-left: 12px;
+}
+
+.stlai-cost-actions {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.stlai-cost-date {
+    color: var(--soft);
+    font-size: 12px;
+    padding-right: 8px;
+}
+
+.stlai-cost-btn {
+    background: rgba(236, 245, 254, .045);
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    color: var(--muted);
+    cursor: pointer;
+    font: 700 12px/1 Inter, system-ui, sans-serif;
+    min-height: 30px;
+    padding: 0 14px;
+}
+
+.stlai-cost-btn-primary {
+    background: linear-gradient(135deg, var(--purple), var(--blue));
+    border-color: transparent;
+    color: #fff;
+}
+
+.stlai-cost-title-row,
+.stlai-cost-kpis,
+.stlai-cost-main,
+.stlai-cost-panel,
+.stlai-cost-split,
+.stlai-cost-tabs {
+    width: min(1364px, calc(100% - 32px));
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.stlai-cost-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.stlai-cost-tabs button {
+    background: rgba(236, 245, 254, .045);
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    color: var(--muted);
+    cursor: pointer;
+    font: 800 12px/1 Inter, system-ui, sans-serif;
+    min-height: 34px;
+    padding: 0 16px;
+}
+
+.stlai-cost-tabs button.is-active {
+    background: linear-gradient(135deg, rgba(155, 81, 230, .34), rgba(81, 102, 230, .26));
+    border-color: rgba(155, 81, 230, .7);
+    color: #fff;
+}
+
+.stlai-plan-panel {
+    margin-bottom: 18px;
+    overflow: visible;
+}
+
+.stlai-plan-layout {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: minmax(260px, .88fr) minmax(280px, 1fr) minmax(260px, .88fr) minmax(280px, 1fr);
+    padding: 18px;
+    overflow: visible;
+}
+
+.stlai-plan-column {
+    display: contents;
+    overflow: visible;
+}
+
+.stlai-plan-builder {
+    background: rgba(236, 245, 254, .025);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    overflow: visible;
+}
+
+.stlai-plan-builder h3 {
+    color: #fff;
+    font-size: 15px;
+    margin: 0 0 2px;
+}
+
+.stlai-plan-builder label {
+    color: var(--soft);
+    display: flex;
+    flex-direction: column;
+    font-size: 10px;
+    font-weight: 800;
+    gap: 6px;
+    letter-spacing: .06em;
+    position: relative;
+    text-transform: uppercase;
+}
+
+.stlai-plan-builder label,
+.stlai-plan-inline {
+    --plan-field-color: var(--line-strong);
+    background: color-mix(in srgb, var(--plan-field-color) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--plan-field-color) 30%, transparent);
+    border-left: 3px solid var(--plan-field-color);
+    border-radius: 8px;
+    padding: 9px;
+}
+
+.stlai-plan-inline {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1.4fr) minmax(90px, .6fr);
+}
+
+.stlai-plan-inline label {
+    background: transparent;
+    border: 0;
+    padding: 0;
+}
+
+.stlai-plan-field-text {
+    --plan-field-color: #4f83ff;
+}
+
+.stlai-plan-field-image {
+    --plan-field-color: #9B51E6;
+}
+
+.stlai-plan-field-video {
+    --plan-field-color: #ff4da6;
+}
+
+.stlai-plan-field-ugc {
+    --plan-field-color: #22c55e;
+}
+
+.stlai-plan-field-audio {
+    --plan-field-color: #f4b942;
+}
+
+.stlai-plan-builder label > span:first-child {
+    align-items: center;
+    display: inline-flex;
+    gap: 5px;
+}
+
+.stlai-help-tip {
+    align-items: center;
+    background: rgba(236, 245, 254, .08);
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    color: #fff;
+    cursor: help;
+    display: inline-flex;
+    font-size: 10px;
+    height: 17px;
+    justify-content: center;
+    margin-left: 5px;
+    flex: 0 0 auto;
+    position: relative;
+    text-transform: none;
+    vertical-align: middle;
+    width: 17px;
+    z-index: 2;
+}
+
+.stlai-help-tip > span {
+    background: #080812;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .5);
+    left: 50%;
+    opacity: 0;
+    padding: 8px;
+    pointer-events: none;
+    position: absolute;
+    top: 24px;
+    transform: translateX(-50%) translateY(6px);
+    transition: opacity .14s ease, transform .14s ease;
+    width: min(720px, 90vw);
+    z-index: 100000;
+}
+
+.stlai-help-tip:hover,
+.stlai-help-tip:focus {
+    background: transparent;
+    border-color: transparent;
+    color: transparent;
+    z-index: 100001;
+}
+
+.stlai-plan-panel:has(.stlai-help-tip:hover) .stlai-help-tip:not(:hover),
+.stlai-plan-panel:has(.stlai-help-tip:focus) .stlai-help-tip:not(:focus) {
+    opacity: 0;
+}
+
+.stlai-plan-column:first-child .stlai-help-tip > span {
+    left: 50vw;
+    position: fixed;
+    top: 50vh;
+    transform: translate(-50%, -50%) scale(.98);
+}
+
+.stlai-plan-column:first-child .stlai-help-tip:hover > span,
+.stlai-plan-column:first-child .stlai-help-tip:focus > span {
+    opacity: 1;
+}
+
+.stlai-plan-column:first-child .stlai-help-tip:hover > span,
+.stlai-plan-column:first-child .stlai-help-tip:focus > span {
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.stlai-help-tip:hover > span,
+.stlai-help-tip:focus > span {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.stlai-help-tip img {
+    border-radius: 6px;
+    display: block;
+    height: auto;
+    max-height: 480px;
+    object-fit: contain;
+    width: 100%;
+}
+
+.stlai-plan-builder input {
+    background: #14131e;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    color: var(--text);
+    min-height: 34px;
+    outline: 0;
+    padding: 0 10px;
+    width: 100%;
+}
+
+.stlai-plan-card {
+    background: #13131f;
+    border: 1px solid var(--line-strong);
+    border-radius: 18px;
+    min-height: 250px;
+    padding: 24px;
+    align-self: start;
+    position: sticky;
+    top: 12px;
+    z-index: 4;
+}
+
+.stlai-plan-card-custom {
+    border-color: rgba(155, 81, 230, .7);
+    box-shadow: inset 0 0 0 1px rgba(155, 81, 230, .18);
+}
+
+.stlai-plan-card span {
+    color: var(--gold);
+    display: inline-flex;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.stlai-plan-card strong {
+    color: #fff;
+    display: block;
+    font-size: 21px;
+    margin: 12px 0 10px;
+}
+
+.stlai-plan-card ul {
+    color: var(--muted);
+    display: grid;
+    gap: 8px;
+    list-style: none;
+    margin: 14px 0 22px;
+    padding: 0;
+}
+
+.stlai-plan-card li:before {
+    color: #6f8cff;
+    content: "✓";
+    font-weight: 900;
+    margin-right: 8px;
+}
+
+.stlai-plan-card em {
+    color: var(--gold);
+    font-style: normal;
+    font-weight: 900;
+}
+
+.stlai-plan-card em span,
+.stlai-plan-card em strong {
+    display: block;
+}
+
+.stlai-plan-card em span {
+    color: #ff6f8e;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+
+.stlai-plan-card em strong {
+    color: var(--gold);
+    font-size: 17px;
+}
+
+.stlai-plan-card-toggle {
+    align-items: center;
+    color: var(--soft);
+    display: inline-flex;
+    font-size: 11px;
+    gap: 7px;
+    margin-top: 12px;
+}
+
+.stlai-plan-card-toggle input {
+    accent-color: var(--purple);
+    appearance: auto;
+    height: 13px;
+    width: 13px;
+}
+
+.stlai-plan-summary {
+    border-top: 1px solid var(--line);
+    display: grid;
+    gap: 10px;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, 1fr);
+    padding-top: 16px;
+}
+
+.stlai-plan-summary div {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.stlai-plan-summary span {
+    color: var(--soft);
+    display: block;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}
+
+.stlai-plan-summary strong {
+    color: #fff;
+    display: block;
+    font-size: 24px;
+    margin-top: 8px;
+}
+
+.stlai-plan-summary div:last-child strong {
+    color: var(--gold);
+}
+
+.stlai-plan-comparison {
+    display: grid;
+    gap: 10px;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.stlai-plan-comparison div {
+    background: rgba(236, 245, 254, .04);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.stlai-plan-comparison span {
+    color: var(--soft);
+    display: block;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}
+
+.stlai-plan-comparison strong {
+    color: #fff;
+    display: block;
+    font-size: 22px;
+    margin-top: 8px;
+}
+
+.stlai-cost-title-row {
+    align-items: end;
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 24px 0 18px;
+}
+
+.stlai-cost-title-row h1 {
+    font-size: 30px;
+    line-height: 1;
+    margin: 0;
+}
+
+.stlai-cost-config {
+    align-items: end;
+    display: flex;
+    gap: 10px;
+}
+
+.stlai-cost-config label,
+.stlai-cost-flow-section label {
+    color: var(--soft);
+    display: flex;
+    flex-direction: column;
+    font-size: 10px;
+    font-weight: 800;
+    gap: 6px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.stlai-cost-config input,
+.stlai-cost-config select,
+.stlai-cost-flow-section input,
+.stlai-cost-flow-section select {
+    appearance: none;
+    background: #14131e;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    color: var(--text);
+    min-height: 30px;
+    outline: 0;
+    padding: 0 10px;
+    width: 100%;
+}
+
+.stlai-cost-config input {
+    width: 160px;
+}
+
+.stlai-cost-kpis {
+    background: var(--panel);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    margin-bottom: 18px;
+    overflow: hidden;
+}
+
+.stlai-cost-kpis article {
+    border-right: 1px solid var(--line);
+    min-height: 96px;
+    padding: 17px 24px;
+}
+
+.stlai-cost-kpis article:last-child {
+    border-right: 0;
+}
+
+.stlai-cost-kpis span,
+.stlai-cost-chart-head span,
+.stlai-cost-projection span {
+    color: var(--soft);
+    display: block;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}
+
+.stlai-cost-kpis strong {
+    color: #f4f2ff;
+    display: block;
+    font-size: 24px;
+    line-height: 1;
+    margin: 10px 0 8px;
+}
+
+.stlai-cost-kpis article:first-child strong,
+.stlai-cost-kpis article:last-child strong {
+    color: #b982ff;
+}
+
+.stlai-cost-kpis article:last-child strong {
+    color: var(--gold);
+}
+
+.stlai-cost-kpis small {
+    color: var(--soft);
+    display: block;
+    font-size: 11px;
+}
+
+.stlai-cost-main {
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.stlai-cost-panel {
+    background: var(--panel);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.stlai-cost-panel-head {
+    align-items: center;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    min-height: 48px;
+    padding: 0 16px;
+}
+
+.stlai-cost-panel-head h2 {
+    align-items: center;
+    display: flex;
+    font-size: 13px;
+    gap: 8px;
+    margin: 0;
+}
+
+.stlai-cost-panel-head h2:before {
+    background: var(--purple);
+    border-radius: 50%;
+    content: "";
+    display: inline-block;
+    height: 4px;
+    width: 4px;
+}
+
+.stlai-cost-panel-head small {
+    color: var(--soft);
+    font-size: 11px;
+}
+
+.stlai-cost-flow-grid {
+    display: grid;
+    gap: 10px;
+    padding: 14px 16px 18px;
+}
+
+.stlai-cost-flow-section {
+    --flow-color: var(--purple);
+    background: color-mix(in srgb, var(--flow-color) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--flow-color) 34%, transparent);
+    border-left: 3px solid var(--flow-color);
+    border-radius: 8px;
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+}
+
+.stlai-cost-flow-section h3 {
+    color: var(--flow-color);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    margin: 0;
+    text-transform: uppercase;
+}
+
+.stlai-cost-flow-section input,
+.stlai-cost-flow-section select {
+    min-height: 34px;
+}
+
+.stlai-cost-flow-section-volume {
+    --flow-color: #b982ff;
+}
+
+.stlai-cost-flow-section-text {
+    --flow-color: #4f83ff;
+}
+
+.stlai-cost-flow-section-image {
+    --flow-color: #9B51E6;
+}
+
+.stlai-cost-flow-section-video {
+    --flow-color: #ff4da6;
+}
+
+.stlai-cost-flow-section-audio {
+    --flow-color: #f4b942;
+}
+
+.stlai-cost-flow-section-composer {
+    --flow-color: #2dd4bf;
+}
+
+.stlai-cost-flow-section-ugc {
+    --flow-color: #22c55e;
+}
+
+.stlai-cost-flow-section-ugc.is-disabled {
+    --flow-color: #6b7280;
+    filter: grayscale(.9);
+    opacity: .68;
+}
+
+.stlai-toggle-row {
+    align-items: center;
+    color: var(--text) !important;
+    flex-direction: row !important;
+    gap: 9px !important;
+}
+
+.stlai-toggle-row input {
+    accent-color: var(--flow-color);
+    appearance: auto !important;
+    display: inline-block !important;
+    height: 18px !important;
+    min-height: 18px !important;
+    opacity: 1 !important;
+    position: static !important;
+    width: 18px !important;
+}
+
+.stlai-cost-chart-panel {
+    align-self: start;
+    min-height: 0;
+    padding: 22px 28px 20px;
+    position: sticky;
+    top: 72px;
+    z-index: 2;
+}
+
+.stlai-cost-chart-head {
+    align-items: flex-start;
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.stlai-cost-chart-head strong {
+    color: #fff;
+    display: block;
+    font-size: clamp(28px, 4vw, 44px);
+    line-height: 1;
+    margin: 10px 0 8px;
+}
+
+.stlai-cost-chart-head em {
+    color: var(--muted);
+    display: block;
+    font-size: 12px;
+    font-style: normal;
+}
+
+.stlai-cost-chart-head > div:last-child {
+    text-align: right;
+}
+
+.stlai-cost-chart-head > div:last-child strong {
+    color: var(--gold);
+    font-size: 25px;
+}
+
+.stlai-cost-chart {
+    align-items: end;
+    border-bottom: 1px solid var(--line-strong);
+    border-left: 1px solid var(--line);
+    display: grid;
+    gap: 4px;
+    grid-template-columns: repeat(var(--chart-days, 30), minmax(4px, 1fr));
+    height: 250px;
+    padding: 18px 0 0 14px;
+    position: relative;
+}
+
+.stlai-cost-chart:before,
+.stlai-cost-chart:after {
+    border-top: 1px dashed rgba(236, 245, 254, .08);
+    content: "";
+    left: 14px;
+    position: absolute;
+    right: 0;
+}
+
+.stlai-cost-chart:before {
+    top: 34%;
+}
+
+.stlai-cost-chart:after {
+    top: 66%;
+}
+
+.stlai-cost-chart-day {
+    align-items: end;
+    display: flex;
+    gap: 2px;
+    height: 100%;
+    min-width: 0;
+    position: relative;
+    z-index: 1;
+}
+
+.stlai-cost-chart-day i,
+.stlai-cost-chart-day b {
+    border-radius: 4px 4px 0 0;
+    display: block;
+    flex: 1;
+    min-height: 3px;
+}
+
+.stlai-cost-chart-day i {
+    background: linear-gradient(180deg, rgba(255, 196, 0, .95), rgba(255, 196, 0, .35));
+}
+
+.stlai-cost-chart-day b {
+    background: linear-gradient(180deg, rgba(155, 81, 230, .95), rgba(81, 102, 230, .35));
+}
+
+.stlai-cost-chart-foot {
+    color: var(--soft);
+    display: flex;
+    font-size: 11px;
+    justify-content: space-between;
+    margin-top: 10px;
+}
+
+.stlai-cost-chart-tooltip {
+    background: rgba(8, 8, 18, .96);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .42);
+    color: var(--muted);
+    display: grid;
+    font-size: 11px;
+    gap: 5px;
+    min-width: 190px;
+    opacity: 0;
+    padding: 10px 12px;
+    pointer-events: none;
+    position: absolute;
+    transition: opacity .12s ease;
+    z-index: 5;
+}
+
+.stlai-cost-chart-tooltip.is-visible {
+    opacity: 1;
+}
+
+.stlai-cost-chart-tooltip strong {
+    color: #fff;
+    font-size: 12px;
+}
+
+.stlai-cost-chart-tooltip span:nth-child(3),
+.stlai-cost-chart-tooltip span:nth-child(5) {
+    color: var(--gold);
+}
+
+.stlai-cost-table-wrap {
+    overflow-x: auto;
+}
+
+.stlai-cost-table {
+    border-collapse: collapse;
+    min-width: 780px;
+    width: 100%;
+}
+
+.stlai-cost-table th,
+.stlai-cost-table td {
+    border-bottom: 1px solid var(--line);
+    padding: 12px 16px;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.stlai-cost-table th {
+    background: var(--panel-2);
+    color: var(--soft);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+}
+
+.stlai-cost-table td {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.stlai-cost-table td strong {
+    color: #fff;
+}
+
+.stlai-cost-table tr.is-active {
+    background: rgba(155, 81, 230, .12);
+}
+
+.stlai-cost-badge {
+    background: color-mix(in srgb, var(--badge) 24%, transparent);
+    border-radius: 4px;
+    color: var(--badge);
+    display: inline-flex;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 7px;
+}
+
+.stlai-cost-mini-bar {
+    background: rgba(236, 245, 254, .09);
+    display: inline-block;
+    height: 2px;
+    margin-right: 8px;
+    vertical-align: middle;
+    width: 68px;
+}
+
+.stlai-cost-mini-bar i {
+    display: block;
+    height: 100%;
+}
+
+.stlai-cost-total-row {
+    background: var(--panel-3);
+    font-weight: 800;
+}
+
+.stlai-cost-total-row td:first-child {
+    text-align: right;
+}
+
+.stlai-cost-split {
+    display: grid;
+    grid-template-columns: .95fr 1.05fr;
+    gap: 18px;
+    margin-top: 18px;
+    margin-bottom: 18px;
+}
+
+.stlai-cost-projection {
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+}
+
+.stlai-cost-projection div {
+    align-items: center;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    padding: 13px 14px;
+}
+
+.stlai-cost-projection strong {
+    color: #fff;
+    font-size: 15px;
+}
+
+.stlai-cost-projection div:last-child strong {
+    color: var(--gold);
+}
+
+.stlai-cost-bars {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+}
+
+.stlai-cost-bar-row {
+    align-items: center;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+}
+
+.stlai-cost-bar-row strong {
+    font-size: 13px;
+}
+
+.stlai-cost-bar-row span {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.stlai-cost-bar-track {
+    background: rgba(236, 245, 254, .08);
+    height: 3px;
+    margin-top: 8px;
+    overflow: hidden;
+}
+
+.stlai-cost-bar-fill {
+    display: block;
+    height: 100%;
+}
+
+.is-good {
+    color: var(--mint) !important;
+    font-weight: 800;
+}
+
+.is-bad {
+    color: #ff6f8e !important;
+    font-weight: 800;
+}
+
+@media (max-width: 1080px) {
+    .stlai-cost-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .stlai-cost-main,
+    .stlai-cost-split {
+        grid-template-columns: 1fr;
+    }
+
+    .stlai-cost-chart-panel {
+        position: static;
+    }
+
+    .stlai-plan-layout,
+    .stlai-plan-column,
+    .stlai-plan-cards,
+    .stlai-plan-summary,
+    .stlai-plan-comparison {
+        grid-template-columns: 1fr;
+    }
+
+    .stlai-plan-card {
+        position: static;
+    }
+}
+
+@media (max-width: 680px) {
+    .stlai-cost-topbar,
+    .stlai-cost-title-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .stlai-cost-actions,
+    .stlai-cost-actions .stlai-cost-btn,
+    .stlai-cost-config,
+    .stlai-cost-tabs,
+    .stlai-cost-tabs button,
+    .stlai-cost-config label,
+    .stlai-cost-config input {
+        width: 100%;
+    }
+
+    .stlai-cost-tabs {
+        flex-direction: column;
+    }
+
+    .stlai-cost-kpis {
+        grid-template-columns: 1fr;
+    }
+
+    .stlai-cost-kpis article {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+    }
+}
+
+@media print {
+    @page {
+        size: A4 landscape;
+        margin: 12mm;
+    }
+
+    html,
+    body {
+        background: #fff !important;
+        color: #111827 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    .stlai-cost-dashboard {
+        --panel: #fff;
+        --panel-2: #f3f4f6;
+        --panel-3: #eee7ff;
+        --line: #d9dce5;
+        --line-strong: #bfc5d2;
+        --text: #111827;
+        --muted: #374151;
+        --soft: #4b5563;
+        background: #fff !important;
+        color: #111827 !important;
+        padding: 0 !important;
+    }
+
+    .stlai-cost-actions,
+    [data-reset-flow],
+    .stlai-cost-tabs,
+    .stlai-cost-chart-tooltip {
+        display: none !important;
+    }
+
+    .stlai-cost-topbar {
+        background: #fff !important;
+        border-bottom: 2px solid #111827;
+        min-height: 38px;
+        padding: 0 0 8px;
+    }
+
+    .stlai-cost-brand em,
+    .stlai-cost-date {
+        color: #374151 !important;
+    }
+
+    .stlai-cost-title-row,
+    .stlai-cost-kpis,
+    .stlai-cost-main,
+    .stlai-cost-panel,
+    .stlai-cost-split {
+        width: 100% !important;
+    }
+
+    .stlai-cost-title-row {
+        padding: 12px 0 10px;
+    }
+
+    .stlai-cost-title-row h1 {
+        color: #111827 !important;
+        font-size: 22px;
+    }
+
+    .stlai-cost-config {
+        display: none;
+    }
+
+    .stlai-cost-kpis {
+        border-color: #bfc5d2;
+        grid-template-columns: repeat(5, 1fr);
+        margin-bottom: 10px;
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    .stlai-cost-kpis article {
+        min-height: 64px;
+        padding: 10px 12px;
+    }
+
+    .stlai-cost-kpis span,
+    .stlai-cost-chart-head span,
+    .stlai-cost-projection span,
+    .stlai-cost-flow-section label {
+        color: #4b5563 !important;
+    }
+
+    .stlai-cost-kpis strong,
+    .stlai-cost-table td strong,
+    .stlai-cost-projection strong,
+    .stlai-cost-bar-row strong {
+        color: #111827 !important;
+    }
+
+    .stlai-cost-main {
+        align-items: start;
+        display: grid;
+        grid-template-columns: 40% 60%;
+        gap: 10px;
+        margin-bottom: 10px;
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    .stlai-cost-chart-panel {
+        min-height: auto;
+        padding: 12px;
+        position: static !important;
+    }
+
+    .stlai-cost-chart-head {
+        margin-bottom: 10px;
+    }
+
+    .stlai-cost-chart-head strong {
+        color: #111827 !important;
+        font-size: 24px;
+    }
+
+    .stlai-cost-chart-head > div:last-child strong,
+    .stlai-cost-kpis article:last-child strong,
+    .stlai-cost-projection div:last-child strong {
+        color: #9a6a00 !important;
+    }
+
+    .stlai-cost-chart {
+        height: 145px;
+        padding-top: 10px;
+    }
+
+    .stlai-cost-flow-grid {
+        gap: 6px;
+        padding: 8px;
+    }
+
+    .stlai-cost-flow-section {
+        background: #fff !important;
+        break-inside: avoid;
+        page-break-inside: avoid;
+        gap: 5px;
+        padding: 7px 8px;
+    }
+
+    .stlai-cost-flow-section h3 {
+        color: var(--flow-color) !important;
+        font-size: 10px;
+    }
+
+    .stlai-cost-flow-section input,
+    .stlai-cost-flow-section select {
+        background: #fff !important;
+        border-color: #d9dce5;
+        color: #111827 !important;
+        min-height: 24px;
+    }
+
+    .stlai-cost-panel {
+        background: #fff !important;
+        border-color: #bfc5d2;
+        box-shadow: none !important;
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    .stlai-cost-panel-head {
+        background: #f3f4f6;
+        min-height: 34px;
+        padding: 0 10px;
+    }
+
+    .stlai-cost-panel-head h2 {
+        color: #111827 !important;
+    }
+
+    .stlai-cost-table {
+        min-width: 0;
+    }
+
+    .stlai-cost-table th,
+    .stlai-cost-table td {
+        border-color: #d9dce5;
+        color: #374151 !important;
+        font-size: 10px;
+        padding: 7px 8px;
+    }
+
+    .stlai-cost-table th {
+        background: #eef0f4 !important;
+        color: #111827 !important;
+    }
+
+    .stlai-cost-badge {
+        background: transparent !important;
+        border: 1px solid var(--badge);
+        color: var(--badge) !important;
+    }
+
+    .stlai-cost-split {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin: 10px 0;
+    }
+
+    .stlai-cost-projection,
+    .stlai-cost-bars {
+        padding: 10px;
+    }
+
+    .stlai-cost-projection div {
+        background: #fff !important;
+        border-color: #d9dce5;
+        padding: 8px 10px;
+    }
+
+    .stlai-plan-layout {
+        grid-template-columns: 32% 68%;
+        gap: 10px;
+        padding: 10px;
+    }
+
+    .stlai-plan-builder {
+        gap: 6px;
+        padding: 8px;
+    }
+
+    .stlai-plan-builder input {
+        min-height: 24px;
+    }
+
+    .stlai-plan-cards {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+
+    .stlai-plan-card {
+        min-height: auto;
+        padding: 12px;
+    }
+
+    .stlai-plan-card strong,
+    .stlai-plan-summary strong {
+        color: #111827 !important;
+    }
+
+    .stlai-plan-summary {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .stlai-cost-table-wrap {
+        overflow: visible;
+    }
+
+    .stlai-cost-panel:nth-of-type(n + 4),
+    .stlai-cost-split + .stlai-cost-panel {
+        page-break-before: auto;
+    }
+}

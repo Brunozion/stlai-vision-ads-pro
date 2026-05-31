@@ -454,16 +454,6 @@
   </div>
 
   <div id="i-out" style="display:none">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-      <div style="font-size:12px;color:var(--tx2);display:flex;align-items:center;gap:10px">Tamanho de saída:
-        <div class="rrow">
-          <div class="ro"><input type="radio" name="res" id="r8" value="800"><label for="r8">800px</label></div>
-          <div class="ro"><input type="radio" name="res" id="r10" value="1000" checked><label for="r10">1000px</label></div>
-          <div class="ro"><input type="radio" name="res" id="r12" value="1200"><label for="r12">1200px</label></div>
-        </div>
-      </div>
-    </div>
-    
     <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
       <div>
         <h2 style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin:0 0 4px;color:var(--tx);display:flex;align-items:center;gap:10px">Galeria de Imagens</h2>
