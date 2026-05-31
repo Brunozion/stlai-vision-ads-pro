@@ -349,3 +349,4 @@ BACKGROUND_MUSIC_VOLUME=0.06
 
 Esse modo prioriza estabilidade: transição em corte simples, H.264 baseline no preview, `preset ultrafast`, `crf 28`, 30fps e áudio AAC 128k. O fade/xfade fica para instâncias maiores ou produção.
 
+// teste Sun May 31 04:09:28 -03 2026
