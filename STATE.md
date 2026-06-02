@@ -25,6 +25,9 @@ fluxo comercial existente intacto.
 - MuAPI UGC simplificado para seguir o padrão Open Generative AI: Base URL default
   `https://api.muapi.ai`, start em `/api/v1/{model}`, image_url pública enviada
   direto e `upload_file` apenas como fallback.
+- Correção definitiva do fallback MuAPI: URL pública `http/https` não tenta mais
+  `upload_file` automaticamente; se o start falhar, retorna `MUAPI_START_FAILED`
+  com debug seguro.
 
 ## Fluxo de trabalho atual
 1. Pedir alteração ao Codex no VS Code.

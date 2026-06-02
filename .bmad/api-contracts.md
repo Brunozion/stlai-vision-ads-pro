@@ -1952,7 +1952,9 @@ Rules:
 - If `muApiBaseUrl` was saved as `https://api.muapi.ai/api/v1/model`, runtime extracts base `https://api.muapi.ai` and model `model` when `muApiModel` is empty.
 - `muApiModel` may be a model/endpoint string. Runtime strips `api/v1/`, leading slashes and full URL prefixes.
 - Public `http/https` image URLs are sent directly as `image_url`.
-- `upload_file` is fallback only for non-public images or when MuAPI rejects a public image URL as invalid/inaccessible.
+- `upload_file` is not attempted automatically for public `http/https` image URLs.
+- `upload_file` is reserved for explicit internal `force_upload` fallback.
+- For public WordPress image URLs, expected debug is `direct_image_url_used=true` and `upload_attempted=false`.
 
 Normalized response fields:
 

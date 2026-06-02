@@ -1987,3 +1987,18 @@ Status:
 
 - Implementação concluída em código.
 - Falta teste real no WordPress com chave MuAPI ativa.
+
+## 2026-06-02 - Correção MUAPI_UPLOAD_BAD_RESPONSE
+
+O que foi feito:
+
+- O provider MuAPI não faz mais fallback automático para `/api/v1/upload_file` quando a imagem é URL pública `http/https`.
+- Para URL pública, o start usa `image_url` direto no JSON.
+- `upload_file` só fica disponível com flag interna explícita `force_upload`.
+- Falha no start direto retorna `MUAPI_START_FAILED` com debug seguro, não `MUAPI_UPLOAD_BAD_RESPONSE`.
+- Debug seguro inclui `direct_image_url_used`, `upload_attempted`, `start_url`, `poll_url`, `model`, `base_url`, `payload_keys`, `response_http_code`, `response_keys` e trecho limitado da resposta, sem API key.
+
+Status:
+
+- Correção concluída em código.
+- Falta reteste real no WordPress com MuAPI.

@@ -1695,3 +1695,23 @@ Admin fica mais simples para MuAPI: API Key, Model e defaults. `muApiBaseUrl` co
 ### Status
 
 Decidido
+
+## 2026-06-02 - MuAPI não faz fallback automático para upload_file
+
+### Decisao
+
+Para MuAPI UGC, URL pública `http/https` nunca deve acionar `/api/v1/upload_file` automaticamente. O start direto com `image_url` é o caminho único padrão.
+
+`upload_file` fica reservado para flag interna explícita `force_upload`.
+
+### Motivo
+
+O fallback automático ainda podia gerar `MUAPI_UPLOAD_BAD_RESPONSE` depois de uma tentativa direta, confundindo o erro real de start com erro de upload.
+
+### Impacto
+
+Falha da primeira tentativa agora retorna `MUAPI_START_FAILED` com debug seguro. Para o caso esperado de imagens públicas do WordPress, o debug deve indicar `direct_image_url_used=true` e `upload_attempted=false`.
+
+### Status
+
+Decidido
