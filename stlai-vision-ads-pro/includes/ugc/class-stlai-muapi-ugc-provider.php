@@ -20,44 +20,38 @@ class STLAI_MuAPI_UGC_Provider {
         }
 
         $direct_image_url = self::is_public_url( $original_image_url ) ? esc_url_raw( $original_image_url ) : '';
-        $force_upload = ! empty( $payload['force_upload'] );
 
         if ( $direct_image_url ) {
             return self::start_with_image_url( $payload, $config, $direct_image_url, false );
         }
 
-        if ( ! $force_upload ) {
-            return new WP_Error(
-                'UGC_IMAGE_REQUIRES_PUBLIC_URL',
-                'MuAPI precisa de uma URL pública da imagem para gerar UGC. Selecione uma imagem publicada do WordPress.',
-                array(
-                    'debug' => self::debug_string(
-                        self::safe_debug(
-                            $config,
-                            self::start_url( $config ),
-                            '',
-                            '',
-                            array(),
-                            false,
-                            false,
-                            array(
-                                'payload_keys' => array_keys( self::start_body( $payload, '' ) ),
-                                'response_http_code' => 0,
-                                'raw_response_excerpt' => '',
-                            )
+        $code = 0 === strpos( $original_image_url, 'data:image/' ) ? 'UGC_IMAGE_NOT_PUBLISHED' : 'UGC_IMAGE_REQUIRES_PUBLIC_URL';
+        $message = 'UGC_IMAGE_NOT_PUBLISHED' === $code
+            ? 'A imagem precisa ser publicada antes de gerar UGC.'
+            : 'MuAPI precisa de uma URL pública da imagem para gerar UGC. Selecione uma imagem publicada do WordPress.';
+
+        return new WP_Error(
+            $code,
+            $message,
+            array(
+                'debug' => self::debug_string(
+                    self::safe_debug(
+                        $config,
+                        self::start_url( $config ),
+                        '',
+                        '',
+                        array(),
+                        false,
+                        false,
+                        array(
+                            'payload_keys' => array_keys( self::start_body( $payload, '' ) ),
+                            'response_http_code' => 0,
+                            'raw_response_excerpt' => '',
                         )
-                    ),
-                )
-            );
-        }
-
-        $uploaded = self::upload_fallback_image( $original_image_url, $config );
-        if ( is_wp_error( $uploaded ) ) {
-            return $uploaded;
-        }
-        $upload_fallback_used = true;
-
-        return self::start_with_image_url( $payload, $config, $uploaded, $upload_fallback_used );
+                    )
+                ),
+            )
+        );
     }
 
     private static function start_with_image_url( array $payload, array $config, $image_url, $upload_fallback_used ) {
@@ -295,95 +289,6 @@ class STLAI_MuAPI_UGC_Provider {
                 return '' !== $value && null !== $value;
             }
         );
-    }
-
-    private static function upload_fallback_image( $image_url, array $config ) {
-        if ( self::is_public_url( $image_url ) ) {
-            return self::upload_public_url( $image_url, $config );
-        }
-        if ( 0 === strpos( $image_url, 'data:image/' ) ) {
-            return self::upload_data_url( $image_url, $config );
-        }
-        return new WP_Error( 'UGC_IMAGE_INVALID', 'Imagem de referência inválida para UGC.' );
-    }
-
-    private static function upload_public_url( $image_url, array $config ) {
-        $response = wp_remote_get( $image_url, array( 'timeout' => self::DEFAULT_TIMEOUT ) );
-        if ( is_wp_error( $response ) ) {
-            return new WP_Error( 'MUAPI_UPLOAD_DOWNLOAD_FAILED', 'Não foi possível baixar a imagem para fallback MuAPI.' );
-        }
-        $status = (int) wp_remote_retrieve_response_code( $response );
-        $body = wp_remote_retrieve_body( $response );
-        if ( $status < 200 || $status >= 300 || '' === $body ) {
-            return new WP_Error( 'MUAPI_UPLOAD_DOWNLOAD_BAD_RESPONSE', 'Não foi possível preparar a imagem para fallback MuAPI.' );
-        }
-        $content_type = sanitize_mime_type( (string) wp_remote_retrieve_header( $response, 'content-type' ) );
-        return self::upload_binary( $body, $content_type ?: 'image/jpeg', $config );
-    }
-
-    private static function upload_data_url( $data_url, array $config ) {
-        if ( ! preg_match( '#^data:(image/[a-zA-Z0-9.+-]+);base64,(.+)$#', $data_url, $matches ) ) {
-            return new WP_Error( 'MUAPI_UPLOAD_INVALID_DATA_URL', 'Imagem base64 inválida para upload UGC.' );
-        }
-
-        $mime = sanitize_mime_type( $matches[1] );
-        $binary = base64_decode( $matches[2], true );
-        if ( false === $binary ) {
-            return new WP_Error( 'MUAPI_UPLOAD_DECODE_FAILED', 'Não foi possível preparar a imagem para MuAPI.' );
-        }
-
-        return self::upload_binary( $binary, $mime, $config );
-    }
-
-    private static function upload_binary( $binary, $mime, array $config ) {
-        if ( ! class_exists( 'CURLFile' ) ) {
-            return new WP_Error( 'MUAPI_UPLOAD_UNAVAILABLE', 'Upload MuAPI indisponível neste servidor.' );
-        }
-
-        $extension = 'jpg';
-        if ( false !== strpos( $mime, 'png' ) ) {
-            $extension = 'png';
-        } elseif ( false !== strpos( $mime, 'webp' ) ) {
-            $extension = 'webp';
-        }
-
-        $tmp = wp_tempnam( 'stlai-ugc-image.' . $extension );
-        if ( ! $tmp ) {
-            return new WP_Error( 'MUAPI_UPLOAD_TEMP_FAILED', 'Não foi possível criar arquivo temporário UGC.' );
-        }
-
-        file_put_contents( $tmp, $binary );
-
-        $response = wp_remote_post(
-            trailingslashit( $config['base_url'] ) . 'api/v1/upload_file',
-            array(
-                'headers' => array( 'x-api-key' => $config['api_key'] ),
-                'body'    => array( 'file' => new CURLFile( $tmp, $mime, 'stlai-ugc-image.' . $extension ) ),
-                'timeout' => self::DEFAULT_TIMEOUT,
-            )
-        );
-
-        @unlink( $tmp );
-
-        if ( is_wp_error( $response ) ) {
-            return new WP_Error( 'MUAPI_UPLOAD_FAILED', $response->get_error_message() );
-        }
-
-        $status = (int) wp_remote_retrieve_response_code( $response );
-        $data = json_decode( wp_remote_retrieve_body( $response ), true );
-        if ( $status < 200 || $status >= 300 || ! is_array( $data ) ) {
-            return new WP_Error( 'MUAPI_UPLOAD_BAD_RESPONSE', self::safe_error_message( $data, 'MuAPI não aceitou o upload da imagem.' ) );
-        }
-
-        $url = self::extract_video_url( $data );
-        if ( ! $url ) {
-            $url = esc_url_raw( (string) ( $data['file_url'] ?? ( $data['data']['file_url'] ?? ( $data['data']['url'] ?? '' ) ) ) );
-        }
-        if ( ! $url ) {
-            return new WP_Error( 'MUAPI_UPLOAD_URL_MISSING', 'MuAPI não retornou URL da imagem enviada.' );
-        }
-
-        return $url;
     }
 
     private static function start_url( array $config ) {

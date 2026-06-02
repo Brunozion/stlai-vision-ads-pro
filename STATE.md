@@ -33,6 +33,12 @@ fluxo comercial existente intacto.
   antes de chamar o provider.
 - Ajustado fallback visual do modal UGC: se o objeto da imagem não tiver URL, o
   JS extrai a URL pública do `data-image-url`/`src` do `<img>` renderizado.
+- Separado preview visual (`preview_src`, inclusive `data:image/base64`) da URL
+  pública usada no UGC (`public_url`). Se a imagem selecionada só tiver base64,
+  o frontend chama `stlai_publish_ugc_reference_image`, publica em
+  `wp-content/uploads/stlai-vision-ugc-reference/` e só então envia `image_url`
+  HTTPS para MuAPI. Backend/provider rejeitam `data:image` com
+  `UGC_IMAGE_NOT_PUBLISHED`.
 
 ## Fluxo de trabalho atual
 1. Pedir alteração ao Codex no VS Code.

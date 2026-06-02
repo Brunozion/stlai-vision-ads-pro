@@ -2003,6 +2003,22 @@ Status:
 - Correção concluída em código.
 - Falta reteste real no WordPress com MuAPI.
 
+## 2026-06-02 - UGC publica base64 antes de chamar MuAPI
+
+O que foi feito:
+
+- Separado no JS o conceito de `preview_src` (visual do modal, pode ser `data:image/base64`) e `public_url` (URL `http/https` usada para gerar UGC).
+- `getImagePublicUrl` agora ignora `data:image` e retorna apenas URL pública.
+- Cards UGC usam `data-preview-src` para o `<img>` e deixam `data-image-url` apenas para URL pública.
+- Criado endpoint AJAX `stlai_publish_ugc_reference_image` para salvar base64 em `wp-content/uploads/stlai-vision-ugc-reference/` e devolver URL pública.
+- `ensureUgcPublicImageUrl` publica a imagem antes do start UGC quando só existe base64.
+- Backend e MuAPI rejeitam `data:image` com `UGC_IMAGE_NOT_PUBLISHED`; MuAPI não tenta mais `upload_file` para base64.
+
+Status:
+
+- Correção concluída em código.
+- Falta reteste real no WordPress com MuAPI.
+
 ## 2026-06-02 - Correção envio de image_url no modal UGC
 
 O que foi feito:

@@ -248,9 +248,10 @@ class STLAI_UGC_Job_Service {
 
         $image_url = self::public_image_url_from_payload( $payload );
         if ( '' === $image_url ) {
+            $has_data_image = self::payload_has_data_image_url( $payload );
             return new WP_Error(
-                'UGC_IMAGE_REQUIRES_PUBLIC_URL',
-                'Selecione uma imagem publicada para gerar UGC.',
+                $has_data_image ? 'UGC_IMAGE_NOT_PUBLISHED' : 'UGC_IMAGE_REQUIRES_PUBLIC_URL',
+                $has_data_image ? 'A imagem precisa ser publicada antes de gerar UGC.' : 'Selecione uma imagem publicada para gerar UGC.',
                 array(
                     'debug' => wp_json_encode(
                         array(
@@ -292,6 +293,16 @@ class STLAI_UGC_Job_Service {
             }
         }
         return '';
+    }
+
+    private static function payload_has_data_image_url( array $payload ) {
+        foreach ( array( 'image_url', 'reference_image_url', 'product_image_url', 'selected_image_url', 'url' ) as $key ) {
+            $value = trim( (string) wp_unslash( $payload[ $key ] ?? '' ) );
+            if ( preg_match( '#^data:image/#i', $value ) ) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static function parent_job( $parent_job_id, array $validated ) {

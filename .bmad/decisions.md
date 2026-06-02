@@ -80,6 +80,26 @@ O painel admin passa a armazenar as credenciais e modelos futuros. Nenhuma chave
 
 Decidido
 
+## 2026-06-02 - Base64 UGC deve ser publicado no WordPress antes do provider
+
+### Decisao
+
+O modal UGC pode usar `data:image/base64` apenas como preview visual. O payload de geração UGC deve usar exclusivamente uma URL pública `http/https`.
+
+Quando a imagem selecionada não tiver URL pública, o frontend deve publicar o base64 no WordPress via `stlai_publish_ugc_reference_image`, salvar o retorno como `public_url`/`selectedImageUrl` e só então chamar `stlai_start_ugc_video`.
+
+### Motivo
+
+A MuAPI não aceita `data:image/base64` como `image_url`. Enviar o `src` visual do thumbnail confundia preview com asset público e gerava erros como imagem inválida ou upload fallback.
+
+### Impacto
+
+`data-image-url` nos cards UGC fica reservado para URL pública; `data-preview-src` guarda o preview. O backend e o provider MuAPI rejeitam `data:image` com `UGC_IMAGE_NOT_PUBLISHED`. O debug MuAPI esperado para fluxo correto passa a manter `direct_image_url_used=true` e `upload_attempted=false`.
+
+### Status
+
+Decidido
+
 ## 2026-05-24 - Erro final de clipe não domina operação Veo ativa
 
 ### Decisao

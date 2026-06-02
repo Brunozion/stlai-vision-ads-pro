@@ -127,6 +127,7 @@ const S = {
   selectedUgcImage: null,
   ugc: {
     selectedImageUrl: "",
+    selectedPreviewSrc: "",
     selectedImageIndex: -1,
     selectedImageLabel: ""
   },
@@ -249,13 +250,26 @@ function decodeHtmlUrl(value){
   return String(value || "").trim().replace(/&amp;/g,"&");
 }
 
+function isPublicHttpUrl(value){
+  return typeof value==="string" && /^https?:\/\//i.test(value.trim());
+}
+
+function isDataImage(value){
+  return typeof value==="string" && /^data:image\//i.test(value.trim());
+}
+
 function isDomElement(value){
   return value && typeof value==="object" && value.nodeType===1;
 }
 
 function publicUrlFromCandidate(candidate){
   const clean=normalizeMediaUrl(decodeHtmlUrl(candidate));
-  return /^https?:\/\//i.test(clean) ? clean : "";
+  return isPublicHttpUrl(clean) ? clean : "";
+}
+
+function previewSrcFromCandidate(candidate){
+  const clean=normalizeMediaUrl(decodeHtmlUrl(candidate));
+  return clean && (isPublicHttpUrl(clean) || isDataImage(clean)) ? clean : "";
 }
 
 function getImagePublicUrl(imageOrElement, element=null){
@@ -271,34 +285,65 @@ function getImagePublicUrl(imageOrElement, element=null){
     image?.imageUrl,
     image?.download_url,
     image?.downloadUrl,
-    image?.src,
-    image?.preview_url,
-    image?.previewUrl,
     image?.original_url,
     image?.originalUrl,
     image?.generated_url,
     image?.generatedUrl,
+    image?.public_url,
+    image?.publicUrl,
+    image?.wp_url,
+    image?.wpUrl,
+    image?.upload_url,
+    image?.uploadUrl,
+    image?.file_url,
+    image?.fileUrl,
     image?.prepared_frame_url,
     image?.preparedFrameUrl,
     image?.frame_url,
     image?.frameUrl,
-    image?.thumbnail,
-    image?.thumb,
     dataset.imageUrl,
     dataset.fullUrl,
     dataset.url,
     dataset.downloadUrl,
-    dataset.src,
     primaryElement?.getAttribute?.("data-image-url"),
     primaryElement?.getAttribute?.("data-full-url"),
     primaryElement?.getAttribute?.("data-url"),
-    primaryElement?.getAttribute?.("data-download-url"),
-    imgEl?.src,
-    primaryElement?.tagName?.toLowerCase()==="img" ? primaryElement.src : ""
+    primaryElement?.getAttribute?.("data-download-url")
   ];
   console.log("[STLAI UGC] image url candidates", candidates);
   for(const candidate of candidates){
     const clean=publicUrlFromCandidate(candidate);
+    if(clean) return clean;
+  }
+  return "";
+}
+
+function getImagePreviewSrc(imageOrElement, element=null){
+  const primaryElement=isDomElement(imageOrElement) ? imageOrElement : element;
+  const image=isDomElement(imageOrElement) ? null : imageOrElement;
+  const dataset=primaryElement?.dataset || {};
+  const imgEl=primaryElement?.tagName?.toLowerCase()==="img" ? primaryElement : primaryElement?.querySelector?.("img");
+  const candidates=[
+    image?.preview_src,
+    image?.previewSrc,
+    image?.preview_url,
+    image?.previewUrl,
+    image?.thumbnail,
+    image?.thumb,
+    image?.src,
+    image?.data_url,
+    image?.dataUrl,
+    image?.base64,
+    image?.url,
+    dataset.previewSrc,
+    dataset.src,
+    primaryElement?.getAttribute?.("data-preview-src"),
+    primaryElement?.getAttribute?.("data-src"),
+    imgEl?.src,
+    primaryElement?.tagName?.toLowerCase()==="img" ? primaryElement.src : ""
+  ];
+  for(const candidate of candidates){
+    const clean=previewSrcFromCandidate(candidate);
     if(clean) return clean;
   }
   return "";
@@ -3678,7 +3723,7 @@ function ugcAspectClass(aspect){
 }
 
 function defaultUgcImage(){
-  return [S.imgs4.find(img=>img.key==="hero"), S.imgs4.find(img=>img.key==="capa"), S.imgs4[0]].filter(img=>img && getImagePublicUrl(img))[0] || S.imgs4.find(img=>getImagePublicUrl(img)) || null;
+  return [S.imgs4.find(img=>img.key==="hero"), S.imgs4.find(img=>img.key==="capa"), S.imgs4[0]].filter(img=>img && (getImagePublicUrl(img) || getImagePreviewSrc(img)))[0] || S.imgs4.find(img=>getImagePublicUrl(img) || getImagePreviewSrc(img)) || null;
 }
 
 function renderUgcSection(){
@@ -3728,13 +3773,13 @@ function renderUgcImageList(){
   const list=document.getElementById("ugc-image-list");
   if(!list) return;
   const images=S.imgs4.filter(Boolean);
-  if((!S.selectedUgcImage || !getImagePublicUrl(S.selectedUgcImage)) && images.length) selectUgcImage((defaultUgcImage() || images[0])?.key, false);
+  if((!S.selectedUgcImage || !(getImagePublicUrl(S.selectedUgcImage) || getImagePreviewSrc(S.selectedUgcImage))) && images.length) selectUgcImage((defaultUgcImage() || images[0])?.key, false);
   list.innerHTML=images.map((img,index)=>{
     const publicUrl=getImagePublicUrl(img);
-    const thumb=publicUrl || normalizeMediaUrl(img.preview_url || img.previewUrl || img.src || img.url);
-    const finalUrl=publicUrl || publicUrlFromCandidate(thumb);
-    const disabled=!finalUrl;
-    return `<button type="button" class="ugc-image-choice stlai-ugc-reference-image stlai-ugc-image ${S.selectedUgcImage?.key===img.key?"active is-selected":""}" data-ugc-image="1" data-index="${index}" data-image-index="${index}" data-image-url="${escAttr(finalUrl)}" data-url="${escAttr(finalUrl)}" data-src="${escAttr(thumb)}" ${disabled?"disabled aria-disabled=\"true\"":""} onclick="selectUgcImage('${escAttr(img.key)}', true, this)">${thumb?`<img src="${escAttr(thumb)}" alt="${escAttr(img.label || img.key)}">`:""}<span>${esc(img.label || img.key || "Imagem")}${disabled?" indisponível":""}</span></button>`;
+    const previewSrc=getImagePreviewSrc(img) || publicUrl;
+    const needsPublish=!publicUrl && isDataImage(previewSrc);
+    const disabled=!publicUrl && !needsPublish;
+    return `<button type="button" class="ugc-image-choice stlai-ugc-reference-image stlai-ugc-image ${S.selectedUgcImage?.key===img.key?"active is-selected":""} ${needsPublish?"needs-publish":""}" data-ugc-image="1" data-index="${index}" data-image-index="${index}" data-image-url="${escAttr(publicUrl)}" data-url="${escAttr(publicUrl)}" data-preview-src="${escAttr(previewSrc)}" data-src="${escAttr(previewSrc)}" data-needs-publish="${needsPublish?"1":"0"}" ${disabled?"disabled aria-disabled=\"true\"":""} onclick="selectUgcImage('${escAttr(img.key)}', true, this)">${previewSrc?`<img src="${escAttr(previewSrc)}" alt="${escAttr(img.label || img.key)}">`:""}<span>${esc(img.label || img.key || "Imagem")}${disabled?" indisponível":""}</span></button>`;
   }).join("");
 }
 
@@ -3778,21 +3823,25 @@ function selectUgcImage(key, shouldRender=true, element=null){
   const selectedIndex=S.imgs4.findIndex(img=>img && img.key===key);
   const card=element?.closest?.("[data-ugc-image], .stlai-ugc-reference-image, .stlai-ugc-image, .ugc-image-choice") || element;
   let selectedUrl=getImagePublicUrl(card) || getImagePublicUrl(selected, card);
-  if(!selectedUrl && card?.querySelector){
-    const img=card.querySelector("img");
-    selectedUrl=getImagePublicUrl(img) || publicUrlFromCandidate(img?.getAttribute?.("src"));
-  }
+  const previewSrc=getImagePreviewSrc(selected, card) || getImagePreviewSrc(card);
   S.ugc.selectedImageUrl=selectedUrl;
+  S.ugc.selectedPreviewSrc=previewSrc;
   S.ugc.selectedImageIndex=selectedIndex;
   S.ugc.selectedImageLabel=String(selected.label || selected.key || "Imagem selecionada");
-  console.log("[STLAI UGC] selected image url", S.ugc.selectedImageUrl);
+  console.log("[STLAI UGC] selected image", {public_url:S.ugc.selectedImageUrl, preview_src:S.ugc.selectedPreviewSrc});
   if(shouldRender) renderUgcImageList();
 }
 
 function getSelectedUgcImageUrlFromDom(){
   const card=document.querySelector(".stlai-ugc-reference-image.is-selected, .stlai-ugc-image.is-selected, [data-ugc-image].is-selected, .ugc-image-choice.active");
   if(!card) return "";
-  return getImagePublicUrl(card) || getImagePublicUrl(card.querySelector?.("img")) || publicUrlFromCandidate(card.querySelector?.("img")?.getAttribute?.("src"));
+  return getImagePublicUrl(card);
+}
+
+function getSelectedUgcPreviewSrcFromDom(){
+  const card=document.querySelector(".stlai-ugc-reference-image.is-selected, .stlai-ugc-image.is-selected, [data-ugc-image].is-selected, .ugc-image-choice.active");
+  if(!card) return "";
+  return getImagePreviewSrc(card);
 }
 
 async function ugcAjaxRequest(action,payload={}){
@@ -3818,14 +3867,52 @@ async function ugcAjaxRequest(action,payload={}){
   return data;
 }
 
+async function publishUgcReferenceImage(imageDataBase64,label="Imagem UGC"){
+  if(!isDataImage(imageDataBase64)) throw new Error("Imagem de referência base64 inválida.");
+  const data=await ugcAjaxRequest("stlai_publish_ugc_reference_image",{
+    job_id:S.video.jobId || "",
+    image_data_base64:imageDataBase64,
+    label
+  });
+  const publicUrl=publicUrlFromCandidate(data.public_url || data.image_url || data.url);
+  if(!publicUrl) throw new Error("Não foi possível publicar a imagem para UGC.");
+  return publicUrl;
+}
+
+async function ensureUgcPublicImageUrl(selected){
+  const card=document.querySelector(".stlai-ugc-reference-image.is-selected, .stlai-ugc-image.is-selected, [data-ugc-image].is-selected, .ugc-image-choice.active");
+  const publicUrl=S.ugc.selectedImageUrl || getSelectedUgcImageUrlFromDom() || getImagePublicUrl(selected, card);
+  if(publicUrl) return publicUrl;
+
+  const previewSrc=S.ugc.selectedPreviewSrc || getImagePreviewSrc(selected, card) || getSelectedUgcPreviewSrcFromDom();
+  if(isDataImage(previewSrc)){
+    const label=S.ugc.selectedImageLabel || selected?.label || selected?.key || "Imagem selecionada";
+    const publishedUrl=await publishUgcReferenceImage(previewSrc,label);
+    S.ugc.selectedImageUrl=publishedUrl;
+    if(selected && typeof selected==="object"){
+      selected.public_url=publishedUrl;
+      selected.image_url=publishedUrl;
+    }
+    if(card){
+      card.dataset.imageUrl=publishedUrl;
+      card.dataset.url=publishedUrl;
+      card.dataset.needsPublish="0";
+      card.classList.remove("needs-publish");
+    }
+    console.log("[STLAI UGC] published reference image", {preview_src:"data:image/...", public_url:publishedUrl});
+    return publishedUrl;
+  }
+
+  throw new Error("A imagem precisa ser publicada antes de gerar UGC.");
+}
+
 async function startUgcVideo(){
   if(!ugcConfigEnabled()){
     toast("Configure o provider UGC no painel para gerar vídeos.","warn");
     return;
   }
   const selected=S.selectedUgcImage || defaultUgcImage();
-  const selectedImageUrl=S.ugc.selectedImageUrl || getSelectedUgcImageUrlFromDom() || getImagePublicUrl(selected);
-  if(!selected || !/^https?:\/\//i.test(selectedImageUrl)){
+  if(!selected){
     toast("Selecione uma imagem válida para gerar UGC.","warn");
     return;
   }
@@ -3838,6 +3925,10 @@ async function startUgcVideo(){
   const btn=document.getElementById("btn-start-ugc");
   if(btn) btn.disabled=true;
   try{
+    const selectedImageUrl=await ensureUgcPublicImageUrl(selected);
+    if(!isPublicHttpUrl(selectedImageUrl)){
+      throw new Error("A imagem precisa ser publicada antes de gerar UGC.");
+    }
     console.log("[STLAI UGC] start payload image_url", selectedImageUrl);
     const data=await ugcAjaxRequest("stlai_start_ugc_video",{
       parent_job_id:S.video.jobId || "",

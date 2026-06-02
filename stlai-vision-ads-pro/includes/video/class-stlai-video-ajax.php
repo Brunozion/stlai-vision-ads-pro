@@ -24,6 +24,8 @@ class STLAI_Video_Ajax {
         add_action( 'wp_ajax_nopriv_stlai_poll_ugc_video', array( __CLASS__, 'poll_ugc_video' ) );
         add_action( 'wp_ajax_stlai_get_ugc_jobs', array( __CLASS__, 'get_ugc_jobs' ) );
         add_action( 'wp_ajax_nopriv_stlai_get_ugc_jobs', array( __CLASS__, 'get_ugc_jobs' ) );
+        add_action( 'wp_ajax_stlai_publish_ugc_reference_image', array( __CLASS__, 'publish_ugc_reference_image' ) );
+        add_action( 'wp_ajax_nopriv_stlai_publish_ugc_reference_image', array( __CLASS__, 'publish_ugc_reference_image' ) );
     }
 
     public static function create_video_job() {
@@ -87,10 +89,11 @@ class STLAI_Video_Ajax {
 
         $image_url = self::public_image_url_from_request();
         if ( empty( $image_url ) ) {
+            $has_data_image = self::request_has_data_image_url();
             wp_send_json_error(
                 array(
-                    'message' => 'Selecione uma imagem publicada para gerar UGC.',
-                    'code'    => 'UGC_IMAGE_REQUIRES_PUBLIC_URL',
+                    'message' => $has_data_image ? 'A imagem precisa ser publicada antes de gerar UGC.' : 'Selecione uma imagem publicada para gerar UGC.',
+                    'code'    => $has_data_image ? 'UGC_IMAGE_NOT_PUBLISHED' : 'UGC_IMAGE_REQUIRES_PUBLIC_URL',
                     'debug'   => wp_json_encode( self::image_request_debug(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ),
                 )
             );
@@ -145,6 +148,63 @@ class STLAI_Video_Ajax {
                 'parent_job_id' => $parent_job_id,
                 'ugc_jobs'      => self::public_ugc_jobs_response( STLAI_UGC_Job_Service::get_jobs( $parent_job_id ) ),
                 'ugc_config'    => STLAI_UGC_Job_Service::ugc_config_status(),
+            )
+        );
+    }
+
+    public static function publish_ugc_reference_image() {
+        if ( ! self::verify_ugc_nonce() ) {
+            wp_send_json_error( array( 'message' => 'Sessão expirada. Recarregue a página e tente novamente.', 'code' => 'UGC_BAD_NONCE' ), 403 );
+        }
+
+        $data_url = trim( (string) wp_unslash( $_POST['image_data_base64'] ?? '' ) );
+        if ( ! preg_match( '#^data:(image/(?:png|jpe?g|webp));base64,([A-Za-z0-9+/=\s]+)$#', $data_url, $matches ) ) {
+            wp_send_json_error( array( 'message' => 'Imagem base64 inválida para publicar UGC.', 'code' => 'UGC_REFERENCE_IMAGE_INVALID' ), 400 );
+        }
+
+        $mime = sanitize_mime_type( $matches[1] );
+        $extension = self::image_extension_from_mime( $mime );
+        if ( empty( $extension ) ) {
+            wp_send_json_error( array( 'message' => 'Formato de imagem não suportado para UGC.', 'code' => 'UGC_REFERENCE_IMAGE_UNSUPPORTED' ), 400 );
+        }
+
+        $binary = base64_decode( preg_replace( '/\s+/', '', $matches[2] ), true );
+        if ( false === $binary || '' === $binary ) {
+            wp_send_json_error( array( 'message' => 'Não foi possível preparar a imagem UGC.', 'code' => 'UGC_REFERENCE_IMAGE_DECODE_FAILED' ), 400 );
+        }
+
+        if ( strlen( $binary ) > 10 * MB_IN_BYTES ) {
+            wp_send_json_error( array( 'message' => 'Imagem UGC maior que 10MB.', 'code' => 'UGC_REFERENCE_IMAGE_TOO_LARGE' ), 400 );
+        }
+
+        $uploads = wp_upload_dir();
+        if ( ! empty( $uploads['error'] ) ) {
+            wp_send_json_error( array( 'message' => 'Não foi possível acessar uploads do WordPress.', 'code' => 'UGC_REFERENCE_UPLOAD_DIR_FAILED', 'debug' => sanitize_text_field( $uploads['error'] ) ), 500 );
+        }
+
+        $relative = 'stlai-vision-ugc-reference/';
+        $dir = trailingslashit( $uploads['basedir'] ) . $relative;
+        $base_url = trailingslashit( $uploads['baseurl'] ) . $relative;
+        if ( ! wp_mkdir_p( $dir ) ) {
+            wp_send_json_error( array( 'message' => 'Não foi possível criar a pasta de imagens UGC.', 'code' => 'UGC_REFERENCE_UPLOAD_DIR_CREATE_FAILED' ), 500 );
+        }
+
+        $label = sanitize_file_name( sanitize_text_field( wp_unslash( $_POST['label'] ?? 'ugc-reference' ) ) );
+        $label = $label ? substr( $label, 0, 40 ) : 'ugc-reference';
+        $filename = wp_unique_filename( $dir, $label . '-' . wp_generate_password( 8, false, false ) . '.' . $extension );
+        $path = $dir . $filename;
+
+        if ( false === file_put_contents( $path, $binary ) ) {
+            wp_send_json_error( array( 'message' => 'Não foi possível salvar a imagem UGC.', 'code' => 'UGC_REFERENCE_IMAGE_SAVE_FAILED' ), 500 );
+        }
+
+        $public_url = esc_url_raw( $base_url . $filename );
+        wp_send_json_success(
+            array(
+                'public_url' => $public_url,
+                'image_url'  => $public_url,
+                'url'        => $public_url,
+                'mime_type'  => $mime,
             )
         );
     }
@@ -611,6 +671,29 @@ class STLAI_Video_Ajax {
             if ( preg_match( '#^https?://#i', $url ) ) {
                 return $url;
             }
+        }
+        return '';
+    }
+
+    private static function request_has_data_image_url() {
+        foreach ( array( 'image_url', 'reference_image_url', 'product_image_url', 'selected_image_url', 'url' ) as $key ) {
+            $value = trim( (string) wp_unslash( $_POST[ $key ] ?? '' ) );
+            if ( preg_match( '#^data:image/#i', $value ) ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function image_extension_from_mime( $mime ) {
+        if ( 'image/png' === $mime ) {
+            return 'png';
+        }
+        if ( in_array( $mime, array( 'image/jpeg', 'image/jpg' ), true ) ) {
+            return 'jpg';
+        }
+        if ( 'image/webp' === $mime ) {
+            return 'webp';
         }
         return '';
     }
