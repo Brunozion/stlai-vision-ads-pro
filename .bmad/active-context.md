@@ -2017,3 +2017,18 @@ Status:
 
 - Correção concluída em código.
 - Falta reteste real no WordPress com MuAPI.
+
+## 2026-06-02 - Fallback DOM para URL da imagem UGC
+
+O que foi feito:
+
+- `getImagePublicUrl` agora aceita objeto de imagem, card DOM e elemento `<img>`.
+- O helper tenta `dataset`, atributos `data-*`, `querySelector('img').src` e `img.src`.
+- Cards do modal UGC recebem `data-ugc-image`, `data-image-url`, `data-url`, `data-src` e estado `is-selected`.
+- O botão "Gerar UGC" tenta recuperar URL do card selecionado no DOM antes de mostrar erro.
+- Debug no console mostra candidatos e URL final selecionada.
+
+Status:
+
+- Correção concluída em código.
+- Falta reteste real no WordPress com MuAPI.

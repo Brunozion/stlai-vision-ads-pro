@@ -1735,3 +1735,21 @@ O debug MuAPI esperado passa a incluir `direct_image_url_used=true`, `upload_att
 ### Status
 
 Decidido
+
+## 2026-06-02 - URL UGC pode vir do DOM renderizado
+
+### Decisao
+
+Quando o objeto JS da imagem não tiver URL pública, o modal UGC deve extrair a URL do próprio card renderizado, especialmente de `data-image-url` e do `src` do `<img>`.
+
+### Motivo
+
+Algumas imagens aparecem visualmente no modal, mas a URL não está em `img.url` no objeto de estado. O DOM renderizado ainda possui uma URL utilizável no thumbnail/preview.
+
+### Impacto
+
+O clique no card salva `S.ugc.selectedImageUrl` mesmo quando a URL vem do DOM. O start UGC tem fallback para buscar a imagem selecionada por `.is-selected` antes de validar.
+
+### Status
+
+Decidido

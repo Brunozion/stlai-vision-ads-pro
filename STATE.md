@@ -31,6 +31,8 @@ fluxo comercial existente intacto.
 - Corrigido envio da imagem selecionada no modal UGC: frontend resolve múltiplos
   campos de URL pública, envia `image_url` e aliases, e o backend aceita aliases
   antes de chamar o provider.
+- Ajustado fallback visual do modal UGC: se o objeto da imagem não tiver URL, o
+  JS extrai a URL pública do `data-image-url`/`src` do `<img>` renderizado.
 
 ## Fluxo de trabalho atual
 1. Pedir alteração ao Codex no VS Code.

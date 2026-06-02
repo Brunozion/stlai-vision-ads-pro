@@ -2,7 +2,7 @@
 /**
  * Plugin Name: STLAI Vision Ads Pro
  * Description: Plugin para geração de anúncios e inteligência de imagens 3D via IA.
- * Version: 1.3.22
+ * Version: 1.3.23
  * Author: NDB
  */
 
@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit; // Exit if accessed directly
 }
 
-define( 'STLAI_VISION_ADS_PRO_VERSION', '1.3.22' );
+define( 'STLAI_VISION_ADS_PRO_VERSION', '1.3.23' );
 define( 'STLAI_VISION_ADS_PRO_DIR', plugin_dir_path( __FILE__ ) );
 define( 'STLAI_VISION_ADS_PRO_URL', plugin_dir_url( __FILE__ ) );
 
