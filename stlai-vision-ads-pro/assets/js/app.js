@@ -3949,6 +3949,7 @@ async function startUgcVideo(){
     if(data.ugc_job_id) scheduleUgcPoll(data.parent_job_id || S.video.jobId, data.ugc_job_id);
     toast("Vídeo UGC iniciado.","success");
   }catch(err){
+    if(err?.data?.debug) console.warn("[STLAI UGC] start failed debug", err.data.debug);
     toast(err.message || "Falha ao iniciar UGC.","error");
   }finally{
     if(btn) btn.disabled=false;

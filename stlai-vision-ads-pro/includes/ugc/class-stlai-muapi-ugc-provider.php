@@ -58,6 +58,18 @@ class STLAI_MuAPI_UGC_Provider {
         $body = self::start_body( $payload, $image_url );
         $start_url = self::start_url( $config );
         $raw_body = '';
+        $image_probe = self::validate_public_image_url( $image_url );
+        if ( is_wp_error( $image_probe ) ) {
+            return $image_probe;
+        }
+        $base_debug = array(
+            'payload_keys' => array_keys( $body ),
+            'payload' => self::safe_payload_debug( $body ),
+            'image_url' => $image_url,
+            'image_accessible' => ! is_wp_error( $image_probe ),
+            'image_probe' => is_wp_error( $image_probe ) ? $image_probe->get_error_data() : $image_probe,
+            'model_may_require_last_frame' => self::model_may_require_last_frame( $config['model'] ),
+        );
 
         $response = wp_remote_post(
             $start_url,
@@ -74,7 +86,7 @@ class STLAI_MuAPI_UGC_Provider {
         if ( is_wp_error( $response ) ) {
             return new WP_Error(
                 'MUAPI_START_REQUEST_FAILED',
-                $response->get_error_message(),
+                'MuAPI não iniciou a geração UGC. Verifique o modelo, chave e configuração.',
                 array(
                     'debug' => self::debug_string(
                         self::safe_debug(
@@ -85,10 +97,15 @@ class STLAI_MuAPI_UGC_Provider {
                             array(),
                             true,
                             (bool) $upload_fallback_used,
-                            array(
-                                'payload_keys' => array_keys( $body ),
+                            array_merge(
+                                $base_debug,
+                                array(
                                 'response_http_code' => 0,
-                                'raw_response_excerpt' => $response->get_error_message(),
+                                    'raw_response_excerpt' => $response->get_error_message(),
+                                    'wp_error_code' => $response->get_error_code(),
+                                    'wp_error_message' => $response->get_error_message(),
+                                    'admin_message' => 'MuAPI start failed: WP_Error — ' . $response->get_error_message(),
+                                )
                             )
                         )
                     ),
@@ -99,10 +116,10 @@ class STLAI_MuAPI_UGC_Provider {
         $http_status = (int) wp_remote_retrieve_response_code( $response );
         $raw_body = (string) wp_remote_retrieve_body( $response );
         $data = json_decode( $raw_body, true );
-        if ( $http_status < 200 || $http_status >= 300 || ! is_array( $data ) ) {
+        if ( $http_status < 200 || $http_status >= 300 ) {
             return new WP_Error(
                 'MUAPI_START_FAILED',
-                self::safe_error_message( $data, 'MuAPI não iniciou a geração UGC. Verifique o modelo, chave e se a imagem está acessível publicamente.' ),
+                'MuAPI não iniciou a geração UGC. Verifique o modelo, chave e configuração.',
                 array(
                     'response' => is_array( $data ) ? $data : array(),
                     'http_status' => $http_status,
@@ -115,10 +132,43 @@ class STLAI_MuAPI_UGC_Provider {
                             is_array( $data ) ? $data : array(),
                             true,
                             (bool) $upload_fallback_used,
-                            array(
-                                'payload_keys' => array_keys( $body ),
+                            array_merge(
+                                $base_debug,
+                                array(
                                 'response_http_code' => $http_status,
-                                'raw_response_excerpt' => substr( $raw_body, 0, 500 ),
+                                    'raw_response_excerpt' => substr( $raw_body, 0, 1000 ),
+                                    'error_message' => self::safe_error_message( $data, '' ),
+                                    'admin_message' => 'MuAPI start failed: HTTP ' . $http_status . ' — ' . substr( $raw_body, 0, 1000 ),
+                                )
+                            )
+                        )
+                    ),
+                )
+            );
+        }
+
+        if ( ! is_array( $data ) ) {
+            return new WP_Error(
+                'MUAPI_START_BAD_RESPONSE',
+                'MuAPI não retornou uma resposta válida para iniciar o UGC.',
+                array(
+                    'http_status' => $http_status,
+                    'debug' => self::debug_string(
+                        self::safe_debug(
+                            $config,
+                            $start_url,
+                            '',
+                            '',
+                            array(),
+                            true,
+                            (bool) $upload_fallback_used,
+                            array_merge(
+                                $base_debug,
+                                array(
+                                    'response_http_code' => $http_status,
+                                    'raw_response_excerpt' => substr( $raw_body, 0, 1000 ),
+                                    'admin_message' => 'MuAPI start failed: HTTP ' . $http_status . ' — invalid JSON response',
+                                )
                             )
                         )
                     ),
@@ -129,7 +179,33 @@ class STLAI_MuAPI_UGC_Provider {
         $request_id = self::extract_request_id( $data );
         $video_url = self::extract_video_url( $data );
         if ( empty( $request_id ) && empty( $video_url ) ) {
-            return new WP_Error( 'MUAPI_REQUEST_ID_MISSING', 'MuAPI não retornou request_id nem vídeo pronto para o vídeo UGC.' );
+            return new WP_Error(
+                'MUAPI_START_BAD_RESPONSE',
+                'MuAPI não retornou request_id nem vídeo pronto para o vídeo UGC.',
+                array(
+                    'http_status' => $http_status,
+                    'debug' => self::debug_string(
+                        self::safe_debug(
+                            $config,
+                            $start_url,
+                            '',
+                            '',
+                            $data,
+                            true,
+                            (bool) $upload_fallback_used,
+                            array_merge(
+                                $base_debug,
+                                array(
+                                    'response_http_code' => $http_status,
+                                    'raw_response_excerpt' => substr( $raw_body, 0, 1000 ),
+                                    'error_message' => self::safe_error_message( $data, '' ),
+                                    'admin_message' => 'MuAPI start failed: HTTP ' . $http_status . ' — missing request_id/video_url',
+                                )
+                            )
+                        )
+                    ),
+                )
+            );
         }
 
         $poll_url = $request_id ? self::poll_url( $config, $request_id ) : '';
@@ -155,10 +231,12 @@ class STLAI_MuAPI_UGC_Provider {
                 $data,
                 ! $upload_fallback_used,
                 $upload_fallback_used,
-                array(
-                    'payload_keys' => array_keys( $body ),
+                array_merge(
+                    $base_debug,
+                    array(
                     'response_http_code' => $http_status,
-                    'raw_response_excerpt' => substr( $raw_body, 0, 500 ),
+                        'raw_response_excerpt' => substr( $raw_body, 0, 1000 ),
+                    )
                 )
             ),
         );
@@ -291,6 +369,137 @@ class STLAI_MuAPI_UGC_Provider {
         );
     }
 
+    private static function validate_public_image_url( $image_url ) {
+        if ( ! self::is_public_url( $image_url ) ) {
+            return self::image_access_error( $image_url, 0, '', 0, '', 'URL da imagem não é pública.' );
+        }
+
+        $head = wp_remote_head(
+            $image_url,
+            array(
+                'timeout'     => 15,
+                'redirection' => 3,
+            )
+        );
+        $head_probe = self::image_probe_from_response( $head, '' );
+        if ( self::image_probe_ok( $head_probe ) ) {
+            $head_probe['method'] = 'HEAD';
+            return $head_probe;
+        }
+
+        $get = wp_remote_get(
+            $image_url,
+            array(
+                'timeout'     => 15,
+                'redirection' => 3,
+            )
+        );
+        $body = is_wp_error( $get ) ? '' : (string) wp_remote_retrieve_body( $get );
+        $get_probe = self::image_probe_from_response( $get, $body );
+        if ( self::image_probe_ok( $get_probe ) ) {
+            $get_probe['method'] = 'GET';
+            $get_probe['head_failed'] = true;
+            $get_probe['head_http_code'] = (int) ( $head_probe['http_code'] ?? 0 );
+            return $get_probe;
+        }
+
+        return self::image_access_error(
+            $image_url,
+            (int) ( $get_probe['http_code'] ?? 0 ),
+            (string) ( $get_probe['content_type'] ?? '' ),
+            (int) ( $get_probe['content_length'] ?? 0 ),
+            (string) ( $get_probe['response_excerpt'] ?? '' ),
+            (string) ( $get_probe['wp_error_message'] ?? 'A imagem publicada não está acessível publicamente para a MuAPI.' )
+        );
+    }
+
+    private static function image_probe_from_response( $response, $body ) {
+        if ( is_wp_error( $response ) ) {
+            return array(
+                'ok'               => false,
+                'http_code'        => 0,
+                'content_type'     => '',
+                'content_length'   => 0,
+                'response_excerpt' => '',
+                'wp_error_code'    => sanitize_key( $response->get_error_code() ),
+                'wp_error_message' => sanitize_text_field( $response->get_error_message() ),
+            );
+        }
+
+        $content_type = strtolower( trim( (string) wp_remote_retrieve_header( $response, 'content-type' ) ) );
+        $content_type = trim( strtok( $content_type, ';' ) ?: $content_type );
+        $content_length = (int) wp_remote_retrieve_header( $response, 'content-length' );
+        $body_length = strlen( (string) $body );
+        if ( $body_length > 0 ) {
+            $content_length = max( $content_length, $body_length );
+        }
+
+        return array(
+            'ok'               => false,
+            'http_code'        => (int) wp_remote_retrieve_response_code( $response ),
+            'content_type'     => sanitize_mime_type( $content_type ),
+            'content_length'   => $content_length,
+            'response_excerpt' => self::body_excerpt( $body, 300 ),
+        );
+    }
+
+    private static function image_probe_ok( array $probe ) {
+        $http_code = (int) ( $probe['http_code'] ?? 0 );
+        $content_type = (string) ( $probe['content_type'] ?? '' );
+        $content_length = (int) ( $probe['content_length'] ?? 0 );
+        if ( 200 !== $http_code ) {
+            return false;
+        }
+        if ( ! in_array( $content_type, array( 'image/jpeg', 'image/jpg', 'image/png', 'image/webp' ), true ) ) {
+            return false;
+        }
+        return 0 === $content_length || $content_length > 0;
+    }
+
+    private static function image_access_error( $image_url, $http_code, $content_type, $content_length, $response_excerpt, $message ) {
+        $debug = array(
+            'image_url'        => esc_url_raw( $image_url ),
+            'http_code'        => (int) $http_code,
+            'content_type'     => sanitize_mime_type( $content_type ),
+            'content_length'   => (int) $content_length,
+            'response_excerpt' => sanitize_textarea_field( $response_excerpt ),
+        );
+        return new WP_Error(
+            'UGC_IMAGE_PUBLIC_URL_NOT_ACCESSIBLE',
+            'A imagem publicada não está acessível publicamente para a MuAPI.',
+            array(
+                'debug' => self::debug_string(
+                    array_merge(
+                        $debug,
+                        array( 'admin_message' => sanitize_text_field( $message ) )
+                    )
+                ),
+            )
+        );
+    }
+
+    private static function safe_payload_debug( array $payload ) {
+        $safe = array();
+        foreach ( $payload as $key => $value ) {
+            $safe_key = sanitize_key( $key );
+            if ( 'prompt' === $key ) {
+                $safe[ $safe_key ] = self::body_excerpt( (string) $value, 300 );
+            } elseif ( is_scalar( $value ) ) {
+                $safe[ $safe_key ] = sanitize_text_field( (string) $value );
+            }
+        }
+        return $safe;
+    }
+
+    private static function model_may_require_last_frame( $model ) {
+        return false !== stripos( (string) $model, 'first-last-frame' );
+    }
+
+    private static function body_excerpt( $body, $limit = 1000 ) {
+        $excerpt = substr( (string) $body, 0, $limit );
+        return sanitize_textarea_field( preg_replace( '/[^\P{C}\t\r\n]+/u', '', $excerpt ) );
+    }
+
     private static function start_url( array $config ) {
         return trailingslashit( $config['base_url'] ) . 'api/v1/' . ltrim( $config['model'], '/' );
     }
@@ -325,8 +534,10 @@ class STLAI_MuAPI_UGC_Provider {
             $data['outputs'][0] ?? '',
             $data['url'] ?? '',
             $data['video_url'] ?? '',
+            $data['output'] ?? '',
             $data['output']['url'] ?? '',
             $data['data']['url'] ?? '',
+            $data['data']['output'] ?? '',
             $data['data']['outputs'][0] ?? '',
             $data['data']['output']['url'] ?? '',
             $data['result']['outputs'][0] ?? '',
@@ -346,7 +557,7 @@ class STLAI_MuAPI_UGC_Provider {
     }
 
     private static function safe_debug( array $config, $start_url, $poll_url, $request_id, array $response, $direct_image_url_used, $upload_fallback_used, array $extra = array() ) {
-        return array(
+        $debug = array(
             'provider'              => 'muapi',
             'base_url_normalized'   => esc_url_raw( $config['base_url'] ),
             'model_normalized'      => sanitize_text_field( $config['model'] ),
@@ -358,8 +569,52 @@ class STLAI_MuAPI_UGC_Provider {
             'response_keys'         => array_values( array_map( 'sanitize_key', array_keys( $response ) ) ),
             'payload_keys'          => array_values( array_map( 'sanitize_key', $extra['payload_keys'] ?? array() ) ),
             'response_http_code'    => (int) ( $extra['response_http_code'] ?? 0 ),
-            'raw_response_excerpt'  => sanitize_textarea_field( (string) ( $extra['raw_response_excerpt'] ?? '' ) ),
+            'http_code'             => (int) ( $extra['response_http_code'] ?? 0 ),
+            'raw_response_excerpt'  => self::body_excerpt( (string) ( $extra['raw_response_excerpt'] ?? '' ), 1000 ),
+            'response_body_excerpt' => self::body_excerpt( (string) ( $extra['raw_response_excerpt'] ?? '' ), 1000 ),
         );
+
+        foreach ( array( 'image_url', 'error_message', 'wp_error_code', 'wp_error_message', 'admin_message' ) as $key ) {
+            if ( isset( $extra[ $key ] ) && '' !== $extra[ $key ] ) {
+                $debug[ $key ] = 'image_url' === $key ? esc_url_raw( $extra[ $key ] ) : sanitize_text_field( (string) $extra[ $key ] );
+            }
+        }
+
+        if ( isset( $extra['payload'] ) && is_array( $extra['payload'] ) ) {
+            $debug['payload'] = self::sanitize_debug_value( $extra['payload'] );
+        }
+        if ( isset( $extra['image_accessible'] ) ) {
+            $debug['image_accessible'] = ! empty( $extra['image_accessible'] );
+        }
+        if ( isset( $extra['image_probe'] ) && is_array( $extra['image_probe'] ) ) {
+            $debug['image_probe'] = self::sanitize_debug_value( $extra['image_probe'] );
+        }
+        if ( isset( $extra['model_may_require_last_frame'] ) ) {
+            $debug['model_may_require_last_frame'] = ! empty( $extra['model_may_require_last_frame'] );
+        }
+
+        return $debug;
+    }
+
+    private static function sanitize_debug_value( $value ) {
+        if ( is_bool( $value ) ) {
+            return $value;
+        }
+        if ( is_int( $value ) || is_float( $value ) ) {
+            return $value;
+        }
+        if ( is_array( $value ) ) {
+            $safe = array();
+            foreach ( $value as $key => $item ) {
+                $safe_key = is_string( $key ) ? sanitize_key( $key ) : (int) $key;
+                if ( in_array( $safe_key, array( 'api_key', 'x_api_key', 'authorization', 'secret', 'token' ), true ) ) {
+                    continue;
+                }
+                $safe[ $safe_key ] = self::sanitize_debug_value( $item );
+            }
+            return $safe;
+        }
+        return sanitize_textarea_field( (string) $value );
     }
 
     private static function debug_string( array $debug ) {

@@ -80,6 +80,24 @@ O painel admin passa a armazenar as credenciais e modelos futuros. Nenhuma chave
 
 Decidido
 
+## 2026-06-02 - Falha MuAPI deve expor debug seguro e acionável
+
+### Decisao
+
+O start MuAPI UGC não deve retornar apenas erro genérico. Antes do POST, o provider valida se a `image_url` pública está acessível pelo backend. Em qualquer falha da MuAPI, o debug deve incluir HTTP code, start URL, payload sanitizado, body excerpt, response keys, erro retornado, modelo/base normalizados e status da imagem.
+
+### Motivo
+
+Após publicar a imagem no WordPress, o próximo bloqueio passou a ser descobrir se a falha vem de chave, modelo, endpoint, payload, exigência de `last_image` ou URL de imagem inacessível.
+
+### Impacto
+
+O endpoint de publicação usa filename ASCII seguro. O frontend mantém mensagem amigável, mas registra o debug completo no console. Modelos com `first-last-frame` recebem warning `model_may_require_last_frame=true` para orientar troca/configuração de modelo.
+
+### Status
+
+Decidido
+
 ## 2026-06-02 - Base64 UGC deve ser publicado no WordPress antes do provider
 
 ### Decisao

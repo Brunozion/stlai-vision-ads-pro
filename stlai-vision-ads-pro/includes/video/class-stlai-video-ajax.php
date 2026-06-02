@@ -189,9 +189,11 @@ class STLAI_Video_Ajax {
             wp_send_json_error( array( 'message' => 'Não foi possível criar a pasta de imagens UGC.', 'code' => 'UGC_REFERENCE_UPLOAD_DIR_CREATE_FAILED' ), 500 );
         }
 
-        $label = sanitize_file_name( sanitize_text_field( wp_unslash( $_POST['label'] ?? 'ugc-reference' ) ) );
-        $label = $label ? substr( $label, 0, 40 ) : 'ugc-reference';
-        $filename = wp_unique_filename( $dir, $label . '-' . wp_generate_password( 8, false, false ) . '.' . $extension );
+        $job_id = sanitize_key( wp_unslash( $_POST['job_id'] ?? '' ) );
+        $job_slug = preg_replace( '/[^a-z0-9-]+/', '-', strtolower( $job_id ?: 'no-job' ) );
+        $job_slug = trim( preg_replace( '/-+/', '-', $job_slug ), '-' ) ?: 'no-job';
+        $random = strtolower( wp_generate_password( 8, false, false ) );
+        $filename = wp_unique_filename( $dir, sprintf( 'ugc-reference-%s-%d-%s.%s', $job_slug, time(), $random, $extension ) );
         $path = $dir . $filename;
 
         if ( false === file_put_contents( $path, $binary ) ) {
@@ -204,7 +206,9 @@ class STLAI_Video_Ajax {
                 'public_url' => $public_url,
                 'image_url'  => $public_url,
                 'url'        => $public_url,
+                'file_path'   => sanitize_text_field( $path ),
                 'mime_type'  => $mime,
+                'size'       => strlen( $binary ),
             )
         );
     }

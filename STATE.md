@@ -39,6 +39,12 @@ fluxo comercial existente intacto.
   `wp-content/uploads/stlai-vision-ugc-reference/` e só então envia `image_url`
   HTTPS para MuAPI. Backend/provider rejeitam `data:image` com
   `UGC_IMAGE_NOT_PUBLISHED`.
+- Melhorado diagnóstico do start MuAPI UGC: provider valida a acessibilidade da
+  imagem pública antes do POST, gera filename ASCII seguro para referências UGC,
+  envia payload mínimo (`prompt`, `image_url`, `aspect_ratio`, `duration`,
+  `resolution`) e retorna debug seguro com HTTP code, body excerpt, payload,
+  image probe, URL/model/base normalizados e warning para modelos
+  `first-last-frame`.
 
 ## Fluxo de trabalho atual
 1. Pedir alteração ao Codex no VS Code.

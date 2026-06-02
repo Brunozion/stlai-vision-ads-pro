@@ -2003,6 +2003,21 @@ Status:
 - Correção concluída em código.
 - Falta reteste real no WordPress com MuAPI.
 
+## 2026-06-02 - Debug real do start MuAPI UGC
+
+O que foi feito:
+
+- `STLAI_MuAPI_UGC_Provider` valida a URL pública da imagem antes de chamar a MuAPI, usando `HEAD` e fallback `GET`.
+- Se a imagem publicada não estiver acessível, retorna `UGC_IMAGE_PUBLIC_URL_NOT_ACCESSIBLE` com HTTP code, content-type, content-length e excerpt.
+- O endpoint `stlai_publish_ugc_reference_image` agora salva arquivo com nome ASCII seguro: `ugc-reference-{job_id}-{timestamp}-{random}.{ext}`.
+- O debug MuAPI inclui `http_code`, `start_url`, `payload`, `payload_keys`, `model_normalized`, `base_url_normalized`, `image_url`, `image_probe`, `response_body_excerpt`, `response_keys`, `error_message` e `model_may_require_last_frame`.
+- O frontend registra `console.warn('[STLAI UGC] start failed debug', err.data.debug)` quando o start UGC falha.
+
+Status:
+
+- Correção concluída em código.
+- Falta reteste real no WordPress com MuAPI para identificar se o erro é chave, modelo, endpoint, payload ou acessibilidade da imagem.
+
 ## 2026-06-02 - UGC publica base64 antes de chamar MuAPI
 
 O que foi feito:
