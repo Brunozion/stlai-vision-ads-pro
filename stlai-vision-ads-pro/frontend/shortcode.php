@@ -770,7 +770,7 @@
           <p>Escolha um preset, uma imagem do anúncio e gere uma variação curta para redes sociais.</p>
         </div>
       </div>
-      <div class="ugc-config-warning" id="ugc-config-warning" style="display:none">Ative um provider UGC nas configurações para gerar vídeos nesse formato.</div>
+      <div class="ugc-config-warning" id="ugc-config-warning" style="display:none">Configure o provider UGC no painel para gerar vídeos.</div>
       <div class="ugc-jobs-grid" id="ugc-jobs-grid"></div>
     </div>
   </div>

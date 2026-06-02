@@ -1935,3 +1935,177 @@ Normalized response fields:
 - processing statuses: `queued`, `processing`, `running`, `pending`, `starting`
 - success statuses: `completed`, `succeeded`, `success`, `finished`
 - error statuses: `failed`, `error`, `cancelled`, `canceled`
+
+## UGC multi-provider
+
+Provider selection:
+
+```json
+{
+  "ugcProvider": "muapi | atlas | fal | seedance | none"
+}
+```
+
+Rules:
+
+- Provider is selected in admin only.
+- Public UI must not expose API keys and must not let the user choose provider.
+- Presets and prompt keys are shared by every provider.
+- The backend sends the final prompt, image URL, aspect ratio, duration and resolution to the selected adapter.
+- `data:image` references are supported by MuAPI upload. Other providers require a public image URL unless their own upload adapter is added later.
+
+Stored `ugc_jobs` fields:
+
+```json
+{
+  "provider": "fal",
+  "provider_label": "Fal.ai",
+  "model": "bytedance/seedance-2.0/image-to-video",
+  "request_id": "provider_request_id",
+  "operation_id": "provider_request_id",
+  "status_url": "https://...",
+  "result_url": "https://...",
+  "endpoint_used": "/queue/...",
+  "video_url": "https://...",
+  "error_message": ""
+}
+```
+
+Secrets are never stored in `ugc_jobs`.
+
+Common normalization:
+
+- If `video_url` exists, status becomes `ready`.
+- If raw status is `completed`, `succeeded`, `success`, `done`, `ready` or `finished` without video URL, status becomes `failed` with message "Provider concluiu sem retornar vídeo."
+- If raw status is `queued`, `pending`, `starting`, `processing`, `running` or `in_progress`, status remains `processing`.
+- If raw status is `failed`, `error`, `canceled` or `cancelled`, status becomes `failed`.
+
+### Atlas Cloud UGC
+
+Admin settings:
+
+```json
+{
+  "ugcAtlasApiKey": "server_only",
+  "ugcAtlasBaseUrl": "https://api.atlascloud.ai",
+  "ugcAtlasModel": "bytedance/seedance-2.0/image-to-video",
+  "ugcAtlasEndpoint": "/api/v1/model/generateVideo",
+  "ugcAtlasPollEndpoint": "/api/v1/predictions/{id}",
+  "ugcAtlasGenerateAudio": "0",
+  "ugcAtlasWatermark": "0",
+  "ugcAtlasReturnLastFrame": "0"
+}
+```
+
+Start:
+
+```text
+POST {ugcAtlasBaseUrl}{ugcAtlasEndpoint}
+Authorization: Bearer server_only
+```
+
+Payload:
+
+```json
+{
+  "model": "bytedance/seedance-2.0/image-to-video",
+  "prompt": "final prompt",
+  "image": "https://...",
+  "last_image": "",
+  "duration": 5,
+  "resolution": "720p",
+  "ratio": "9:16",
+  "generate_audio": false,
+  "watermark": false,
+  "return_last_frame": false
+}
+```
+
+Polling:
+
+```text
+GET {ugcAtlasBaseUrl}{ugcAtlasPollEndpoint with {id}}
+Authorization: Bearer server_only
+```
+
+### Fal.ai UGC
+
+Admin settings:
+
+```json
+{
+  "ugcFalApiKey": "server_only",
+  "ugcFalBaseUrl": "https://fal.run",
+  "ugcFalModel": "bytedance/seedance-2.0/image-to-video",
+  "ugcFalPollEndpoint": "/{model}/requests/{id}"
+}
+```
+
+Start:
+
+```text
+POST {ugcFalBaseUrl}/{ugcFalModel}
+Authorization: Key server_only
+```
+
+Payload:
+
+```json
+{
+  "prompt": "final prompt",
+  "image_url": "https://...",
+  "duration": 5,
+  "resolution": "720p",
+  "aspect_ratio": "9:16"
+}
+```
+
+Polling:
+
+- If start response includes `status_url`, use it.
+- Otherwise call `{ugcFalBaseUrl}{ugcFalPollEndpoint}` with `{model}` and `{id}` replaced.
+
+### Seedance/BytePlus direct UGC
+
+Admin settings:
+
+```json
+{
+  "seedanceApiKey": "server_only",
+  "seedanceBaseUrl": "provider_contract_base_url",
+  "seedanceModel": "bytedance/seedance-2.0/image-to-video",
+  "seedanceEndpoint": "provider_contract_start_endpoint",
+  "seedancePollEndpoint": "provider_contract_poll_endpoint_with_{id}"
+}
+```
+
+Start:
+
+```text
+POST {seedanceBaseUrl}{seedanceEndpoint}
+Authorization: Bearer server_only
+```
+
+Payload includes both `image_url` and `image` for adapter tolerance:
+
+```json
+{
+  "model": "bytedance/seedance-2.0/image-to-video",
+  "prompt": "final prompt",
+  "image_url": "https://...",
+  "image": "https://...",
+  "duration": 5,
+  "resolution": "720p",
+  "aspect_ratio": "9:16",
+  "ratio": "9:16",
+  "generate_audio": false,
+  "watermark": false
+}
+```
+
+Polling:
+
+```text
+GET {seedanceBaseUrl}{seedancePollEndpoint with {id}}
+Authorization: Bearer server_only
+```

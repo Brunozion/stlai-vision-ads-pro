@@ -48,6 +48,9 @@ if [ -n "$BUMP" ]; then
   # atualiza a linha Version no cabeçalho (in-place, com backup .bak temporário)
   sed -i.bak -E "s/(Version:[[:space:]]*)[0-9]+\.[0-9]+\.[0-9]+/\1$NEW/I" "$MAIN_FILE"
   rm -f "$MAIN_FILE.bak"
+  # mantém a constante interna alinhada para bust de cache dos assets
+  sed -i.bak -E "s/(STLAI_VISION_ADS_PRO_VERSION', ')[0-9]+\.[0-9]+\.[0-9]+/\1$NEW/" "$MAIN_FILE"
+  rm -f "$MAIN_FILE.bak"
   echo "Versão: $CURRENT -> $NEW"
   VERSION="$NEW"
 else

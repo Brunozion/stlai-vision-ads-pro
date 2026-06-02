@@ -113,15 +113,29 @@ function stlai_vision_ads_pro_settings_init() {
     add_settings_field('elevenLabsModel', 'Modelo ElevenLabs', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_audio_section', array('id' => 'elevenLabsModel', 'default' => 'eleven_multilingual_v2'));
     add_settings_field('elevenLabsDefaultLanguage', 'Idioma Padrao ElevenLabs', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_audio_section', array('id' => 'elevenLabsDefaultLanguage', 'default' => 'pt-BR'));
 
-    // ======== PAGINA: CONFIG DE IA (UGC FUTURO) ========
-    add_settings_section('stlai_config_ugc_section', 'Configuracoes Futuras de UGC', '__return_empty_string', 'stlai_config_ia_page');
-    add_settings_field('ugcProvider', 'Provider UGC', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcProvider', 'default' => 'none', 'options' => array('none' => 'Desativado', 'seedance' => 'Seedance 2.0 / BytePlus ModelArk', 'muapi' => 'MuAPI')));
+    // ======== PAGINA: CONFIG DE IA (UGC) ========
+    add_settings_section('stlai_config_ugc_section', 'Configuracoes UGC', '__return_empty_string', 'stlai_config_ia_page');
+    add_settings_field('ugcProvider', 'Provider UGC', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcProvider', 'default' => 'none', 'options' => array('none' => 'Desativado', 'muapi' => 'MuAPI', 'atlas' => 'Atlas Cloud', 'fal' => 'Fal.ai', 'seedance' => 'Seedance 2.0 / BytePlus ModelArk')));
     add_settings_field('seedanceApiKey', 'Seedance API Key', 'stlai_render_password_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'seedanceApiKey'));
     add_settings_field('seedanceBaseUrl', 'Seedance Base URL', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'seedanceBaseUrl'));
     add_settings_field('seedanceModel', 'Seedance Model', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'seedanceModel'));
+    add_settings_field('seedanceEndpoint', 'Seedance Endpoint', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'seedanceEndpoint'));
+    add_settings_field('seedancePollEndpoint', 'Seedance Poll Endpoint', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'seedancePollEndpoint'));
     add_settings_field('muApiKey', 'MuAPI Key', 'stlai_render_password_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'muApiKey'));
     add_settings_field('muApiBaseUrl', 'MuAPI Base URL', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'muApiBaseUrl'));
     add_settings_field('muApiModel', 'MuAPI Model', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'muApiModel', 'default' => 'seedance-2.0-image-to-video'));
+    add_settings_field('ugcAtlasApiKey', 'Atlas Cloud API Key', 'stlai_render_password_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcAtlasApiKey'));
+    add_settings_field('ugcAtlasBaseUrl', 'Atlas Cloud Base URL', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcAtlasBaseUrl', 'default' => 'https://api.atlascloud.ai'));
+    add_settings_field('ugcAtlasModel', 'Atlas Cloud Model', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcAtlasModel', 'default' => 'bytedance/seedance-2.0/image-to-video'));
+    add_settings_field('ugcAtlasEndpoint', 'Atlas Cloud Endpoint', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcAtlasEndpoint', 'default' => '/api/v1/model/generateVideo'));
+    add_settings_field('ugcAtlasPollEndpoint', 'Atlas Cloud Poll Endpoint', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcAtlasPollEndpoint', 'default' => '/api/v1/predictions/{id}'));
+    add_settings_field('ugcAtlasGenerateAudio', 'Atlas Gerar áudio nativo', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcAtlasGenerateAudio', 'default' => '0', 'options' => array('0' => 'Não', '1' => 'Sim')));
+    add_settings_field('ugcAtlasWatermark', 'Atlas Watermark', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcAtlasWatermark', 'default' => '0', 'options' => array('0' => 'Não', '1' => 'Sim')));
+    add_settings_field('ugcAtlasReturnLastFrame', 'Atlas Return Last Frame', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcAtlasReturnLastFrame', 'default' => '0', 'options' => array('0' => 'Não', '1' => 'Sim')));
+    add_settings_field('ugcFalApiKey', 'Fal.ai API Key', 'stlai_render_password_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcFalApiKey'));
+    add_settings_field('ugcFalBaseUrl', 'Fal.ai Base URL', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcFalBaseUrl', 'default' => 'https://fal.run'));
+    add_settings_field('ugcFalModel', 'Fal.ai Model', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcFalModel', 'default' => 'bytedance/seedance-2.0/image-to-video'));
+    add_settings_field('ugcFalPollEndpoint', 'Fal.ai Poll Endpoint', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcFalPollEndpoint', 'default' => '/{model}/requests/{id}'));
     add_settings_field('ugcDefaultDuration', 'UGC Default Duration', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcDefaultDuration', 'default' => '9', 'options' => array('5' => '5s', '8' => '8s', '9' => '9s', '10' => '10s')));
     add_settings_field('ugcDefaultResolution', 'UGC Default Resolution', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcDefaultResolution', 'default' => '720p', 'options' => array('720p' => '720p', '1080p' => '1080p')));
     add_settings_field('ugcDefaultAspectRatio', 'UGC Default Aspect Ratio', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcDefaultAspectRatio', 'default' => '9:16', 'options' => array('9:16' => '9:16', '16:9' => '16:9', '1:1' => '1:1')));
@@ -272,14 +286,22 @@ function stlai_vision_ads_pro_sanitize_settings($input) {
             }
             if ('ugcProvider' === $key) {
                 $value = sanitize_key($value);
-                $existing[$key] = in_array($value, array('none', 'seedance', 'muapi'), true) ? $value : 'none';
+                $existing[$key] = in_array($value, array('none', 'muapi', 'atlas', 'fal', 'seedance'), true) ? $value : 'none';
                 continue;
             }
-            if ('muApiBaseUrl' === $key) {
+            if (in_array($key, array('muApiBaseUrl', 'ugcAtlasBaseUrl', 'ugcFalBaseUrl', 'seedanceBaseUrl'), true)) {
                 $existing[$key] = esc_url_raw($value);
                 continue;
             }
-            if ('muApiModel' === $key) {
+            if (in_array($key, array('muApiModel', 'ugcAtlasModel', 'ugcAtlasEndpoint', 'ugcAtlasPollEndpoint', 'ugcFalModel', 'ugcFalPollEndpoint', 'seedanceModel', 'seedanceEndpoint', 'seedancePollEndpoint'), true)) {
+                $existing[$key] = sanitize_text_field($value);
+                continue;
+            }
+            if (in_array($key, array('ugcAtlasGenerateAudio', 'ugcAtlasWatermark', 'ugcAtlasReturnLastFrame'), true)) {
+                $existing[$key] = !empty($value) && '0' !== (string) $value ? '1' : '0';
+                continue;
+            }
+            if (in_array($key, array('muApiKey', 'ugcAtlasApiKey', 'ugcFalApiKey', 'seedanceApiKey'), true)) {
                 $existing[$key] = sanitize_text_field($value);
                 continue;
             }
@@ -518,17 +540,37 @@ function stlai_config_ia_page() {
                 stlai_admin_field_row( 'Idioma padrão', 'stlai_render_text_field', array( 'id' => 'elevenLabsDefaultLanguage', 'default' => 'pt-BR' ) );
             } );
 
-            stlai_admin_settings_card( 'UGC — Vídeos', 'Configurações para vídeos estilo criador de conteúdo. MuAPI é o provider inicial.', function() {
-                stlai_admin_field_row( 'Provider UGC', 'stlai_render_select_field', array( 'id' => 'ugcProvider', 'default' => 'none', 'options' => array( 'none' => 'Desativado', 'seedance' => 'Seedance 2.0 / BytePlus ModelArk', 'muapi' => 'MuAPI' ) ) );
-                stlai_admin_field_row( 'Seedance API Key', 'stlai_render_password_field', array( 'id' => 'seedanceApiKey' ) );
-                stlai_admin_field_row( 'Seedance Base URL', 'stlai_render_text_field', array( 'id' => 'seedanceBaseUrl' ) );
-                stlai_admin_field_row( 'Seedance Model', 'stlai_render_text_field', array( 'id' => 'seedanceModel' ) );
-                stlai_admin_field_row( 'MuAPI Key', 'stlai_render_password_field', array( 'id' => 'muApiKey' ) );
-                stlai_admin_field_row( 'MuAPI Base URL', 'stlai_render_text_field', array( 'id' => 'muApiBaseUrl', 'default' => 'https://api.muapi.ai' ) );
-                stlai_admin_field_row( 'MuAPI Model/Endpoint', 'stlai_render_text_field', array( 'id' => 'muApiModel', 'default' => 'seedance-2.0-image-to-video', 'description' => 'Endpoint enviado para /api/v1/{modelo}. Ajuste conforme o modelo liberado na sua conta MuAPI.' ) );
-                stlai_admin_field_row( 'Duração padrão UGC', 'stlai_render_select_field', array( 'id' => 'ugcDefaultDuration', 'default' => '9', 'options' => array( '5' => '5s', '8' => '8s', '9' => '9s', '10' => '10s' ) ) );
-                stlai_admin_field_row( 'Resolução padrão UGC', 'stlai_render_select_field', array( 'id' => 'ugcDefaultResolution', 'default' => '720p', 'options' => array( '720p' => '720p', '1080p' => '1080p' ) ) );
-                stlai_admin_field_row( 'Formato padrão UGC', 'stlai_render_select_field', array( 'id' => 'ugcDefaultAspectRatio', 'default' => '9:16', 'options' => array( '9:16' => '9:16', '16:9' => '16:9', '1:1' => '1:1' ) ) );
+            stlai_admin_settings_card( 'UGC — Vídeos', 'Provider backend para vídeos estilo criador de conteúdo. A UI pública continua igual; o provider é definido aqui.', function() {
+                stlai_admin_field_row( 'Provider UGC', 'stlai_render_select_field', array( 'id' => 'ugcProvider', 'default' => 'none', 'options' => array( 'none' => 'Desativado', 'muapi' => 'MuAPI', 'atlas' => 'Atlas Cloud', 'fal' => 'Fal.ai', 'seedance' => 'Seedance 2.0 / BytePlus ModelArk' ) ) );
+                stlai_admin_notice_row( 'Configure um provider UGC para habilitar geração no Resultado. Nenhuma API key é enviada ao frontend.', 'notice-info', 'stlai-ugc-provider-row stlai-ugc-provider-none' );
+
+                stlai_admin_field_row( 'MuAPI Key', 'stlai_render_password_field', array( 'id' => 'muApiKey' ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi' );
+                stlai_admin_field_row( 'MuAPI Base URL', 'stlai_render_text_field', array( 'id' => 'muApiBaseUrl', 'default' => 'https://api.muapi.ai' ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi' );
+                stlai_admin_field_row( 'MuAPI Model/Endpoint', 'stlai_render_text_field', array( 'id' => 'muApiModel', 'default' => 'seedance-2.0-image-to-video', 'description' => 'Endpoint enviado para /api/v1/{modelo}. Ajuste conforme o modelo liberado na sua conta MuAPI.' ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi' );
+
+                stlai_admin_field_row( 'Atlas Cloud API Key', 'stlai_render_password_field', array( 'id' => 'ugcAtlasApiKey' ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );
+                stlai_admin_field_row( 'Atlas Cloud Base URL', 'stlai_render_text_field', array( 'id' => 'ugcAtlasBaseUrl', 'default' => 'https://api.atlascloud.ai' ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );
+                stlai_admin_field_row( 'Atlas Cloud Model', 'stlai_render_text_field', array( 'id' => 'ugcAtlasModel', 'default' => 'bytedance/seedance-2.0/image-to-video' ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );
+                stlai_admin_field_row( 'Atlas Cloud Endpoint', 'stlai_render_text_field', array( 'id' => 'ugcAtlasEndpoint', 'default' => '/api/v1/model/generateVideo' ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );
+                stlai_admin_field_row( 'Atlas Cloud Poll Endpoint', 'stlai_render_text_field', array( 'id' => 'ugcAtlasPollEndpoint', 'default' => '/api/v1/predictions/{id}', 'description' => 'Use {id} como placeholder para o operation_id retornado pelo provider.' ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );
+                stlai_admin_field_row( 'Gerar áudio nativo', 'stlai_render_select_field', array( 'id' => 'ugcAtlasGenerateAudio', 'default' => '0', 'options' => array( '0' => 'Não', '1' => 'Sim' ) ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );
+                stlai_admin_field_row( 'Watermark', 'stlai_render_select_field', array( 'id' => 'ugcAtlasWatermark', 'default' => '0', 'options' => array( '0' => 'Não', '1' => 'Sim' ) ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );
+                stlai_admin_field_row( 'Return Last Frame', 'stlai_render_select_field', array( 'id' => 'ugcAtlasReturnLastFrame', 'default' => '0', 'options' => array( '0' => 'Não', '1' => 'Sim' ) ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );
+
+                stlai_admin_field_row( 'Fal.ai API Key', 'stlai_render_password_field', array( 'id' => 'ugcFalApiKey' ), 'stlai-ugc-provider-row stlai-ugc-provider-fal' );
+                stlai_admin_field_row( 'Fal.ai Base URL', 'stlai_render_text_field', array( 'id' => 'ugcFalBaseUrl', 'default' => 'https://fal.run' ), 'stlai-ugc-provider-row stlai-ugc-provider-fal' );
+                stlai_admin_field_row( 'Fal.ai Model', 'stlai_render_text_field', array( 'id' => 'ugcFalModel', 'default' => 'bytedance/seedance-2.0/image-to-video' ), 'stlai-ugc-provider-row stlai-ugc-provider-fal' );
+                stlai_admin_field_row( 'Fal.ai Poll Endpoint', 'stlai_render_text_field', array( 'id' => 'ugcFalPollEndpoint', 'default' => '/{model}/requests/{id}', 'description' => 'Use {model} e {id}. Se a resposta vier com status_url, ela tem prioridade.' ), 'stlai-ugc-provider-row stlai-ugc-provider-fal' );
+
+                stlai_admin_field_row( 'Seedance API Key', 'stlai_render_password_field', array( 'id' => 'seedanceApiKey' ), 'stlai-ugc-provider-row stlai-ugc-provider-seedance' );
+                stlai_admin_field_row( 'Seedance Base URL', 'stlai_render_text_field', array( 'id' => 'seedanceBaseUrl', 'description' => 'Obrigatório para integração direta BytePlus/ModelArk.' ), 'stlai-ugc-provider-row stlai-ugc-provider-seedance' );
+                stlai_admin_field_row( 'Seedance Model', 'stlai_render_text_field', array( 'id' => 'seedanceModel', 'default' => 'bytedance/seedance-2.0/image-to-video' ), 'stlai-ugc-provider-row stlai-ugc-provider-seedance' );
+                stlai_admin_field_row( 'Seedance Endpoint', 'stlai_render_text_field', array( 'id' => 'seedanceEndpoint', 'description' => 'Endpoint de start direto do provider. Obrigatório porque varia por contrato.' ), 'stlai-ugc-provider-row stlai-ugc-provider-seedance' );
+                stlai_admin_field_row( 'Seedance Poll Endpoint', 'stlai_render_text_field', array( 'id' => 'seedancePollEndpoint', 'description' => 'Endpoint de polling com {id}. Obrigatório porque varia por contrato.' ), 'stlai-ugc-provider-row stlai-ugc-provider-seedance' );
+
+                stlai_admin_field_row( 'Duração padrão UGC', 'stlai_render_select_field', array( 'id' => 'ugcDefaultDuration', 'default' => '9', 'options' => array( '5' => '5s', '8' => '8s', '9' => '9s', '10' => '10s' ) ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi stlai-ugc-provider-atlas stlai-ugc-provider-fal stlai-ugc-provider-seedance' );
+                stlai_admin_field_row( 'Resolução padrão UGC', 'stlai_render_select_field', array( 'id' => 'ugcDefaultResolution', 'default' => '720p', 'options' => array( '720p' => '720p', '1080p' => '1080p' ) ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi stlai-ugc-provider-atlas stlai-ugc-provider-fal stlai-ugc-provider-seedance' );
+                stlai_admin_field_row( 'Formato padrão UGC', 'stlai_render_select_field', array( 'id' => 'ugcDefaultAspectRatio', 'default' => '9:16', 'options' => array( '9:16' => '9:16', '16:9' => '16:9', '1:1' => '1:1' ) ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi stlai-ugc-provider-atlas stlai-ugc-provider-fal stlai-ugc-provider-seedance' );
             } );
             submit_button('Salvar Configurações');
             ?>
@@ -537,6 +579,8 @@ function stlai_config_ia_page() {
         (function(){
             const provider=document.getElementById("commercialVideoProvider");
             const rows=[].slice.call(document.querySelectorAll(".stlai-provider-row"));
+            const ugcProvider=document.getElementById("ugcProvider");
+            const ugcRows=[].slice.call(document.querySelectorAll(".stlai-ugc-provider-row"));
             function syncProviderRows(){
                 const value=provider ? provider.value : "gemini_veo";
                 rows.forEach(row=>{
@@ -544,9 +588,20 @@ function stlai_config_ia_page() {
                     row.classList.toggle("stlai-admin-provider-hidden", !show);
                 });
             }
+            function syncUgcProviderRows(){
+                const value=ugcProvider ? ugcProvider.value : "none";
+                ugcRows.forEach(row=>{
+                    const show=row.classList.contains("stlai-ugc-provider-" + value);
+                    row.classList.toggle("stlai-admin-provider-hidden", !show);
+                });
+            }
             if(provider){
                 provider.addEventListener("change", syncProviderRows);
                 syncProviderRows();
+            }
+            if(ugcProvider){
+                ugcProvider.addEventListener("change", syncUgcProviderRows);
+                syncUgcProviderRows();
             }
             document.addEventListener("click", function(event){
                 const toggle=event.target.closest("[data-stlai-secret-toggle]");

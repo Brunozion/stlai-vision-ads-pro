@@ -3567,6 +3567,9 @@ function normalizeUgcJob(job={}){
     parent_job_id:String(job.parent_job_id || ""),
     preset:String(job.preset || "ugc"),
     label:String(job.label || "UGC"),
+    provider:String(job.provider || "muapi"),
+    provider_label:String(job.provider_label || ""),
+    model:String(job.model || ""),
     status:String(job.status || "processing"),
     image_url:normalizeMediaUrl(job.image_url) || String(job.image_url || ""),
     video_url:normalizeMediaUrl(job.video_url),
@@ -3637,8 +3640,9 @@ function renderUgcSection(){
       : job.status==="failed"
       ? `<button class="btn bp bsm" type="button" onclick="retryUgcJob('${escAttr(job.ugc_job_id)}')">Tentar novamente</button>`
       : `<button class="btn bs bsm" type="button" disabled>Processando</button>`;
+    const providerLabel=job.provider_label || ({muapi:"MuAPI",atlas:"Atlas Cloud",fal:"Fal.ai",seedance:"Seedance/BytePlus"}[job.provider] || S.cfg.ugcProviderLabel || "UGC");
     return `<div class="ugc-job-card" data-ugc-job="${escAttr(job.ugc_job_id)}">
-      <div class="ugc-job-head"><div><strong>${esc(job.label || "UGC")}</strong><span>${esc(job.aspect_ratio)} • ${Number(job.duration || 9)}s • ${esc(job.resolution)}</span></div><div class="ugc-job-status ${statusClass}">${ugcStatusLabel(job.status)}</div></div>
+      <div class="ugc-job-head"><div><strong>${esc(job.label || "UGC")}</strong><span>${esc(job.aspect_ratio)} • ${Number(job.duration || 9)}s • ${esc(job.resolution)} • Provider: ${esc(providerLabel)}</span></div><div class="ugc-job-status ${statusClass}">${ugcStatusLabel(job.status)}</div></div>
       <div class="ugc-job-body"><div class="ugc-job-media ${mediaClass}">${media}</div><div class="ugc-job-actions">${actions}</div></div>
     </div>`;
   }).join("");
@@ -3728,7 +3732,7 @@ async function ugcAjaxRequest(action,payload={}){
 
 async function startUgcVideo(){
   if(!ugcConfigEnabled()){
-    toast("Ative MuAPI como provider UGC nas configurações.","warn");
+    toast("Configure o provider UGC no painel para gerar vídeos.","warn");
     return;
   }
   const selected=S.selectedUgcImage || defaultUgcImage();

@@ -1629,3 +1629,49 @@ O backend combina prompt do preset, contexto do produto, imagem de referência e
 ### Status
 
 Decidido
+
+## 2026-06-02 - UGC multi-provider por adapter backend
+
+### Decisao
+
+O UGC passa a suportar MuAPI, Atlas Cloud, Fal.ai e Seedance/BytePlus por adapters backend separados.
+
+O provider é escolhido no admin via `ugcProvider`. A UI pública continua igual e não permite escolher provider.
+
+### Motivo
+
+Precisamos comparar custo, qualidade e disponibilidade de providers UGC sem duplicar fluxo, seção, modal, prompts ou storage.
+
+### Impacto
+
+`STLAI_UGC_Job_Service` passa a resolver o provider por factory interna. Cada provider implementa start/poll e normaliza operação, status e vídeo para o contrato comum do UGC.
+
+API keys seguem apenas no backend. Jobs armazenam metadados operacionais seguros, como provider, modelo, operation_id, status_url, result_url e endpoint usado sem host secreto/chaves.
+
+### Status
+
+Decidido
+
+## 2026-06-02 - Endpoints UGC variáveis ficam configuráveis
+
+### Decisao
+
+Atlas Cloud, Fal.ai e Seedance/BytePlus usam endpoints configuráveis para start/poll quando o contrato pode variar entre contas, filas ou wrappers.
+
+Defaults:
+
+- Atlas: `https://api.atlascloud.ai`, `/api/v1/model/generateVideo`, `/api/v1/predictions/{id}`.
+- Fal.ai: `https://fal.run`, `bytedance/seedance-2.0/image-to-video`, `/{model}/requests/{id}`.
+- Seedance direto: exige Base URL, Endpoint e Poll Endpoint preenchidos no admin.
+
+### Motivo
+
+Os providers podem expor Seedance por wrappers diferentes. Deixar polling hardcoded demais criaria falso erro em produção.
+
+### Impacto
+
+O admin tem campos de endpoint por provider. Fal.ai usa `status_url` retornada pela API quando existir; caso contrário monta a URL pelo endpoint configurado.
+
+### Status
+
+Decidido

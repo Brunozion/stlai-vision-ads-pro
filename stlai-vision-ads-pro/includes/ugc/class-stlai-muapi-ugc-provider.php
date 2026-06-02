@@ -56,18 +56,24 @@ class STLAI_MuAPI_UGC_Provider {
         }
 
         $request_id = self::extract_request_id( $data );
-        if ( empty( $request_id ) ) {
-            return new WP_Error( 'MUAPI_REQUEST_ID_MISSING', 'MuAPI não retornou request_id para o vídeo UGC.' );
+        $video_url = self::extract_video_url( $data );
+        if ( empty( $request_id ) && empty( $video_url ) ) {
+            return new WP_Error( 'MUAPI_REQUEST_ID_MISSING', 'MuAPI não retornou request_id nem vídeo pronto para o vídeo UGC.' );
         }
 
         return array(
-            'success'    => true,
-            'request_id' => $request_id,
-            'status'     => 'processing',
-            'provider'   => 'muapi',
-            'model'      => $config['model'],
-            'image_url'  => $image_url,
-            'raw_status' => sanitize_key( (string) ( $data['status'] ?? 'processing' ) ),
+            'success'      => true,
+            'operation_id' => $request_id,
+            'request_id'   => $request_id,
+            'status'       => $video_url ? 'ready' : 'processing',
+            'video_url'    => $video_url,
+            'provider'     => 'muapi',
+            'model'        => $config['model'],
+            'image_url'    => $image_url,
+            'status_url'   => $request_id ? trailingslashit( $config['base_url'] ) . 'api/v1/predictions/' . rawurlencode( $request_id ) . '/result' : '',
+            'result_url'   => $request_id ? trailingslashit( $config['base_url'] ) . 'api/v1/predictions/' . rawurlencode( $request_id ) . '/result' : '',
+            'raw_status'   => sanitize_key( (string) ( $data['status'] ?? 'processing' ) ),
+            'endpoint_used' => 'api/v1/' . ltrim( $config['model'], '/' ),
         );
     }
 
@@ -100,21 +106,22 @@ class STLAI_MuAPI_UGC_Provider {
             return new WP_Error( 'MUAPI_POLL_FAILED', self::safe_error_message( $data, 'MuAPI não retornou o status do vídeo UGC.' ) );
         }
 
-        $raw_status = sanitize_key( (string) ( $data['status'] ?? ( $data['data']['status'] ?? '' ) ) );
-        $status = self::normalize_status( $raw_status );
+        $raw_status = STLAI_UGC_Job_Service::extract_provider_status( $data );
         $video_url = self::extract_video_url( $data );
-        if ( $video_url ) {
-            $status = 'ready';
-        }
+        $status = STLAI_UGC_Job_Service::normalize_provider_status( $raw_status, $video_url );
 
         return array(
-            'success'    => true,
-            'status'     => $status,
-            'video_url'  => $video_url,
-            'raw_status' => $raw_status,
-            'provider'   => 'muapi',
-            'model'      => $config['model'],
-            'message'    => self::message_for_status( $status ),
+            'success'      => true,
+            'status'       => $status,
+            'video_url'    => $video_url,
+            'raw_status'   => $raw_status,
+            'provider'     => 'muapi',
+            'model'        => $config['model'],
+            'operation_id' => $request_id,
+            'request_id'   => $request_id,
+            'status_url'   => trailingslashit( $config['base_url'] ) . 'api/v1/predictions/' . rawurlencode( $request_id ) . '/result',
+            'result_url'   => trailingslashit( $config['base_url'] ) . 'api/v1/predictions/' . rawurlencode( $request_id ) . '/result',
+            'message'      => STLAI_UGC_Job_Service::message_for_provider_status( $status, $video_url ),
         );
     }
 
@@ -122,11 +129,6 @@ class STLAI_MuAPI_UGC_Provider {
         $settings = get_option( 'stlai_vision_ads_pro_settings', array() );
         if ( ! is_array( $settings ) ) {
             $settings = array();
-        }
-
-        $provider = sanitize_key( (string) ( $settings['ugcProvider'] ?? 'none' ) );
-        if ( 'muapi' !== $provider ) {
-            return new WP_Error( 'UGC_PROVIDER_DISABLED', 'Ative MuAPI como provider UGC nas configurações.' );
         }
 
         $api_key = trim( (string) ( $settings['muApiKey'] ?? '' ) );
@@ -271,27 +273,6 @@ class STLAI_MuAPI_UGC_Provider {
         }
 
         return '';
-    }
-
-    private static function normalize_status( $status ) {
-        $status = sanitize_key( $status );
-        if ( in_array( $status, array( 'completed', 'succeeded', 'success' ), true ) ) {
-            return 'ready';
-        }
-        if ( in_array( $status, array( 'failed', 'error' ), true ) ) {
-            return 'failed';
-        }
-        return 'processing';
-    }
-
-    private static function message_for_status( $status ) {
-        if ( 'ready' === $status ) {
-            return 'Vídeo UGC pronto.';
-        }
-        if ( 'failed' === $status ) {
-            return 'Não foi possível gerar o vídeo UGC.';
-        }
-        return 'Gerando vídeo UGC.';
     }
 
     private static function safe_error_message( $data, $fallback ) {

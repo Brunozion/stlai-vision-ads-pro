@@ -6,6 +6,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'STLAI_MuAPI_UGC_Provider' ) ) {
     require_once __DIR__ . '/class-stlai-muapi-ugc-provider.php';
 }
+if ( ! class_exists( 'STLAI_Atlas_UGC_Provider' ) ) {
+    require_once __DIR__ . '/class-stlai-atlas-ugc-provider.php';
+}
+if ( ! class_exists( 'STLAI_Fal_UGC_Provider' ) ) {
+    require_once __DIR__ . '/class-stlai-fal-ugc-provider.php';
+}
+if ( ! class_exists( 'STLAI_Seedance_UGC_Provider' ) ) {
+    require_once __DIR__ . '/class-stlai-seedance-ugc-provider.php';
+}
 
 class STLAI_UGC_Job_Service {
     const DEFAULT_DURATION = 9;
@@ -42,15 +51,30 @@ class STLAI_UGC_Job_Service {
             $settings = array();
         }
 
+        $provider_key = self::provider_key_from_settings( $settings );
+        $provider = self::provider_for_key( $provider_key );
+        if ( is_wp_error( $provider ) ) {
+            return $provider;
+        }
+
+        if ( 'muapi' !== $provider_key && 0 === strpos( $validated['image_url'], 'data:image/' ) ) {
+            return new WP_Error( 'UGC_PROVIDER_REQUIRES_IMAGE_URL', 'Este provider UGC precisa de uma URL pública da imagem. Use MuAPI para imagens em base64 ou selecione uma imagem com URL.' );
+        }
+
         $prompt_final = self::build_prompt( $validated, $parent_job, $settings );
         $ugc_job = array(
             'ugc_job_id'          => 'stlai_ugc_' . wp_generate_uuid4(),
             'parent_job_id'       => $parent_job['job_id'],
             'preset'              => $validated['preset'],
             'label'               => $validated['label'],
-            'provider'            => 'muapi',
-            'model'               => self::muapi_model( $settings ),
+            'provider'            => $provider_key,
+            'provider_label'      => self::provider_label( $provider_key ),
+            'model'               => self::model_for_provider( $provider_key, $settings ),
             'request_id'          => '',
+            'operation_id'        => '',
+            'status_url'          => '',
+            'result_url'          => '',
+            'endpoint_used'       => '',
             'status'              => 'queued',
             'image_url'           => $validated['image_url'],
             'selected_image_label' => $validated['selected_image_label'],
@@ -66,7 +90,8 @@ class STLAI_UGC_Job_Service {
             'updated_at'          => current_time( 'mysql' ),
         );
 
-        $started = STLAI_MuAPI_UGC_Provider::start_job(
+        $started = call_user_func(
+            array( $provider['class'], 'start_job' ),
             array(
                 'image_url'    => $validated['image_url'],
                 'prompt'       => $prompt_final,
@@ -83,12 +108,22 @@ class STLAI_UGC_Job_Service {
             return $started;
         }
 
-        $ugc_job['request_id'] = sanitize_text_field( $started['request_id'] ?? '' );
-        $ugc_job['status'] = 'processing';
-        $ugc_job['provider'] = sanitize_key( $started['provider'] ?? 'muapi' );
+        $operation_id = sanitize_text_field( $started['operation_id'] ?? ( $started['request_id'] ?? '' ) );
+        $ugc_job['operation_id'] = $operation_id;
+        $ugc_job['request_id'] = sanitize_text_field( $started['request_id'] ?? $operation_id );
+        $ugc_job['status'] = sanitize_key( $started['status'] ?? 'processing' );
+        $ugc_job['provider'] = sanitize_key( $started['provider'] ?? $provider_key );
+        $ugc_job['provider_label'] = self::provider_label( $ugc_job['provider'] );
         $ugc_job['model'] = sanitize_text_field( $started['model'] ?? $ugc_job['model'] );
         $ugc_job['image_url'] = esc_url_raw( $started['image_url'] ?? $ugc_job['image_url'] );
+        $ugc_job['video_url'] = esc_url_raw( $started['video_url'] ?? '' );
+        $ugc_job['status_url'] = esc_url_raw( $started['status_url'] ?? '' );
+        $ugc_job['result_url'] = esc_url_raw( $started['result_url'] ?? '' );
+        $ugc_job['endpoint_used'] = sanitize_text_field( $started['endpoint_used'] ?? '' );
         $ugc_job['raw_status'] = sanitize_key( $started['raw_status'] ?? 'processing' );
+        if ( ! empty( $ugc_job['video_url'] ) ) {
+            $ugc_job['status'] = 'ready';
+        }
         $ugc_job = self::save_ugc_job( $parent_job['job_id'], $ugc_job );
 
         return array(
@@ -124,11 +159,18 @@ class STLAI_UGC_Job_Service {
             );
         }
 
-        if ( empty( $ugc_job['request_id'] ) ) {
-            return new WP_Error( 'UGC_REQUEST_ID_MISSING', 'request_id UGC ausente.' );
+        $operation_id = sanitize_text_field( $ugc_job['operation_id'] ?? ( $ugc_job['request_id'] ?? '' ) );
+        if ( empty( $operation_id ) ) {
+            return new WP_Error( 'UGC_REQUEST_ID_MISSING', 'operation_id UGC ausente.' );
         }
 
-        $polled = STLAI_MuAPI_UGC_Provider::poll_job( $ugc_job['request_id'] );
+        $provider_key = sanitize_key( $ugc_job['provider'] ?? 'muapi' );
+        $provider = self::provider_for_key( $provider_key );
+        if ( is_wp_error( $provider ) ) {
+            return $provider;
+        }
+
+        $polled = call_user_func( array( $provider['class'], 'poll_job' ), $operation_id, $ugc_job );
         if ( is_wp_error( $polled ) ) {
             $ugc_job['status'] = 'failed';
             $ugc_job['error_message'] = $polled->get_error_message();
@@ -136,8 +178,13 @@ class STLAI_UGC_Job_Service {
             $ugc_job['status'] = sanitize_key( $polled['status'] ?? 'processing' );
             $ugc_job['raw_status'] = sanitize_key( $polled['raw_status'] ?? '' );
             $ugc_job['video_url'] = esc_url_raw( $polled['video_url'] ?? ( $ugc_job['video_url'] ?? '' ) );
-            $ugc_job['provider'] = sanitize_key( $polled['provider'] ?? ( $ugc_job['provider'] ?? 'muapi' ) );
+            $ugc_job['provider'] = sanitize_key( $polled['provider'] ?? ( $ugc_job['provider'] ?? $provider_key ) );
+            $ugc_job['provider_label'] = self::provider_label( $ugc_job['provider'] );
             $ugc_job['model'] = sanitize_text_field( $polled['model'] ?? ( $ugc_job['model'] ?? '' ) );
+            $ugc_job['operation_id'] = sanitize_text_field( $polled['operation_id'] ?? $operation_id );
+            $ugc_job['request_id'] = sanitize_text_field( $polled['request_id'] ?? ( $ugc_job['request_id'] ?? $operation_id ) );
+            $ugc_job['status_url'] = esc_url_raw( $polled['status_url'] ?? ( $ugc_job['status_url'] ?? '' ) );
+            $ugc_job['result_url'] = esc_url_raw( $polled['result_url'] ?? ( $ugc_job['result_url'] ?? '' ) );
             $ugc_job['error_message'] = 'failed' === $ugc_job['status'] ? ( $polled['message'] ?? 'Falha ao gerar UGC.' ) : '';
         }
         $ugc_job['updated_at'] = current_time( 'mysql' );
@@ -169,9 +216,20 @@ class STLAI_UGC_Job_Service {
             $settings = array();
         }
         $provider = sanitize_key( (string) ( $settings['ugcProvider'] ?? 'none' ) );
+        $enabled = false;
+        if ( 'muapi' === $provider ) {
+            $enabled = ! empty( $settings['muApiKey'] ?? '' );
+        } elseif ( 'atlas' === $provider ) {
+            $enabled = ! empty( $settings['ugcAtlasApiKey'] ?? '' );
+        } elseif ( 'fal' === $provider ) {
+            $enabled = ! empty( $settings['ugcFalApiKey'] ?? '' );
+        } elseif ( 'seedance' === $provider ) {
+            $enabled = ! empty( $settings['seedanceApiKey'] ?? '' ) && ! empty( $settings['seedanceBaseUrl'] ?? '' ) && ! empty( $settings['seedanceEndpoint'] ?? '' ) && ! empty( $settings['seedancePollEndpoint'] ?? '' );
+        }
         return array(
             'provider'      => $provider,
-            'enabled'       => 'muapi' === $provider && ! empty( $settings['muApiKey'] ?? '' ),
+            'providerLabel' => self::provider_label( $provider ),
+            'enabled'       => $enabled,
             'defaultAspect' => self::sanitize_aspect_ratio( $settings['ugcDefaultAspectRatio'] ?? self::DEFAULT_ASPECT_RATIO ),
             'defaultDuration' => self::sanitize_duration( $settings['ugcDefaultDuration'] ?? self::DEFAULT_DURATION ),
             'defaultResolution' => self::sanitize_resolution( $settings['ugcDefaultResolution'] ?? self::DEFAULT_RESOLUTION ),
@@ -324,11 +382,6 @@ class STLAI_UGC_Job_Service {
         return $defaults[ $preset ] ?? $defaults['ugc'];
     }
 
-    private static function muapi_model( array $settings ) {
-        $model = sanitize_text_field( (string) ( $settings['muApiModel'] ?? STLAI_MuAPI_UGC_Provider::DEFAULT_MODEL ) );
-        return $model ?: STLAI_MuAPI_UGC_Provider::DEFAULT_MODEL;
-    }
-
     private static function sanitize_aspect_ratio( $value ) {
         $value = sanitize_text_field( (string) $value );
         return in_array( $value, array( '9:16', '16:9', '1:1' ), true ) ? $value : self::DEFAULT_ASPECT_RATIO;
@@ -351,8 +404,13 @@ class STLAI_UGC_Job_Service {
             'preset'              => sanitize_key( $job['preset'] ?? '' ),
             'label'               => sanitize_text_field( $job['label'] ?? '' ),
             'provider'            => sanitize_key( $job['provider'] ?? 'muapi' ),
+            'provider_label'      => sanitize_text_field( $job['provider_label'] ?? self::provider_label( $job['provider'] ?? 'muapi' ) ),
             'model'               => sanitize_text_field( $job['model'] ?? '' ),
             'request_id'          => sanitize_text_field( $job['request_id'] ?? '' ),
+            'operation_id'        => sanitize_text_field( $job['operation_id'] ?? ( $job['request_id'] ?? '' ) ),
+            'status_url'          => esc_url_raw( $job['status_url'] ?? '' ),
+            'result_url'          => esc_url_raw( $job['result_url'] ?? '' ),
+            'endpoint_used'       => sanitize_text_field( $job['endpoint_used'] ?? '' ),
             'status'              => sanitize_key( $job['status'] ?? 'processing' ),
             'image_url'           => esc_url_raw( $job['image_url'] ?? '' ),
             'selected_image_label' => sanitize_text_field( $job['selected_image_label'] ?? '' ),
@@ -366,5 +424,144 @@ class STLAI_UGC_Job_Service {
             'created_at'          => sanitize_text_field( $job['created_at'] ?? '' ),
             'updated_at'          => sanitize_text_field( $job['updated_at'] ?? '' ),
         );
+    }
+
+    private static function provider_key_from_settings( array $settings ) {
+        return sanitize_key( (string) ( $settings['ugcProvider'] ?? 'none' ) );
+    }
+
+    private static function provider_for_key( $provider_key ) {
+        $providers = array(
+            'muapi'    => array( 'class' => 'STLAI_MuAPI_UGC_Provider' ),
+            'atlas'    => array( 'class' => 'STLAI_Atlas_UGC_Provider' ),
+            'fal'      => array( 'class' => 'STLAI_Fal_UGC_Provider' ),
+            'seedance' => array( 'class' => 'STLAI_Seedance_UGC_Provider' ),
+        );
+
+        $provider_key = sanitize_key( $provider_key );
+        if ( empty( $provider_key ) || 'none' === $provider_key ) {
+            return new WP_Error( 'UGC_PROVIDER_NOT_CONFIGURED', 'Configure um provider UGC para gerar vídeos.' );
+        }
+        if ( empty( $providers[ $provider_key ] ) || ! class_exists( $providers[ $provider_key ]['class'] ) ) {
+            return new WP_Error( 'UGC_PROVIDER_NOT_IMPLEMENTED', 'Provider UGC não implementado.' );
+        }
+        return $providers[ $provider_key ];
+    }
+
+    public static function provider_label( $provider_key ) {
+        $labels = array(
+            'muapi'    => 'MuAPI',
+            'atlas'    => 'Atlas Cloud',
+            'fal'      => 'Fal.ai',
+            'seedance' => 'Seedance/BytePlus',
+            'none'     => 'Desativado',
+        );
+        $provider_key = sanitize_key( $provider_key );
+        return $labels[ $provider_key ] ?? 'UGC';
+    }
+
+    private static function model_for_provider( $provider_key, array $settings ) {
+        $provider_key = sanitize_key( $provider_key );
+        if ( 'atlas' === $provider_key ) {
+            return sanitize_text_field( (string) ( $settings['ugcAtlasModel'] ?? STLAI_Atlas_UGC_Provider::DEFAULT_MODEL ) ) ?: STLAI_Atlas_UGC_Provider::DEFAULT_MODEL;
+        }
+        if ( 'fal' === $provider_key ) {
+            return sanitize_text_field( (string) ( $settings['ugcFalModel'] ?? STLAI_Fal_UGC_Provider::DEFAULT_MODEL ) ) ?: STLAI_Fal_UGC_Provider::DEFAULT_MODEL;
+        }
+        if ( 'seedance' === $provider_key ) {
+            return sanitize_text_field( (string) ( $settings['seedanceModel'] ?? STLAI_Seedance_UGC_Provider::DEFAULT_MODEL ) ) ?: STLAI_Seedance_UGC_Provider::DEFAULT_MODEL;
+        }
+        $model = sanitize_text_field( (string) ( $settings['muApiModel'] ?? STLAI_MuAPI_UGC_Provider::DEFAULT_MODEL ) );
+        return $model ?: STLAI_MuAPI_UGC_Provider::DEFAULT_MODEL;
+    }
+
+    public static function extract_provider_status( array $data ) {
+        foreach ( array( 'status', 'state' ) as $key ) {
+            if ( isset( $data[ $key ] ) && is_scalar( $data[ $key ] ) ) {
+                return sanitize_key( (string) $data[ $key ] );
+            }
+        }
+        foreach ( array( 'data', 'output', 'result', 'prediction' ) as $key ) {
+            if ( ! empty( $data[ $key ] ) && is_array( $data[ $key ] ) ) {
+                $status = self::extract_provider_status( $data[ $key ] );
+                if ( $status ) {
+                    return $status;
+                }
+            }
+        }
+        return '';
+    }
+
+    public static function extract_provider_operation_id( array $data ) {
+        foreach ( array( 'operation_id', 'request_id', 'id', 'prediction_id' ) as $key ) {
+            if ( ! empty( $data[ $key ] ) && is_scalar( $data[ $key ] ) ) {
+                return sanitize_text_field( (string) $data[ $key ] );
+            }
+        }
+        foreach ( array( 'data', 'output', 'result', 'prediction' ) as $key ) {
+            if ( ! empty( $data[ $key ] ) && is_array( $data[ $key ] ) ) {
+                $id = self::extract_provider_operation_id( $data[ $key ] );
+                if ( $id ) {
+                    return $id;
+                }
+            }
+        }
+        return '';
+    }
+
+    public static function extract_provider_video_url( array $data ) {
+        $candidates = array(
+            $data['video_url'] ?? '',
+            $data['url'] ?? '',
+            $data['output']['url'] ?? '',
+            $data['output']['video_url'] ?? '',
+            $data['output']['video']['url'] ?? '',
+            $data['data']['url'] ?? '',
+            $data['data']['video_url'] ?? '',
+            $data['data']['video']['url'] ?? '',
+            $data['data']['output'] ?? '',
+            $data['data']['outputs'][0] ?? '',
+            $data['result']['url'] ?? '',
+            $data['result']['video_url'] ?? '',
+            $data['video']['url'] ?? '',
+            $data['outputs'][0] ?? '',
+        );
+
+        foreach ( $candidates as $candidate ) {
+            if ( is_array( $candidate ) ) {
+                $nested = self::extract_provider_video_url( $candidate );
+                if ( $nested ) {
+                    return $nested;
+                }
+            } elseif ( is_string( $candidate ) && preg_match( '#^https?://#i', $candidate ) ) {
+                return esc_url_raw( $candidate );
+            }
+        }
+
+        return '';
+    }
+
+    public static function normalize_provider_status( $raw_status, $video_url = '' ) {
+        if ( ! empty( $video_url ) ) {
+            return 'ready';
+        }
+        $raw_status = sanitize_key( (string) $raw_status );
+        if ( in_array( $raw_status, array( 'completed', 'succeeded', 'success', 'done', 'ready', 'finished' ), true ) ) {
+            return 'failed';
+        }
+        if ( in_array( $raw_status, array( 'failed', 'error', 'canceled', 'cancelled' ), true ) ) {
+            return 'failed';
+        }
+        return 'processing';
+    }
+
+    public static function message_for_provider_status( $status, $video_url = '' ) {
+        if ( 'ready' === $status ) {
+            return 'Vídeo UGC pronto.';
+        }
+        if ( 'failed' === $status ) {
+            return empty( $video_url ) ? 'Provider concluiu sem retornar vídeo.' : 'Não foi possível gerar o vídeo UGC.';
+        }
+        return 'Gerando vídeo UGC.';
     }
 }

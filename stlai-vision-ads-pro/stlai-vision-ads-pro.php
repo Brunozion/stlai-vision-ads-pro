@@ -2,7 +2,7 @@
 /**
  * Plugin Name: STLAI Vision Ads Pro
  * Description: Plugin para geração de anúncios e inteligência de imagens 3D via IA.
- * Version: 1.3.17
+ * Version: 1.3.19
  * Author: NDB
  */
 
@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit; // Exit if accessed directly
 }
 
-define( 'STLAI_VISION_ADS_PRO_VERSION', '1.3.17' );
+define( 'STLAI_VISION_ADS_PRO_VERSION', '1.3.19' );
 define( 'STLAI_VISION_ADS_PRO_DIR', plugin_dir_path( __FILE__ ) );
 define( 'STLAI_VISION_ADS_PRO_URL', plugin_dir_url( __FILE__ ) );
 
@@ -25,6 +25,9 @@ require_once STLAI_VISION_ADS_PRO_DIR . 'includes/video/class-stlai-elevenlabs-p
 require_once STLAI_VISION_ADS_PRO_DIR . 'includes/video/class-stlai-veo-provider.php';
 require_once STLAI_VISION_ADS_PRO_DIR . 'includes/video/class-stlai-video-job-service.php';
 require_once STLAI_VISION_ADS_PRO_DIR . 'includes/ugc/class-stlai-muapi-ugc-provider.php';
+require_once STLAI_VISION_ADS_PRO_DIR . 'includes/ugc/class-stlai-atlas-ugc-provider.php';
+require_once STLAI_VISION_ADS_PRO_DIR . 'includes/ugc/class-stlai-fal-ugc-provider.php';
+require_once STLAI_VISION_ADS_PRO_DIR . 'includes/ugc/class-stlai-seedance-ugc-provider.php';
 require_once STLAI_VISION_ADS_PRO_DIR . 'includes/ugc/class-stlai-ugc-job-service.php';
 require_once STLAI_VISION_ADS_PRO_DIR . 'includes/video/class-stlai-video-ajax.php';
 
@@ -71,6 +74,7 @@ function stlai_vision_ads_pro_render_shortcode( $atts ) {
         'ajaxurl' => admin_url( 'admin-ajax.php' ),
         'ugcNonce' => wp_create_nonce( 'stlai_ugc_video' ),
         'ugcProvider' => $ugc_config['provider'] ?? 'none',
+        'ugcProviderLabel' => $ugc_config['providerLabel'] ?? 'Desativado',
         'ugcEnabled' => ! empty( $ugc_config['enabled'] ),
         'ugcDefaults' => array(
             'aspectRatio' => $ugc_config['defaultAspect'] ?? '9:16',

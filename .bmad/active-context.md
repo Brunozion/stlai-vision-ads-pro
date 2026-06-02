@@ -1924,3 +1924,38 @@ Status:
 - Implementação concluída em código.
 - Validação local feita com `php -l` nos PHP alterados e `node --check` no `assets/js/app.js`.
 - Falta teste real em WordPress com chave MuAPI ativa.
+
+## 2026-06-02 - UGC multi-provider
+
+Arquivos alterados/criados:
+
+- stlai-vision-ads-pro/includes/ugc/class-stlai-atlas-ugc-provider.php
+- stlai-vision-ads-pro/includes/ugc/class-stlai-fal-ugc-provider.php
+- stlai-vision-ads-pro/includes/ugc/class-stlai-seedance-ugc-provider.php
+- stlai-vision-ads-pro/includes/ugc/class-stlai-muapi-ugc-provider.php
+- stlai-vision-ads-pro/includes/ugc/class-stlai-ugc-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/admin/settings-page.php
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/stlai-vision-ads-pro.php
+- STATE.md
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- O módulo UGC deixou de ser fixo em MuAPI e passou a usar seleção de provider no backend.
+- Providers disponíveis: MuAPI, Atlas Cloud, Fal.ai e Seedance/BytePlus ModelArk.
+- A UI pública do Resultado e o modal UGC permanecem os mesmos; usuário não escolhe provider no front.
+- O admin mostra campos relevantes conforme o Provider UGC selecionado.
+- Presets e prompts UGC continuam compartilhados entre providers.
+- Cada provider monta seu payload e faz polling por adapter próprio.
+- `ugc_jobs` passa a armazenar `provider`, `provider_label`, `model`, `operation_id`, `status_url`, `result_url` e `endpoint_used`, sem secrets.
+- Seedance direto fica configurável porque endpoint final e polling variam por contrato.
+
+Status:
+
+- Implementação concluída em código.
+- Falta teste real no WordPress com credenciais ativas de cada provider.
