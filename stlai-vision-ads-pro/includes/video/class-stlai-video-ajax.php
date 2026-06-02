@@ -18,6 +18,12 @@ class STLAI_Video_Ajax {
         add_action( 'wp_ajax_nopriv_stlai_get_video_result', array( __CLASS__, 'get_video_result' ) );
         add_action( 'wp_ajax_stlai_generate_test_veo_clip', array( __CLASS__, 'generate_test_veo_clip' ) );
         add_action( 'wp_ajax_nopriv_stlai_generate_test_veo_clip', array( __CLASS__, 'generate_test_veo_clip' ) );
+        add_action( 'wp_ajax_stlai_start_ugc_video', array( __CLASS__, 'start_ugc_video' ) );
+        add_action( 'wp_ajax_nopriv_stlai_start_ugc_video', array( __CLASS__, 'start_ugc_video' ) );
+        add_action( 'wp_ajax_stlai_poll_ugc_video', array( __CLASS__, 'poll_ugc_video' ) );
+        add_action( 'wp_ajax_nopriv_stlai_poll_ugc_video', array( __CLASS__, 'poll_ugc_video' ) );
+        add_action( 'wp_ajax_stlai_get_ugc_jobs', array( __CLASS__, 'get_ugc_jobs' ) );
+        add_action( 'wp_ajax_nopriv_stlai_get_ugc_jobs', array( __CLASS__, 'get_ugc_jobs' ) );
     }
 
     public static function create_video_job() {
@@ -72,6 +78,61 @@ class STLAI_Video_Ajax {
         }
 
         wp_send_json_success( self::public_job_response( $job ) );
+    }
+
+    public static function start_ugc_video() {
+        if ( ! self::verify_ugc_nonce() ) {
+            wp_send_json_error( array( 'message' => 'Sessão expirada. Recarregue a página e tente novamente.', 'code' => 'UGC_BAD_NONCE' ), 403 );
+        }
+
+        $payload = array(
+            'parent_job_id'        => $_POST['parent_job_id'] ?? '',
+            'preset'               => $_POST['preset'] ?? '',
+            'image_url'            => $_POST['image_url'] ?? '',
+            'selected_image_label' => $_POST['selected_image_label'] ?? '',
+            'aspect_ratio'         => $_POST['aspect_ratio'] ?? '',
+            'duration'             => $_POST['duration'] ?? '',
+            'resolution'           => $_POST['resolution'] ?? '',
+            'product_name'         => $_POST['product_name'] ?? '',
+            'product_description'  => $_POST['product_description'] ?? '',
+        );
+
+        $result = STLAI_UGC_Job_Service::start_job( $payload );
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( self::public_error_response( $result ) );
+        }
+
+        wp_send_json_success( self::public_ugc_result_response( $result ) );
+    }
+
+    public static function poll_ugc_video() {
+        if ( ! self::verify_ugc_nonce() ) {
+            wp_send_json_error( array( 'message' => 'Sessão expirada. Recarregue a página e tente novamente.', 'code' => 'UGC_BAD_NONCE' ), 403 );
+        }
+
+        $parent_job_id = sanitize_text_field( wp_unslash( $_POST['parent_job_id'] ?? '' ) );
+        $ugc_job_id = sanitize_text_field( wp_unslash( $_POST['ugc_job_id'] ?? '' ) );
+        $result = STLAI_UGC_Job_Service::poll_job( $parent_job_id, $ugc_job_id );
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( self::public_error_response( $result ) );
+        }
+
+        wp_send_json_success( self::public_ugc_result_response( $result ) );
+    }
+
+    public static function get_ugc_jobs() {
+        if ( ! self::verify_ugc_nonce() ) {
+            wp_send_json_error( array( 'message' => 'Sessão expirada. Recarregue a página e tente novamente.', 'code' => 'UGC_BAD_NONCE' ), 403 );
+        }
+
+        $parent_job_id = sanitize_text_field( wp_unslash( $_POST['parent_job_id'] ?? '' ) );
+        wp_send_json_success(
+            array(
+                'parent_job_id' => $parent_job_id,
+                'ugc_jobs'      => self::public_ugc_jobs_response( STLAI_UGC_Job_Service::get_jobs( $parent_job_id ) ),
+                'ugc_config'    => STLAI_UGC_Job_Service::ugc_config_status(),
+            )
+        );
     }
 
     public static function generate_test_veo_clip() {
@@ -374,6 +435,7 @@ class STLAI_Video_Ajax {
             'partial_clips'   => self::public_clips_response( $job['partial_clips'] ?? array() ),
             'video_frames'    => self::public_video_frames_response( $job['video_frames'] ?? array() ),
             'clip_jobs'       => self::public_clip_jobs_response( $job['clip_jobs'] ?? array() ),
+            'ugc_jobs'        => self::public_ugc_jobs_response( $job['ugc_jobs'] ?? array() ),
             'clip_statuses'   => self::public_assoc_response( $job['clip_statuses'] ?? array() ),
             'clip_attempts'   => self::public_int_assoc_response( $job['clip_attempts'] ?? array() ),
             'clip_errors'     => self::public_assoc_response( $job['clip_errors'] ?? array() ),
@@ -489,6 +551,40 @@ class STLAI_Video_Ajax {
         }
 
         return $response;
+    }
+
+    private static function public_ugc_result_response( array $result ) {
+        $ugc_job = is_array( $result['ugc_job'] ?? null ) ? STLAI_UGC_Job_Service::public_ugc_job( $result['ugc_job'] ) : array();
+        return array(
+            'parent_job_id' => sanitize_text_field( $result['parent_job_id'] ?? ( $ugc_job['parent_job_id'] ?? '' ) ),
+            'ugc_job_id'    => sanitize_text_field( $ugc_job['ugc_job_id'] ?? '' ),
+            'status'        => sanitize_key( $result['status'] ?? ( $ugc_job['status'] ?? 'processing' ) ),
+            'video_url'     => esc_url_raw( $result['video_url'] ?? ( $ugc_job['video_url'] ?? '' ) ),
+            'message'       => sanitize_text_field( $result['message'] ?? '' ),
+            'ugc_job'       => $ugc_job,
+            'ugc_jobs'      => self::public_ugc_jobs_response( $result['ugc_jobs'] ?? array() ),
+            'ugc_config'    => STLAI_UGC_Job_Service::ugc_config_status(),
+        );
+    }
+
+    private static function public_ugc_jobs_response( $jobs ) {
+        if ( ! is_array( $jobs ) ) {
+            return array();
+        }
+
+        $items = array();
+        foreach ( $jobs as $job ) {
+            if ( is_array( $job ) ) {
+                $items[] = STLAI_UGC_Job_Service::public_ugc_job( $job );
+            }
+        }
+
+        return $items;
+    }
+
+    private static function verify_ugc_nonce() {
+        $nonce = sanitize_text_field( wp_unslash( $_POST['nonce'] ?? '' ) );
+        return (bool) wp_verify_nonce( $nonce, 'stlai_ugc_video' );
     }
 
     private static function client_ready_clips_from_request() {

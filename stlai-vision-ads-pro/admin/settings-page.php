@@ -39,6 +39,21 @@ function stlai_default_video_clip_generation_prompt_horizontal() {
     return "Create a horizontal 16:9 commercial video from the provided square source image.\n\nProduct: {{product_name}}\nContext: {{product_context}}\nClip {{clip_index}}: {{clip_label}} ({{clip_role}})\nDirection: {{image_description}}\nNarration style: {{narration_style}}\nTone: {{tone}}\n\nThe uploaded image is the strict visual reference for the product. Preserve the exact product identity with absolute fidelity. The product must remain exactly the same as the source image in all frames: same complete face, same eyes, same hair color, same hairstyle, same facial features, same skin tone, same clothing, same pose, same proportions, same base, same cake, same materials, same colors and same overall look.\n\nDo not redesign or reinterpret the product. Do not create a different version of the couple, character, figurine or item. Do not alter the character design in any way. Do not remove eyes, simplify the face, distort facial features or make the characters look unfinished.\n\nStart with a composition wide enough to show the product clearly and fully. Do not crop the top, body, base or important details in the opening frame. If necessary, pull the camera back to keep the full product visible before any motion begins.\n\nUse a realistic product-filming style, as if a person is naturally filming the product in a real scene. Prefer eye-level or slight three-quarter product angles. Avoid top-down camera moves, strong overhead angles, aggressive push-ins at the start and synthetic zoom-only motion. Use subtle handheld-like or dolly-like camera motion with realistic environmental movement.\n\nKeep the wedding atmosphere elegant, soft and believable. Avoid overloading the scene with excessive candles or unnecessary decorative props. Use subtle, tasteful wedding context only when visually coherent.\n\nNegative prompt:\n{{negative_prompt}}";
 }
 
+function stlai_default_ugc_prompt( $key ) {
+    $defaults = array(
+        'ugc_prompt_social' => 'Create an authentic UGC-style social media video featuring {{product_name}}. The video should feel like a real creator casually filming the product in a natural setting. Show the product clearly, with handheld-style motion, realistic lighting, and a believable lifestyle context. Focus on why someone would want to use or buy it. Keep it natural, not overly polished.',
+        'ugc_prompt_tutorial' => 'Create a step-by-step tutorial-style video showing how {{product_name}} is used. Keep the product clear and visible. Use natural hand movement or product handling when appropriate, but do not change the product. The video should feel practical, helpful and easy to understand.',
+        'ugc_prompt_unboxing' => 'Create a realistic unboxing-style video for {{product_name}}. Show the product being revealed or presented as if someone just received it. Focus on first impression, packaging feel, product reveal and visual appeal. Keep the product consistent with the reference image.',
+        'ugc_prompt_product_review' => 'Create an authentic product review-style video for {{product_name}}. The video should feel like a creator showing the product to the camera, highlighting real benefits, details and usage impressions. Keep the tone natural and trustworthy.',
+        'ugc_prompt_virtual_try_on' => 'Create a realistic virtual try-on or demonstration-style video for {{product_name}}. Show the product being experienced, worn, tested or demonstrated in context when appropriate. Preserve the product exactly. Make the scene feel like user-generated content.',
+        'ugc_prompt_hyper_motion' => 'Create a high-energy product video for {{product_name}} with dynamic but realistic movement. Highlight the product with fast visual rhythm, smooth camera motion and strong product focus. Preserve the product exactly. Avoid unrealistic effects.',
+        'ugc_prompt_tv_spot' => 'Create a polished commercial TV spot-style video for {{product_name}}. Use cinematic product framing, clear benefit-driven storytelling and premium movement. Keep the product visually consistent with the reference image.',
+        'ugc_prompt_wild_card' => 'Create a creative and unexpected product video for {{product_name}}. The concept should feel original and scroll-stopping, while keeping the product accurate and recognizable. Do not alter the product.',
+        'ugc_prompt_pro_virtual_try_on' => 'Create a premium virtual try-on or product demonstration video for {{product_name}}. The product should be shown in a polished, professional, high-quality context. Preserve product details and make the result feel commercially usable.',
+    );
+    return $defaults[ $key ] ?? $defaults['ugc_prompt_social'];
+}
+
 function stlai_vision_ads_pro_settings_init() {
     // Registra a configuração com callback de merge para evitar perda de dados em formulários parciais (páginas diferentes)
     register_setting( 'stlai_settings_group', 'stlai_vision_ads_pro_settings', array('sanitize_callback' => 'stlai_vision_ads_pro_sanitize_settings') );
@@ -106,6 +121,10 @@ function stlai_vision_ads_pro_settings_init() {
     add_settings_field('seedanceModel', 'Seedance Model', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'seedanceModel'));
     add_settings_field('muApiKey', 'MuAPI Key', 'stlai_render_password_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'muApiKey'));
     add_settings_field('muApiBaseUrl', 'MuAPI Base URL', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'muApiBaseUrl'));
+    add_settings_field('muApiModel', 'MuAPI Model', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'muApiModel', 'default' => 'seedance-2.0-image-to-video'));
+    add_settings_field('ugcDefaultDuration', 'UGC Default Duration', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcDefaultDuration', 'default' => '9', 'options' => array('5' => '5s', '8' => '8s', '9' => '9s', '10' => '10s')));
+    add_settings_field('ugcDefaultResolution', 'UGC Default Resolution', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcDefaultResolution', 'default' => '720p', 'options' => array('720p' => '720p', '1080p' => '1080p')));
+    add_settings_field('ugcDefaultAspectRatio', 'UGC Default Aspect Ratio', 'stlai_render_select_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcDefaultAspectRatio', 'default' => '9:16', 'options' => array('9:16' => '9:16', '16:9' => '16:9', '1:1' => '1:1')));
 
     // ======== PÁGINA: PROMPTS ========
     add_settings_section('stlai_prompts_base_section', 'Prompts Base', '__return_empty_string', 'stlai_prompts_page');
@@ -159,6 +178,34 @@ function stlai_vision_ads_pro_settings_init() {
             'description' => 'Prompt usado para transformar imagens selecionadas em clipes comerciais com IA. Placeholders: {{product_name}}, {{product_context}}, {{aspect_ratio}}, {{clip_role}}, {{clip_label}}, {{narration_style}}, {{tone}}, {{target_audience}}, {{image_description}}, {{negative_prompt}}.',
         )
     );
+
+    add_settings_section('stlai_prompts_ugc_section', 'UGC — Vídeos', '__return_empty_string', 'stlai_prompts_page');
+    $ugc_prompt_fields = array(
+        'ugc_prompt_social' => array('UGC — Vídeo Social', 'Prompt para vídeo realista estilo criador de conteúdo.'),
+        'ugc_prompt_tutorial' => array('UGC — Tutorial', 'Prompt para vídeo demonstrativo passo a passo.'),
+        'ugc_prompt_unboxing' => array('UGC — Unboxing', 'Prompt para abertura e primeira impressão do produto.'),
+        'ugc_prompt_product_review' => array('UGC — Product Review', 'Prompt para review autêntico do produto.'),
+        'ugc_prompt_virtual_try_on' => array('UGC — Virtual Try On', 'Prompt para demonstração estilo provador virtual.'),
+        'ugc_prompt_hyper_motion' => array('Comercial — Hyper Motion', 'Prompt para vídeo com movimento forte e foco no produto.'),
+        'ugc_prompt_tv_spot' => array('Comercial — TV Spot', 'Prompt para anúncio comercial narrativo.'),
+        'ugc_prompt_wild_card' => array('Comercial — Wild Card', 'Prompt para ideia criativa e inesperada.'),
+        'ugc_prompt_pro_virtual_try_on' => array('Comercial — Pro Virtual Try On', 'Prompt para demonstração premium do produto.'),
+    );
+    foreach ( $ugc_prompt_fields as $field_id => $field ) {
+        add_settings_field(
+            $field_id,
+            $field[0],
+            'stlai_render_textarea_field',
+            'stlai_prompts_page',
+            'stlai_prompts_ugc_section',
+            array(
+                'id' => $field_id,
+                'rows' => 5,
+                'default' => stlai_default_ugc_prompt( $field_id ),
+                'description' => $field[1] . ' Placeholders: {{product_name}}, {{product_description}}, {{product_context}}, {{target_audience}}, {{tone}}, {{language}}, {{aspect_ratio}}, {{duration}}, {{resolution}}, {{image_url}}, {{selected_image_label}}, {{benefits}}, {{features}}, {{marketplace_context}}.',
+            )
+        );
+    }
 
     add_settings_section('stlai_scenes_section', 'Configurações de Cenas Individuais', '__return_empty_string', 'stlai_prompts_page');
     add_settings_field('sceneCapa', 'Capa', 'stlai_render_textarea_field', 'stlai_prompts_page', 'stlai_scenes_section', array('id' => 'sceneCapa', 'rows' => 3));
@@ -217,6 +264,38 @@ function stlai_vision_ads_pro_sanitize_settings($input) {
             }
             if (in_array($key, array('video_clip_generation_prompt', 'video_clip_generation_prompt_vertical', 'video_clip_generation_prompt_horizontal'), true)) {
                 $existing[$key] = sanitize_textarea_field($value);
+                continue;
+            }
+            if (in_array($key, array('ugc_prompt_social', 'ugc_prompt_tutorial', 'ugc_prompt_unboxing', 'ugc_prompt_product_review', 'ugc_prompt_virtual_try_on', 'ugc_prompt_hyper_motion', 'ugc_prompt_tv_spot', 'ugc_prompt_wild_card', 'ugc_prompt_pro_virtual_try_on'), true)) {
+                $existing[$key] = sanitize_textarea_field($value);
+                continue;
+            }
+            if ('ugcProvider' === $key) {
+                $value = sanitize_key($value);
+                $existing[$key] = in_array($value, array('none', 'seedance', 'muapi'), true) ? $value : 'none';
+                continue;
+            }
+            if ('muApiBaseUrl' === $key) {
+                $existing[$key] = esc_url_raw($value);
+                continue;
+            }
+            if ('muApiModel' === $key) {
+                $existing[$key] = sanitize_text_field($value);
+                continue;
+            }
+            if ('ugcDefaultDuration' === $key) {
+                $value = sanitize_key($value);
+                $existing[$key] = in_array($value, array('5', '8', '9', '10'), true) ? $value : '9';
+                continue;
+            }
+            if ('ugcDefaultResolution' === $key) {
+                $value = sanitize_key($value);
+                $existing[$key] = in_array($value, array('720p', '1080p'), true) ? $value : '720p';
+                continue;
+            }
+            if ('ugcDefaultAspectRatio' === $key) {
+                $value = sanitize_text_field($value);
+                $existing[$key] = in_array($value, array('9:16', '16:9', '1:1'), true) ? $value : '9:16';
                 continue;
             }
             $existing[$key] = $value;
@@ -439,13 +518,17 @@ function stlai_config_ia_page() {
                 stlai_admin_field_row( 'Idioma padrão', 'stlai_render_text_field', array( 'id' => 'elevenLabsDefaultLanguage', 'default' => 'pt-BR' ) );
             } );
 
-            stlai_admin_settings_card( 'UGC Futuro', 'Campos reservados para próximos formatos de vídeo UGC.', function() {
+            stlai_admin_settings_card( 'UGC — Vídeos', 'Configurações para vídeos estilo criador de conteúdo. MuAPI é o provider inicial.', function() {
                 stlai_admin_field_row( 'Provider UGC', 'stlai_render_select_field', array( 'id' => 'ugcProvider', 'default' => 'none', 'options' => array( 'none' => 'Desativado', 'seedance' => 'Seedance 2.0 / BytePlus ModelArk', 'muapi' => 'MuAPI' ) ) );
                 stlai_admin_field_row( 'Seedance API Key', 'stlai_render_password_field', array( 'id' => 'seedanceApiKey' ) );
                 stlai_admin_field_row( 'Seedance Base URL', 'stlai_render_text_field', array( 'id' => 'seedanceBaseUrl' ) );
                 stlai_admin_field_row( 'Seedance Model', 'stlai_render_text_field', array( 'id' => 'seedanceModel' ) );
                 stlai_admin_field_row( 'MuAPI Key', 'stlai_render_password_field', array( 'id' => 'muApiKey' ) );
-                stlai_admin_field_row( 'MuAPI Base URL', 'stlai_render_text_field', array( 'id' => 'muApiBaseUrl' ) );
+                stlai_admin_field_row( 'MuAPI Base URL', 'stlai_render_text_field', array( 'id' => 'muApiBaseUrl', 'default' => 'https://api.muapi.ai' ) );
+                stlai_admin_field_row( 'MuAPI Model/Endpoint', 'stlai_render_text_field', array( 'id' => 'muApiModel', 'default' => 'seedance-2.0-image-to-video', 'description' => 'Endpoint enviado para /api/v1/{modelo}. Ajuste conforme o modelo liberado na sua conta MuAPI.' ) );
+                stlai_admin_field_row( 'Duração padrão UGC', 'stlai_render_select_field', array( 'id' => 'ugcDefaultDuration', 'default' => '9', 'options' => array( '5' => '5s', '8' => '8s', '9' => '9s', '10' => '10s' ) ) );
+                stlai_admin_field_row( 'Resolução padrão UGC', 'stlai_render_select_field', array( 'id' => 'ugcDefaultResolution', 'default' => '720p', 'options' => array( '720p' => '720p', '1080p' => '1080p' ) ) );
+                stlai_admin_field_row( 'Formato padrão UGC', 'stlai_render_select_field', array( 'id' => 'ugcDefaultAspectRatio', 'default' => '9:16', 'options' => array( '9:16' => '9:16', '16:9' => '16:9', '1:1' => '1:1' ) ) );
             } );
             submit_button('Salvar Configurações');
             ?>

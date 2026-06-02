@@ -754,6 +754,26 @@
       </div>
     </div>
   </div>
+
+  <div class="smb" id="result-ugc-section">
+    <div class="ssh">
+      <div>
+        <div class="sst"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--mint)"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M7 9h.01"></path><path d="M11 9h6"></path><path d="M7 13h10"></path></svg> Vídeos UGC</div>
+        <p class="ugc-section-copy">Gere versões com aparência de conteúdo real para redes sociais, reviews, unboxing e demonstrações.</p>
+      </div>
+      <button class="btn bp bsm" type="button" id="btn-open-ugc-modal" onclick="openUgcModal()">Criar vídeo UGC</button>
+    </div>
+    <div class="card ugc-card" id="ugc-card">
+      <div class="ugc-empty" id="ugc-empty">
+        <div>
+          <strong>Nenhum vídeo UGC criado ainda.</strong>
+          <p>Escolha um preset, uma imagem do anúncio e gere uma variação curta para redes sociais.</p>
+        </div>
+      </div>
+      <div class="ugc-config-warning" id="ugc-config-warning" style="display:none">Ative um provider UGC nas configurações para gerar vídeos nesse formato.</div>
+      <div class="ugc-jobs-grid" id="ugc-jobs-grid"></div>
+    </div>
+  </div>
   
   <div class="mk-wrap" id="market-wrap">
       <div class="mk-head">
@@ -804,5 +824,54 @@
   <img id="lightbox-img" alt="Imagem ampliada" style="display:none">
   <video id="lightbox-video" controls playsinline webkit-playsinline style="display:none"></video>
   <div id="lightbox-fallback" class="lightbox-fallback" style="display:none">Imagem indisponível</div>
+</div>
+
+<div class="modal-backdrop ugc-modal-backdrop" id="ugc-modal">
+  <div class="modal ugc-modal">
+    <div class="modal-head">
+      <div>
+        <h3>Escolha o formato do vídeo</h3>
+        <p class="ugc-modal-sub">Escolha o tipo de vídeo que combina melhor com seu produto e público.</p>
+      </div>
+      <button class="btn bs bsm" type="button" onclick="closeUgcModal()">Fechar</button>
+    </div>
+    <div class="ugc-tabs">
+      <button type="button" class="ugc-tab active" data-ugc-tab="all" onclick="setUgcTab('all')">Todos</button>
+      <button type="button" class="ugc-tab" data-ugc-tab="ugc" onclick="setUgcTab('ugc')">UGC</button>
+      <button type="button" class="ugc-tab" data-ugc-tab="commercial" onclick="setUgcTab('commercial')">Comercial</button>
+    </div>
+    <div class="ugc-preset-grid" id="ugc-preset-grid"></div>
+    <div class="ugc-controls">
+      <label>Formato
+        <select id="ugc-aspect-ratio">
+          <option value="9:16">9:16</option>
+          <option value="16:9">16:9</option>
+          <option value="1:1">1:1</option>
+        </select>
+      </label>
+      <label>Qualidade
+        <select id="ugc-resolution">
+          <option value="720p">720p</option>
+          <option value="1080p">1080p</option>
+        </select>
+      </label>
+      <label>Duração
+        <select id="ugc-duration">
+          <option value="5">5s</option>
+          <option value="8">8s</option>
+          <option value="9">9s</option>
+          <option value="10">10s</option>
+        </select>
+      </label>
+    </div>
+    <div class="ugc-image-picker">
+      <div class="sl">Imagem de referência</div>
+      <div class="ugc-image-list" id="ugc-image-list"></div>
+    </div>
+    <div class="arow" style="margin-top:18px">
+      <button class="btn bs" type="button" onclick="closeUgcModal()">Cancelar</button>
+      <button class="btn bp" type="button" id="btn-start-ugc" onclick="startUgcVideo()">Gerar UGC</button>
+    </div>
+  </div>
 </div>
 </div>

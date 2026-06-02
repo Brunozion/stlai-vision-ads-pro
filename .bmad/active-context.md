@@ -1890,3 +1890,37 @@ O que foi feito:
 Status:
 
 - Correção concluida.
+
+## 2026-06-01 - Primeiro módulo UGC via MuAPI
+
+Arquivos alterados/criados:
+
+- stlai-vision-ads-pro/includes/ugc/class-stlai-muapi-ugc-provider.php
+- stlai-vision-ads-pro/includes/ugc/class-stlai-ugc-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-ajax.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/admin/settings-page.php
+- stlai-vision-ads-pro/frontend/shortcode.php
+- stlai-vision-ads-pro/assets/js/app.js
+- stlai-vision-ads-pro/assets/css/style.css
+- stlai-vision-ads-pro/stlai-vision-ads-pro.php
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+- STATE.md
+
+O que foi feito:
+
+- Adicionada seção "Vídeos UGC" na página Resultado, logo após o vídeo comercial existente.
+- Criado modal de geração UGC com abas Todos, UGC e Comercial, seleção de preset, imagem de referência, formato, duração e resolução.
+- Criados endpoints AJAX públicos/privados para iniciar, consultar e listar jobs UGC.
+- Criado provider MuAPI no backend, com API key apenas no servidor e normalização de status/resposta.
+- Jobs UGC são salvos dentro do job principal em `ugc_jobs`, com merge monotônico para não perder vídeo pronto.
+- Adicionados prompts editáveis no admin para UGC social, tutorial, unboxing, review, virtual try-on, hyper motion, TV spot, wild card e pro virtual try-on.
+- Mantido o fluxo comercial atual sem alteração intencional no pipeline Veo/ElevenLabs/renderer/score/galeria.
+
+Status:
+
+- Implementação concluída em código.
+- Validação local feita com `php -l` nos PHP alterados e `node --check` no `assets/js/app.js`.
+- Falta teste real em WordPress com chave MuAPI ativa.

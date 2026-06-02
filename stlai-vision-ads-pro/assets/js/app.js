@@ -120,10 +120,32 @@ const S = {
     visualPhaseKey: "",
     visualPhaseStartedAt: 0
   },
+  ugcJobs: [],
+  activeUgcJob: "",
+  ugcModalOpen: false,
+  selectedUgcPreset: "ugc",
+  selectedUgcImage: null,
+  ugcAspectRatio: window.stlaiConfig?.ugcDefaults?.aspectRatio || "9:16",
+  ugcDuration: window.stlaiConfig?.ugcDefaults?.duration || 9,
+  ugcResolution: window.stlaiConfig?.ugcDefaults?.resolution || "720p",
+  ugcTab: "all",
+  ugcPollTimers: {},
   cfg: window.stlaiConfig || {}
 };
 
 const VIDEO_FINAL_SCORE_BONUS = 10;
+
+const UGC_PRESETS = [
+  {key:"ugc", group:"ugc", title:"UGC", subtitle:"Vídeo realista para redes sociais"},
+  {key:"tutorial", group:"ugc", title:"Tutorial", subtitle:"Passo a passo mostrando o produto"},
+  {key:"unboxing", group:"ugc", title:"Unboxing", subtitle:"Abertura e primeira impressão"},
+  {key:"product_review", group:"ugc", title:"Product Review", subtitle:"Review autêntico do produto"},
+  {key:"ugc_virtual_try_on", group:"ugc", title:"UGC Virtual Try On", subtitle:"Demonstração estilo provador virtual"},
+  {key:"hyper_motion", group:"commercial", title:"Hyper Motion", subtitle:"Movimento forte com foco no produto"},
+  {key:"tv_spot", group:"commercial", title:"TV Spot", subtitle:"Anúncio comercial com narrativa"},
+  {key:"wild_card", group:"commercial", title:"Wild Card", subtitle:"Ideia criativa e inesperada"},
+  {key:"pro_virtual_try_on", group:"commercial", title:"Pro Virtual Try On", subtitle:"Demonstração premium do produto"}
+];
 
 const CMSGS = [
   "Analisando produto...",
@@ -2214,6 +2236,12 @@ function normalizeVideoJobPayload(data={}){
   if(Array.isArray(next.clip_jobs)){
     next.clip_jobs=next.clip_jobs.map(job=>({...job,url:normalizeMediaUrl(job.url)}));
   }
+  if(Array.isArray(next.ugc_jobs)){
+    next.ugc_jobs=next.ugc_jobs.map(normalizeUgcJob);
+  }
+  if(next.ugc_job && typeof next.ugc_job==="object"){
+    next.ugc_job=normalizeUgcJob(next.ugc_job);
+  }
   return next;
 }
 
@@ -2334,6 +2362,9 @@ function applyVideoState(payload={}, options={}){
   S.video.clips=mergedClips;
   S.video.clipJobs=mergedClipJobs;
   S.video.videoFrames=mergedFrames.length ? mergedFrames : videoFramesFromClips(mergedClips);
+  if(Array.isArray(incoming.ugc_jobs) && incoming.ugc_jobs.length){
+    S.ugcJobs=mergeUgcJobs(S.ugcJobs, incoming.ugc_jobs);
+  }
   S.video.currentClipIndex=Number((!stale && incoming.current_clip_index) || S.video.currentClipIndex || 0);
   S.video.currentClipAttempt=Number((!stale && incoming.current_clip_attempt) || S.video.currentClipAttempt || 0);
   S.video.clipRetryCount=Number((!stale && incoming.clip_retry_count) || S.video.clipRetryCount || 0);
@@ -2426,6 +2457,7 @@ function applyVideoState(payload={}, options={}){
       job_version:S.video.jobVersion
     });
   }
+  if(S.step>=6) renderUgcSection();
 }
 
 function warnVideoCompositionDiagnostic(context="poll"){
@@ -3528,6 +3560,250 @@ function shortVideoScriptPreview(){
   return script.length>180 ? `${script.slice(0,177).trim()}...` : script;
 }
 
+function normalizeUgcJob(job={}){
+  return {
+    ...job,
+    ugc_job_id:String(job.ugc_job_id || ""),
+    parent_job_id:String(job.parent_job_id || ""),
+    preset:String(job.preset || "ugc"),
+    label:String(job.label || "UGC"),
+    status:String(job.status || "processing"),
+    image_url:normalizeMediaUrl(job.image_url) || String(job.image_url || ""),
+    video_url:normalizeMediaUrl(job.video_url),
+    aspect_ratio:String(job.aspect_ratio || "9:16"),
+    duration:Number(job.duration || 9),
+    resolution:String(job.resolution || "720p"),
+    error_message:String(job.error_message || ""),
+    created_at:String(job.created_at || ""),
+    updated_at:String(job.updated_at || "")
+  };
+}
+
+function mergeUgcJobs(existing=[], incoming=[]){
+  const byId={};
+  existing.map(normalizeUgcJob).filter(job=>job.ugc_job_id).forEach(job=>{byId[job.ugc_job_id]=job;});
+  incoming.map(normalizeUgcJob).filter(job=>job.ugc_job_id).forEach(job=>{
+    const prev=byId[job.ugc_job_id] || {};
+    const merged={...prev,...job};
+    if(prev.video_url && !job.video_url) merged.video_url=prev.video_url;
+    if(prev.status==="ready" && job.status!=="ready") merged.status="ready";
+    if(!job.created_at && prev.created_at) merged.created_at=prev.created_at;
+    byId[job.ugc_job_id]=merged;
+  });
+  return Object.values(byId).sort((a,b)=>String(a.created_at || "").localeCompare(String(b.created_at || "")));
+}
+
+function ugcConfigEnabled(){
+  return Boolean(S.cfg.ugcEnabled);
+}
+
+function ugcStatusLabel(status){
+  if(status==="ready") return "Pronto";
+  if(status==="failed") return "Erro";
+  if(status==="queued") return "Fila";
+  return "Gerando";
+}
+
+function ugcAspectClass(aspect){
+  if(aspect==="16:9") return "is-wide";
+  if(aspect==="1:1") return "is-square";
+  return "";
+}
+
+function defaultUgcImage(){
+  return [S.imgs4.find(img=>img.key==="hero"), S.imgs4.find(img=>img.key==="capa"), S.imgs4[0]].filter(Boolean)[0] || null;
+}
+
+function renderUgcSection(){
+  const grid=document.getElementById("ugc-jobs-grid");
+  const empty=document.getElementById("ugc-empty");
+  const warning=document.getElementById("ugc-config-warning");
+  const btn=document.getElementById("btn-open-ugc-modal");
+  if(!grid) return;
+  const jobs=Array.isArray(S.ugcJobs) ? S.ugcJobs.map(normalizeUgcJob) : [];
+  if(empty) empty.style.display=jobs.length ? "none" : "flex";
+  if(warning) warning.style.display=ugcConfigEnabled() ? "none" : "block";
+  if(btn) btn.disabled=!S.imgs4.length;
+  grid.innerHTML=jobs.map(job=>{
+    const statusClass=job.status==="ready" ? "ready" : (job.status==="failed" ? "failed" : "");
+    const mediaClass=ugcAspectClass(job.aspect_ratio);
+    const media=job.status==="ready" && job.video_url
+      ? `<video src="${escAttr(job.video_url)}" controls playsinline webkit-playsinline preload="metadata"></video>`
+      : job.status==="failed"
+      ? `<div class="ugc-job-loading"><span>${esc(job.error_message || "Falha ao gerar UGC.")}</span></div>`
+      : `<div class="ugc-job-loading"><div class="ugc-mini-spinner"></div><span>Gerando vídeo UGC</span></div>`;
+    const actions=job.status==="ready" && job.video_url
+      ? `<button class="btn bs bsm" type="button" onclick="downloadVideoAsset('${escAttr(job.video_url)}','ugc-${escAttr(job.preset)}')">Baixar</button><button class="btn bs bsm" type="button" onclick="openVideoAsset('${escAttr(job.video_url)}')">Ampliar</button><button class="btn bs bsm" type="button" onclick="copyMediaLink('${escAttr(job.video_url)}')">Copiar</button><button class="btn bp bsm" type="button" onclick="openUgcModal('${escAttr(job.preset)}')">Variação</button>`
+      : job.status==="failed"
+      ? `<button class="btn bp bsm" type="button" onclick="retryUgcJob('${escAttr(job.ugc_job_id)}')">Tentar novamente</button>`
+      : `<button class="btn bs bsm" type="button" disabled>Processando</button>`;
+    return `<div class="ugc-job-card" data-ugc-job="${escAttr(job.ugc_job_id)}">
+      <div class="ugc-job-head"><div><strong>${esc(job.label || "UGC")}</strong><span>${esc(job.aspect_ratio)} • ${Number(job.duration || 9)}s • ${esc(job.resolution)}</span></div><div class="ugc-job-status ${statusClass}">${ugcStatusLabel(job.status)}</div></div>
+      <div class="ugc-job-body"><div class="ugc-job-media ${mediaClass}">${media}</div><div class="ugc-job-actions">${actions}</div></div>
+    </div>`;
+  }).join("");
+  jobs.filter(job=>["queued","processing","running","pending"].includes(job.status) && job.parent_job_id && job.ugc_job_id).forEach(job=>{
+    if(!S.ugcPollTimers[job.ugc_job_id]) scheduleUgcPoll(job.parent_job_id,job.ugc_job_id,5000);
+  });
+}
+
+function renderUgcPresetGrid(){
+  const grid=document.getElementById("ugc-preset-grid");
+  if(!grid) return;
+  const activeTab=S.ugcTab || "all";
+  const presets=UGC_PRESETS.filter(p=>activeTab==="all" || p.group===activeTab);
+  grid.innerHTML=presets.map(p=>`<button type="button" class="ugc-preset-card ${S.selectedUgcPreset===p.key?"active":""}" data-preset="${escAttr(p.key)}" onclick="selectUgcPreset('${escAttr(p.key)}')"><strong>${esc(p.title)}</strong><span>${esc(p.subtitle)}</span></button>`).join("");
+  document.querySelectorAll(".ugc-tab").forEach(tab=>tab.classList.toggle("active", tab.dataset.ugcTab===activeTab));
+}
+
+function renderUgcImageList(){
+  const list=document.getElementById("ugc-image-list");
+  if(!list) return;
+  const images=S.imgs4.filter(img=>img && img.url);
+  if(!S.selectedUgcImage && images.length) S.selectedUgcImage=defaultUgcImage() || images[0];
+  list.innerHTML=images.map(img=>`<button type="button" class="ugc-image-choice ${S.selectedUgcImage?.key===img.key?"active":""}" onclick="selectUgcImage('${escAttr(img.key)}')"><img src="${escAttr(img.url)}" alt="${escAttr(img.label || img.key)}"><span>${esc(img.label || img.key)}</span></button>`).join("");
+}
+
+function openUgcModal(preset=""){
+  if(preset) S.selectedUgcPreset=preset;
+  S.ugcModalOpen=true;
+  S.ugcAspectRatio=S.ugcAspectRatio || S.cfg.ugcDefaults?.aspectRatio || "9:16";
+  S.ugcDuration=Number(S.ugcDuration || S.cfg.ugcDefaults?.duration || 9);
+  S.ugcResolution=S.ugcResolution || S.cfg.ugcDefaults?.resolution || "720p";
+  const modal=document.getElementById("ugc-modal");
+  if(modal) modal.classList.add("show");
+  const ar=document.getElementById("ugc-aspect-ratio");
+  const dur=document.getElementById("ugc-duration");
+  const res=document.getElementById("ugc-resolution");
+  if(ar) ar.value=S.ugcAspectRatio;
+  if(dur) dur.value=String(S.ugcDuration);
+  if(res) res.value=S.ugcResolution;
+  renderUgcPresetGrid();
+  renderUgcImageList();
+}
+
+function closeUgcModal(){
+  S.ugcModalOpen=false;
+  const modal=document.getElementById("ugc-modal");
+  if(modal) modal.classList.remove("show");
+}
+
+function setUgcTab(tab){
+  S.ugcTab=["all","ugc","commercial"].includes(tab) ? tab : "all";
+  renderUgcPresetGrid();
+}
+
+function selectUgcPreset(preset){
+  if(UGC_PRESETS.some(p=>p.key===preset)) S.selectedUgcPreset=preset;
+  renderUgcPresetGrid();
+}
+
+function selectUgcImage(key){
+  S.selectedUgcImage=S.imgs4.find(img=>img.key===key) || S.selectedUgcImage;
+  renderUgcImageList();
+}
+
+async function ugcAjaxRequest(action,payload={}){
+  const ajaxurl=S.cfg.ajaxurl || window.stlaiConfig?.ajaxurl;
+  if(!ajaxurl) throw new Error("Endpoint AJAX do WordPress não encontrado.");
+  const formData=new FormData();
+  formData.append("action",action);
+  formData.append("nonce",S.cfg.ugcNonce || "");
+  Object.entries(payload).forEach(([key,value])=>formData.append(key,value == null ? "" : value));
+  const response=await fetch(ajaxurl,{method:"POST",body:formData});
+  const json=await response.json();
+  if(!response.ok || !json.success){
+    const data=json?.data || {};
+    const message=typeof data==="object" && data.message ? data.message : (typeof data==="string" ? data : `Erro AJAX ${response.status}`);
+    const err=new Error(message || "Falha no vídeo UGC.");
+    err.data=typeof data==="object" ? data : {message};
+    throw err;
+  }
+  const data=normalizeVideoJobPayload(json.data || {});
+  if(data.parent_job_id && !S.video.jobId) S.video.jobId=data.parent_job_id;
+  if(Array.isArray(data.ugc_jobs)) S.ugcJobs=mergeUgcJobs(S.ugcJobs,data.ugc_jobs);
+  if(data.ugc_job) S.ugcJobs=mergeUgcJobs(S.ugcJobs,[data.ugc_job]);
+  return data;
+}
+
+async function startUgcVideo(){
+  if(!ugcConfigEnabled()){
+    toast("Ative MuAPI como provider UGC nas configurações.","warn");
+    return;
+  }
+  const selected=S.selectedUgcImage || defaultUgcImage();
+  if(!selected || !selected.url){
+    toast("Escolha uma imagem de referência.","warn");
+    return;
+  }
+  const ar=document.getElementById("ugc-aspect-ratio");
+  const dur=document.getElementById("ugc-duration");
+  const res=document.getElementById("ugc-resolution");
+  S.ugcAspectRatio=ar?.value || S.ugcAspectRatio || "9:16";
+  S.ugcDuration=Number(dur?.value || S.ugcDuration || 9);
+  S.ugcResolution=res?.value || S.ugcResolution || "720p";
+  const btn=document.getElementById("btn-start-ugc");
+  if(btn) btn.disabled=true;
+  try{
+    const data=await ugcAjaxRequest("stlai_start_ugc_video",{
+      parent_job_id:S.video.jobId || "",
+      preset:S.selectedUgcPreset || "ugc",
+      image_url:selected.url,
+      selected_image_label:selected.label || selected.key || "Imagem selecionada",
+      aspect_ratio:S.ugcAspectRatio,
+      duration:S.ugcDuration,
+      resolution:S.ugcResolution,
+      product_name:S.name || "",
+      product_description:S.desc || S.descTxt || ""
+    });
+    closeUgcModal();
+    renderUgcSection();
+    if(data.ugc_job_id) scheduleUgcPoll(data.parent_job_id || S.video.jobId, data.ugc_job_id);
+    toast("Vídeo UGC iniciado.","success");
+  }catch(err){
+    toast(err.message || "Falha ao iniciar UGC.","error");
+  }finally{
+    if(btn) btn.disabled=false;
+  }
+}
+
+function scheduleUgcPoll(parentJobId,ugcJobId,delay=5000){
+  if(!parentJobId || !ugcJobId) return;
+  if(S.ugcPollTimers[ugcJobId]) clearTimeout(S.ugcPollTimers[ugcJobId]);
+  S.ugcPollTimers[ugcJobId]=setTimeout(()=>pollUgcVideo(parentJobId,ugcJobId),delay);
+}
+
+async function pollUgcVideo(parentJobId,ugcJobId){
+  try{
+    const data=await ugcAjaxRequest("stlai_poll_ugc_video",{parent_job_id:parentJobId,ugc_job_id:ugcJobId});
+    renderUgcSection();
+    const job=(data.ugc_job || S.ugcJobs.find(j=>j.ugc_job_id===ugcJobId) || {});
+    if(job.status==="ready"){
+      delete S.ugcPollTimers[ugcJobId];
+      toast("Vídeo UGC pronto.","success");
+      return;
+    }
+    if(job.status==="failed"){
+      delete S.ugcPollTimers[ugcJobId];
+      toast(job.error_message || "Falha ao gerar UGC.","error");
+      return;
+    }
+    scheduleUgcPoll(parentJobId,ugcJobId,5000);
+  }catch(err){
+    renderUgcSection();
+    scheduleUgcPoll(parentJobId,ugcJobId,8000);
+  }
+}
+
+function retryUgcJob(ugcJobId){
+  const job=S.ugcJobs.find(item=>item.ugc_job_id===ugcJobId);
+  if(job){
+    S.selectedUgcPreset=job.preset || "ugc";
+    S.selectedUgcImage=S.imgs4.find(img=>img.url===job.image_url) || defaultUgcImage();
+  }
+  openUgcModal(S.selectedUgcPreset);
+}
+
 function renderSummaryVideo(){
   const card=document.getElementById("sum-video-card");
   const status=document.getElementById("sum-video-status");
@@ -4033,6 +4309,7 @@ function popSum(){
 
   renderSummaryScore();
   renderSummaryVideo();
+  renderUgcSection();
 
   const tags=["SEO","Informativo","Benefício","Diferencial"];
   let h='';

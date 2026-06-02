@@ -49,6 +49,7 @@ class STLAI_Video_Storage {
                 'clip_started_at' => array(),
                 'clip_finished_at' => array(),
                 'missing_clips'   => array( 1, 2, 3, 4 ),
+                'ugc_jobs'        => array(),
                 'final_video_url' => '',
                 'final_video_path' => '',
                 'final_video_duration' => 0,
@@ -153,13 +154,18 @@ class STLAI_Video_Storage {
 	        $merged_jobs = self::merge_clip_jobs( $existing_jobs, $incoming_jobs, $merged_clips );
 	        $merged_clips = self::merge_clips( $merged_clips, self::clips_from_clip_jobs( $merged_jobs ) );
 	        $merged_jobs = self::normalize_clip_jobs( $merged_jobs, $merged_clips );
+	        $merged_ugc_jobs = self::merge_ugc_jobs(
+	            self::normalize_ugc_jobs( $existing['ugc_jobs'] ?? array() ),
+	            self::normalize_ugc_jobs( $incoming['ugc_jobs'] ?? array() )
+	        );
 
-	        unset( $data['clips'], $data['partial_clips'], $data['clip_jobs'], $data['clip_statuses'], $data['clip_attempts'], $data['clip_errors'], $data['clip_started_at'], $data['clip_finished_at'], $data['missing_clips'] );
+	        unset( $data['clips'], $data['partial_clips'], $data['clip_jobs'], $data['clip_statuses'], $data['clip_attempts'], $data['clip_errors'], $data['clip_started_at'], $data['clip_finished_at'], $data['missing_clips'], $data['ugc_jobs'] );
 
 	        $job = array_merge( $existing, $data );
 	        $job['clips'] = $merged_clips;
 	        $job['partial_clips'] = $merged_clips;
 	        $job['clip_jobs'] = $merged_jobs;
+	        $job['ugc_jobs'] = $merged_ugc_jobs;
 
 	        if ( ! $reset_composition && empty( $incoming['final_video_url'] ?? '' ) && ! empty( $existing['final_video_url'] ?? '' ) ) {
 	            $job['final_video_url'] = $existing['final_video_url'];
@@ -180,6 +186,73 @@ class STLAI_Video_Storage {
 	        $job['progress'] = max( (int) ( $existing['progress'] ?? 0 ), (int) ( $incoming['progress'] ?? 0 ) );
 	        $job['progress_hint'] = max( (int) ( $existing['progress_hint'] ?? 0 ), (int) ( $incoming['progress_hint'] ?? 0 ), (int) $job['progress'] );
 
+	        return $job;
+	    }
+
+	    private static function normalize_ugc_jobs( $jobs ) {
+	        $normalized = array();
+	        if ( ! is_array( $jobs ) ) {
+	            return $normalized;
+	        }
+
+	        foreach ( $jobs as $job ) {
+	            if ( ! is_array( $job ) || empty( $job['ugc_job_id'] ) ) {
+	                continue;
+	            }
+	            $normalized[] = array(
+	                'ugc_job_id'          => sanitize_text_field( $job['ugc_job_id'] ?? '' ),
+	                'parent_job_id'       => sanitize_text_field( $job['parent_job_id'] ?? '' ),
+	                'preset'              => sanitize_key( $job['preset'] ?? '' ),
+	                'label'               => sanitize_text_field( $job['label'] ?? '' ),
+	                'provider'            => sanitize_key( $job['provider'] ?? 'muapi' ),
+	                'model'               => sanitize_text_field( $job['model'] ?? '' ),
+	                'request_id'          => sanitize_text_field( $job['request_id'] ?? '' ),
+	                'status'              => sanitize_key( $job['status'] ?? 'processing' ),
+	                'image_url'           => is_string( $job['image_url'] ?? '' ) ? (string) $job['image_url'] : '',
+	                'selected_image_label' => sanitize_text_field( $job['selected_image_label'] ?? '' ),
+	                'prompt_public'       => sanitize_textarea_field( $job['prompt_public'] ?? '' ),
+	                'prompt_final'        => sanitize_textarea_field( $job['prompt_final'] ?? '' ),
+	                'aspect_ratio'        => sanitize_text_field( $job['aspect_ratio'] ?? '9:16' ),
+	                'duration'            => (int) ( $job['duration'] ?? 9 ),
+	                'resolution'          => sanitize_key( $job['resolution'] ?? '720p' ),
+	                'video_url'           => esc_url_raw( $job['video_url'] ?? '' ),
+	                'error_message'       => sanitize_text_field( $job['error_message'] ?? '' ),
+	                'raw_status'          => sanitize_key( $job['raw_status'] ?? '' ),
+	                'created_at'          => sanitize_text_field( $job['created_at'] ?? '' ),
+	                'updated_at'          => sanitize_text_field( $job['updated_at'] ?? '' ),
+	            );
+	        }
+
+	        return $normalized;
+	    }
+
+	    private static function merge_ugc_jobs( array $existing, array $incoming ) {
+	        $by_id = array();
+	        foreach ( $existing as $job ) {
+	            if ( ! empty( $job['ugc_job_id'] ) ) {
+	                $by_id[ $job['ugc_job_id'] ] = $job;
+	            }
+	        }
+	        foreach ( $incoming as $job ) {
+	            if ( empty( $job['ugc_job_id'] ) ) {
+	                continue;
+	            }
+	            $by_id[ $job['ugc_job_id'] ] = self::stronger_ugc_job( $by_id[ $job['ugc_job_id'] ] ?? array(), $job );
+	        }
+	        return array_values( $by_id );
+	    }
+
+	    private static function stronger_ugc_job( array $existing, array $incoming ) {
+	        $job = array_merge( $existing, $incoming );
+	        if ( ! empty( $existing['video_url'] ) && empty( $incoming['video_url'] ) ) {
+	            $job['video_url'] = $existing['video_url'];
+	        }
+	        if ( 'ready' === ( $existing['status'] ?? '' ) && 'ready' !== ( $incoming['status'] ?? '' ) ) {
+	            $job['status'] = 'ready';
+	        }
+	        if ( empty( $incoming['created_at'] ) && ! empty( $existing['created_at'] ) ) {
+	            $job['created_at'] = $existing['created_at'];
+	        }
 	        return $job;
 	    }
 

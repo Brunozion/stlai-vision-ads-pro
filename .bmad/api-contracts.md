@@ -1770,3 +1770,168 @@ Runtime rules:
 - Mandatory rules preserve product identity, require safe first-frame framing for 16:9, block overlays/text/glitter/magic effects, and ask for natural motion across the environment.
 - The 16:9 mandatory block also prevents face changes, hair color/style changes, clothing changes, material changes, prop/accessory changes, alternate character versions, product redesign, product morphing and identity drift between clips.
 - AJAX diagnostics may include `video_clip_prompt_source`, `video_clip_prompt_key`, `prompt_key_used`, `custom_or_default_prompt`, `preservation_rules_attached`, `opening_frame_protection_attached`, `identity_lock_attached`, `prompt_contains_full_product_rule`, `prompt_contains_environment_motion_rule`, and `prompt_contains_no_crop_rule`.
+
+## UGC videos via MuAPI
+
+Admin settings:
+
+```json
+{
+  "ugcProvider": "muapi",
+  "muApiKey": "server_only",
+  "muApiBaseUrl": "https://api.muapi.ai",
+  "muApiModel": "seedance-2.0-image-to-video",
+  "ugcDefaultAspectRatio": "9:16",
+  "ugcDefaultDuration": "9",
+  "ugcDefaultResolution": "720p"
+}
+```
+
+Frontend localized safe config:
+
+```json
+{
+  "ugcNonce": "wp_nonce",
+  "ugcProvider": "muapi",
+  "ugcEnabled": true,
+  "ugcDefaults": {
+    "aspectRatio": "9:16",
+    "duration": "9",
+    "resolution": "720p"
+  }
+}
+```
+
+Rules:
+
+- `muApiKey` is never localized to the frontend.
+- UGC is parallel to the commercial video pipeline and must not mutate commercial clips, audio, renderer state, score or image gallery.
+- `ugc_jobs` is stored inside the parent video job and merged monotonically; a ready `video_url` must not regress to processing.
+
+### `stlai_start_ugc_video`
+
+Entrada esperada:
+
+```json
+{
+  "action": "stlai_start_ugc_video",
+  "nonce": "wp_nonce",
+  "job_id": "stlai_video_...",
+  "preset": "ugc",
+  "image_url": "https://.../image.png",
+  "aspect_ratio": "9:16",
+  "duration": "9",
+  "resolution": "720p",
+  "product_name": "Nome do produto",
+  "product_description": "Descricao do produto"
+}
+```
+
+Resposta de sucesso:
+
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "stlai_video_...",
+    "ugc_job": {
+      "id": "ugc_...",
+      "provider": "muapi",
+      "preset": "ugc",
+      "status": "processing",
+      "request_id": "provider_request_id",
+      "video_url": "",
+      "image_url": "https://...",
+      "created_at": "2026-06-01 10:00:00",
+      "updated_at": "2026-06-01 10:00:00"
+    },
+    "ugc_jobs": []
+  }
+}
+```
+
+### `stlai_poll_ugc_video`
+
+Entrada esperada:
+
+```json
+{
+  "action": "stlai_poll_ugc_video",
+  "nonce": "wp_nonce",
+  "job_id": "stlai_video_...",
+  "ugc_job_id": "ugc_..."
+}
+```
+
+Resposta de sucesso:
+
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "stlai_video_...",
+    "ugc_job": {
+      "id": "ugc_...",
+      "status": "ready",
+      "video_url": "https://.../video.mp4",
+      "provider_status": "succeeded"
+    },
+    "ugc_jobs": []
+  }
+}
+```
+
+### `stlai_get_ugc_jobs`
+
+Entrada esperada:
+
+```json
+{
+  "action": "stlai_get_ugc_jobs",
+  "nonce": "wp_nonce",
+  "job_id": "stlai_video_..."
+}
+```
+
+Resposta de sucesso:
+
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "stlai_video_...",
+    "ugc_jobs": []
+  }
+}
+```
+
+### MuAPI backend contract
+
+Start request:
+
+```text
+POST /api/v1/{model_or_endpoint}
+Header: x-api-key: server_only
+```
+
+Polling:
+
+```text
+GET /api/v1/predictions/{request_id}/result
+Header: x-api-key: server_only
+```
+
+Upload:
+
+```text
+POST /api/v1/upload_file
+Header: x-api-key: server_only
+```
+
+Normalized response fields:
+
+- request id: `request_id`, `id`, `prediction_id`, `data.request_id`, `data.id`
+- video URL: `outputs[0]`, `url`, `output.url`, `data.url`, `data.outputs[0]`
+- processing statuses: `queued`, `processing`, `running`, `pending`, `starting`
+- success statuses: `completed`, `succeeded`, `success`, `finished`
+- error statuses: `failed`, `error`, `cancelled`, `canceled`

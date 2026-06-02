@@ -24,6 +24,8 @@ require_once STLAI_VISION_ADS_PRO_DIR . 'includes/video/class-stlai-video-storag
 require_once STLAI_VISION_ADS_PRO_DIR . 'includes/video/class-stlai-elevenlabs-provider.php';
 require_once STLAI_VISION_ADS_PRO_DIR . 'includes/video/class-stlai-veo-provider.php';
 require_once STLAI_VISION_ADS_PRO_DIR . 'includes/video/class-stlai-video-job-service.php';
+require_once STLAI_VISION_ADS_PRO_DIR . 'includes/ugc/class-stlai-muapi-ugc-provider.php';
+require_once STLAI_VISION_ADS_PRO_DIR . 'includes/ugc/class-stlai-ugc-job-service.php';
 require_once STLAI_VISION_ADS_PRO_DIR . 'includes/video/class-stlai-video-ajax.php';
 
 // Register Shortcode
@@ -62,10 +64,19 @@ function stlai_vision_ads_pro_render_shortcode( $atts ) {
 
     // Get settings
     $options = get_option( 'stlai_vision_ads_pro_settings', array() );
+    $ugc_config = class_exists( 'STLAI_UGC_Job_Service' ) ? STLAI_UGC_Job_Service::ugc_config_status() : array();
     
     // Pass settings to JavaScript
     wp_localize_script( 'stlai-vision-ads-pro-script', 'stlaiConfig', array(
         'ajaxurl' => admin_url( 'admin-ajax.php' ),
+        'ugcNonce' => wp_create_nonce( 'stlai_ugc_video' ),
+        'ugcProvider' => $ugc_config['provider'] ?? 'none',
+        'ugcEnabled' => ! empty( $ugc_config['enabled'] ),
+        'ugcDefaults' => array(
+            'aspectRatio' => $ugc_config['defaultAspect'] ?? '9:16',
+            'duration' => $ugc_config['defaultDuration'] ?? 9,
+            'resolution' => $ugc_config['defaultResolution'] ?? '720p',
+        ),
         'txtApi' => $options['txtApi'] ?? 'openai',
         'imgApi' => $options['imgApi'] ?? 'openai',
         'apiKey' => $options['apiKey'] ?? '',

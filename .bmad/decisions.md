@@ -1579,3 +1579,53 @@ O helper `stlai_render_password_field` renderiza o input como `password` por pad
 ### Status
 
 Decidido
+
+## 2026-06-01 - UGC entra como módulo paralelo ao vídeo comercial
+
+### Decisao
+
+Adicionar o primeiro módulo real de "Vídeos UGC" na página Resultado, depois da seção de vídeo comercial, sem alterar o pipeline comercial existente.
+
+O UGC usa um serviço próprio (`STLAI_UGC_Job_Service`), um provider MuAPI próprio (`STLAI_MuAPI_UGC_Provider`) e salva os itens em `ugc_jobs` dentro do job principal de vídeo.
+
+### Motivo
+
+UGC precisa evoluir rápido para testes de produto e comparação de providers, mas não pode criar risco para o fluxo comercial já funcional com Veo, ElevenLabs e renderer.
+
+### Impacto
+
+A UI pública passa a ter modal de geração UGC com presets, imagem de referência, formato, duração e resolução. O backend ganha endpoints `stlai_start_ugc_video`, `stlai_poll_ugc_video` e `stlai_get_ugc_jobs`.
+
+API keys continuam exclusivamente no backend. O frontend recebe apenas `ugcEnabled`, provider público, defaults e nonce.
+
+### Status
+
+Decidido
+
+## 2026-06-01 - Prompts UGC editáveis por preset
+
+### Decisao
+
+Prompts de UGC ficam editáveis na página de Prompts do admin, separados por preset:
+
+- `ugc_prompt_social`
+- `ugc_prompt_tutorial`
+- `ugc_prompt_unboxing`
+- `ugc_prompt_product_review`
+- `ugc_prompt_virtual_try_on`
+- `ugc_prompt_hyper_motion`
+- `ugc_prompt_tv_spot`
+- `ugc_prompt_wild_card`
+- `ugc_prompt_pro_virtual_try_on`
+
+### Motivo
+
+Cada estilo de vídeo UGC exige intenção diferente. Deixar tudo em um único prompt tornaria os testes menos controláveis e mais arriscados.
+
+### Impacto
+
+O backend combina prompt do preset, contexto do produto, imagem de referência e regras de segurança antes de enviar ao provider. Futuramente outros providers podem reaproveitar os mesmos presets.
+
+### Status
+
+Decidido
