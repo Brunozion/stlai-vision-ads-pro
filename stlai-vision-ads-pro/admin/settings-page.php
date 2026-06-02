@@ -121,7 +121,7 @@ function stlai_vision_ads_pro_settings_init() {
     add_settings_field('seedanceModel', 'Seedance Model', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'seedanceModel'));
     add_settings_field('seedanceEndpoint', 'Seedance Endpoint', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'seedanceEndpoint'));
     add_settings_field('seedancePollEndpoint', 'Seedance Poll Endpoint', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'seedancePollEndpoint'));
-    add_settings_field('muApiKey', 'MuAPI Key', 'stlai_render_password_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'muApiKey'));
+    add_settings_field('muApiKey', 'MuAPI API Key', 'stlai_render_password_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'muApiKey'));
     add_settings_field('muApiBaseUrl', 'MuAPI Base URL', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'muApiBaseUrl'));
     add_settings_field('muApiModel', 'MuAPI Model', 'stlai_render_text_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'muApiModel', 'default' => 'seedance-2.0-image-to-video'));
     add_settings_field('ugcAtlasApiKey', 'Atlas Cloud API Key', 'stlai_render_password_field', 'stlai_config_ia_page', 'stlai_config_ugc_section', array('id' => 'ugcAtlasApiKey'));
@@ -544,9 +544,8 @@ function stlai_config_ia_page() {
                 stlai_admin_field_row( 'Provider UGC', 'stlai_render_select_field', array( 'id' => 'ugcProvider', 'default' => 'none', 'options' => array( 'none' => 'Desativado', 'muapi' => 'MuAPI', 'atlas' => 'Atlas Cloud', 'fal' => 'Fal.ai', 'seedance' => 'Seedance 2.0 / BytePlus ModelArk' ) ) );
                 stlai_admin_notice_row( 'Configure um provider UGC para habilitar geração no Resultado. Nenhuma API key é enviada ao frontend.', 'notice-info', 'stlai-ugc-provider-row stlai-ugc-provider-none' );
 
-                stlai_admin_field_row( 'MuAPI Key', 'stlai_render_password_field', array( 'id' => 'muApiKey' ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi' );
-                stlai_admin_field_row( 'MuAPI Base URL', 'stlai_render_text_field', array( 'id' => 'muApiBaseUrl', 'default' => 'https://api.muapi.ai' ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi' );
-                stlai_admin_field_row( 'MuAPI Model/Endpoint', 'stlai_render_text_field', array( 'id' => 'muApiModel', 'default' => 'seedance-2.0-image-to-video', 'description' => 'Endpoint enviado para /api/v1/{modelo}. Ajuste conforme o modelo liberado na sua conta MuAPI.' ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi' );
+                stlai_admin_field_row( 'MuAPI API Key', 'stlai_render_password_field', array( 'id' => 'muApiKey' ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi' );
+                stlai_admin_field_row( 'MuAPI Model', 'stlai_render_text_field', array( 'id' => 'muApiModel', 'default' => 'seedance-2.0-image-to-video', 'description' => 'Modelo/endpoint MuAPI. Ex: sd-2-vip-first-last-frame-1080p. O plugin chamará automaticamente /api/v1/{modelo}.' ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi' );
 
                 stlai_admin_field_row( 'Atlas Cloud API Key', 'stlai_render_password_field', array( 'id' => 'ugcAtlasApiKey' ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );
                 stlai_admin_field_row( 'Atlas Cloud Base URL', 'stlai_render_text_field', array( 'id' => 'ugcAtlasBaseUrl', 'default' => 'https://api.atlascloud.ai' ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );

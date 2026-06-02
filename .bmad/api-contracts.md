@@ -1907,33 +1907,59 @@ Resposta de sucesso:
 
 ### MuAPI backend contract
 
+Base URL:
+
+```text
+https://api.muapi.ai
+```
+
 Start request:
 
 ```text
-POST /api/v1/{model_or_endpoint}
+POST {base_url}/api/v1/{model}
 Header: x-api-key: server_only
+```
+
+Payload for public images:
+
+```json
+{
+  "prompt": "final prompt",
+  "image_url": "https://...",
+  "aspect_ratio": "9:16",
+  "duration": 5,
+  "resolution": "720p"
+}
 ```
 
 Polling:
 
 ```text
-GET /api/v1/predictions/{request_id}/result
+GET {base_url}/api/v1/predictions/{request_id}/result
 Header: x-api-key: server_only
 ```
 
 Upload:
 
 ```text
-POST /api/v1/upload_file
+POST {base_url}/api/v1/upload_file
 Header: x-api-key: server_only
 ```
+
+Rules:
+
+- `muApiBaseUrl` is optional/legacy. Runtime normalizes empty values to `https://api.muapi.ai`.
+- If `muApiBaseUrl` was saved as `https://api.muapi.ai/api/v1/model`, runtime extracts base `https://api.muapi.ai` and model `model` when `muApiModel` is empty.
+- `muApiModel` may be a model/endpoint string. Runtime strips `api/v1/`, leading slashes and full URL prefixes.
+- Public `http/https` image URLs are sent directly as `image_url`.
+- `upload_file` is fallback only for non-public images or when MuAPI rejects a public image URL as invalid/inaccessible.
 
 Normalized response fields:
 
 - request id: `request_id`, `id`, `prediction_id`, `data.request_id`, `data.id`
-- video URL: `outputs[0]`, `url`, `output.url`, `data.url`, `data.outputs[0]`
-- processing statuses: `queued`, `processing`, `running`, `pending`, `starting`
-- success statuses: `completed`, `succeeded`, `success`, `finished`
+- video URL: `outputs[0]`, `url`, `video_url`, `output.url`, `data.url`, `data.outputs[0]`, `data.output.url`, `result.outputs[0]`, `result.url`, `result.output.url`
+- processing statuses: `queued`, `processing`, `running`, `pending`, `starting`, `in_progress`
+- success statuses: `completed`, `succeeded`, `success`, `done`, `ready`, `finished`
 - error statuses: `failed`, `error`, `cancelled`, `canceled`
 
 ## UGC multi-provider

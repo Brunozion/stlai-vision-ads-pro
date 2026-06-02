@@ -75,6 +75,7 @@ class STLAI_UGC_Job_Service {
             'status_url'          => '',
             'result_url'          => '',
             'endpoint_used'       => '',
+            'provider_debug'      => array(),
             'status'              => 'queued',
             'image_url'           => $validated['image_url'],
             'selected_image_label' => $validated['selected_image_label'],
@@ -120,6 +121,7 @@ class STLAI_UGC_Job_Service {
         $ugc_job['status_url'] = esc_url_raw( $started['status_url'] ?? '' );
         $ugc_job['result_url'] = esc_url_raw( $started['result_url'] ?? '' );
         $ugc_job['endpoint_used'] = sanitize_text_field( $started['endpoint_used'] ?? '' );
+        $ugc_job['provider_debug'] = self::sanitize_provider_debug( $started['provider_debug'] ?? array() );
         $ugc_job['raw_status'] = sanitize_key( $started['raw_status'] ?? 'processing' );
         if ( ! empty( $ugc_job['video_url'] ) ) {
             $ugc_job['status'] = 'ready';
@@ -185,6 +187,7 @@ class STLAI_UGC_Job_Service {
             $ugc_job['request_id'] = sanitize_text_field( $polled['request_id'] ?? ( $ugc_job['request_id'] ?? $operation_id ) );
             $ugc_job['status_url'] = esc_url_raw( $polled['status_url'] ?? ( $ugc_job['status_url'] ?? '' ) );
             $ugc_job['result_url'] = esc_url_raw( $polled['result_url'] ?? ( $ugc_job['result_url'] ?? '' ) );
+            $ugc_job['provider_debug'] = self::sanitize_provider_debug( $polled['provider_debug'] ?? ( $ugc_job['provider_debug'] ?? array() ) );
             $ugc_job['error_message'] = 'failed' === $ugc_job['status'] ? ( $polled['message'] ?? 'Falha ao gerar UGC.' ) : '';
         }
         $ugc_job['updated_at'] = current_time( 'mysql' );
@@ -426,6 +429,27 @@ class STLAI_UGC_Job_Service {
         );
     }
 
+    private static function sanitize_provider_debug( $debug ) {
+        if ( ! is_array( $debug ) ) {
+            return array();
+        }
+        $safe = array();
+        foreach ( $debug as $key => $value ) {
+            $safe_key = sanitize_key( $key );
+            if ( in_array( $safe_key, array( 'api_key', 'x_api_key', 'authorization', 'secret', 'token' ), true ) ) {
+                continue;
+            }
+            if ( is_bool( $value ) ) {
+                $safe[ $safe_key ] = $value;
+            } elseif ( is_array( $value ) ) {
+                $safe[ $safe_key ] = array_values( array_map( 'sanitize_text_field', array_map( 'strval', $value ) ) );
+            } else {
+                $safe[ $safe_key ] = sanitize_text_field( (string) $value );
+            }
+        }
+        return $safe;
+    }
+
     private static function provider_key_from_settings( array $settings ) {
         return sanitize_key( (string) ( $settings['ugcProvider'] ?? 'none' ) );
     }
@@ -471,8 +495,10 @@ class STLAI_UGC_Job_Service {
         if ( 'seedance' === $provider_key ) {
             return sanitize_text_field( (string) ( $settings['seedanceModel'] ?? STLAI_Seedance_UGC_Provider::DEFAULT_MODEL ) ) ?: STLAI_Seedance_UGC_Provider::DEFAULT_MODEL;
         }
-        $model = sanitize_text_field( (string) ( $settings['muApiModel'] ?? STLAI_MuAPI_UGC_Provider::DEFAULT_MODEL ) );
-        return $model ?: STLAI_MuAPI_UGC_Provider::DEFAULT_MODEL;
+        return STLAI_MuAPI_UGC_Provider::normalize_model(
+            (string) ( $settings['muApiModel'] ?? '' ),
+            (string) ( $settings['muApiBaseUrl'] ?? '' )
+        );
     }
 
     public static function extract_provider_status( array $data ) {

@@ -14,27 +14,46 @@ class STLAI_MuAPI_UGC_Provider {
             return $config;
         }
 
-        $image_url = self::prepare_image_url( $payload['image_url'] ?? '', $config );
-        if ( is_wp_error( $image_url ) ) {
-            return $image_url;
+        $original_image_url = trim( (string) ( $payload['image_url'] ?? '' ) );
+        if ( '' === $original_image_url ) {
+            return new WP_Error( 'UGC_IMAGE_MISSING', 'Escolha uma imagem de referência para gerar o UGC.' );
         }
 
-        $body = array_filter(
-            array(
-                'prompt'       => (string) ( $payload['prompt'] ?? '' ),
-                'image_url'    => $image_url,
-                'aspect_ratio' => sanitize_text_field( (string) ( $payload['aspect_ratio'] ?? '9:16' ) ),
-                'duration'     => (int) ( $payload['duration'] ?? 9 ),
-                'resolution'   => sanitize_key( (string) ( $payload['resolution'] ?? '720p' ) ),
-                'quality'      => sanitize_key( (string) ( $payload['quality'] ?? '' ) ),
-            ),
-            function ( $value ) {
-                return '' !== $value && null !== $value;
+        $direct_image_url = self::is_public_url( $original_image_url ) ? esc_url_raw( $original_image_url ) : '';
+        $upload_fallback_used = false;
+
+        if ( $direct_image_url ) {
+            $started = self::start_with_image_url( $payload, $config, $direct_image_url, false );
+            if ( ! is_wp_error( $started ) ) {
+                return $started;
             }
-        );
+            $error_data = $started->get_error_data();
+            if ( ! self::should_retry_with_upload( $error_data ) ) {
+                return $started;
+            }
+            $uploaded = self::upload_public_url( $direct_image_url, $config );
+            if ( is_wp_error( $uploaded ) ) {
+                return $started;
+            }
+            $upload_fallback_used = true;
+            return self::start_with_image_url( $payload, $config, $uploaded, $upload_fallback_used );
+        }
+
+        $uploaded = self::upload_fallback_image( $original_image_url, $config );
+        if ( is_wp_error( $uploaded ) ) {
+            return $uploaded;
+        }
+        $upload_fallback_used = true;
+
+        return self::start_with_image_url( $payload, $config, $uploaded, $upload_fallback_used );
+    }
+
+    private static function start_with_image_url( array $payload, array $config, $image_url, $upload_fallback_used ) {
+        $body = self::start_body( $payload, $image_url );
+        $start_url = self::start_url( $config );
 
         $response = wp_remote_post(
-            self::endpoint_url( $config['base_url'], $config['model'] ),
+            $start_url,
             array(
                 'headers' => array(
                     'Content-Type' => 'application/json',
@@ -49,10 +68,17 @@ class STLAI_MuAPI_UGC_Provider {
             return new WP_Error( 'MUAPI_START_REQUEST_FAILED', $response->get_error_message() );
         }
 
-        $status = (int) wp_remote_retrieve_response_code( $response );
+        $http_status = (int) wp_remote_retrieve_response_code( $response );
         $data = json_decode( wp_remote_retrieve_body( $response ), true );
-        if ( $status < 200 || $status >= 300 || ! is_array( $data ) ) {
-            return new WP_Error( 'MUAPI_START_FAILED', self::safe_error_message( $data, 'MuAPI não iniciou o vídeo UGC.' ) );
+        if ( $http_status < 200 || $http_status >= 300 || ! is_array( $data ) ) {
+            return new WP_Error(
+                'MUAPI_START_FAILED',
+                self::safe_error_message( $data, 'MuAPI não iniciou o vídeo UGC.' ),
+                array(
+                    'response' => is_array( $data ) ? $data : array(),
+                    'http_status' => $http_status,
+                )
+            );
         }
 
         $request_id = self::extract_request_id( $data );
@@ -60,6 +86,8 @@ class STLAI_MuAPI_UGC_Provider {
         if ( empty( $request_id ) && empty( $video_url ) ) {
             return new WP_Error( 'MUAPI_REQUEST_ID_MISSING', 'MuAPI não retornou request_id nem vídeo pronto para o vídeo UGC.' );
         }
+
+        $poll_url = $request_id ? self::poll_url( $config, $request_id ) : '';
 
         return array(
             'success'      => true,
@@ -70,10 +98,11 @@ class STLAI_MuAPI_UGC_Provider {
             'provider'     => 'muapi',
             'model'        => $config['model'],
             'image_url'    => $image_url,
-            'status_url'   => $request_id ? trailingslashit( $config['base_url'] ) . 'api/v1/predictions/' . rawurlencode( $request_id ) . '/result' : '',
-            'result_url'   => $request_id ? trailingslashit( $config['base_url'] ) . 'api/v1/predictions/' . rawurlencode( $request_id ) . '/result' : '',
+            'status_url'   => $poll_url,
+            'result_url'   => $poll_url,
             'raw_status'   => sanitize_key( (string) ( $data['status'] ?? 'processing' ) ),
             'endpoint_used' => 'api/v1/' . ltrim( $config['model'], '/' ),
+            'provider_debug' => self::safe_debug( $config, $start_url, $poll_url, $request_id, $data, ! $upload_fallback_used, $upload_fallback_used ),
         );
     }
 
@@ -89,9 +118,12 @@ class STLAI_MuAPI_UGC_Provider {
         }
 
         $response = wp_remote_get(
-            trailingslashit( $config['base_url'] ) . 'api/v1/predictions/' . rawurlencode( $request_id ) . '/result',
+            self::poll_url( $config, $request_id ),
             array(
-                'headers' => array( 'x-api-key' => $config['api_key'] ),
+                'headers' => array(
+                    'Content-Type' => 'application/json',
+                    'x-api-key'    => $config['api_key'],
+                ),
                 'timeout' => self::DEFAULT_TIMEOUT,
             )
         );
@@ -109,6 +141,11 @@ class STLAI_MuAPI_UGC_Provider {
         $raw_status = STLAI_UGC_Job_Service::extract_provider_status( $data );
         $video_url = self::extract_video_url( $data );
         $status = STLAI_UGC_Job_Service::normalize_provider_status( $raw_status, $video_url );
+        if ( 'failed' === $status && in_array( sanitize_key( (string) $raw_status ), array( 'completed', 'succeeded', 'success', 'done', 'ready' ), true ) && empty( $video_url ) ) {
+            return new WP_Error( 'MUAPI_COMPLETED_WITHOUT_VIDEO', 'MuAPI concluiu, mas não retornou URL de vídeo.' );
+        }
+
+        $poll_url = self::poll_url( $config, $request_id );
 
         return array(
             'success'      => true,
@@ -119,9 +156,10 @@ class STLAI_MuAPI_UGC_Provider {
             'model'        => $config['model'],
             'operation_id' => $request_id,
             'request_id'   => $request_id,
-            'status_url'   => trailingslashit( $config['base_url'] ) . 'api/v1/predictions/' . rawurlencode( $request_id ) . '/result',
-            'result_url'   => trailingslashit( $config['base_url'] ) . 'api/v1/predictions/' . rawurlencode( $request_id ) . '/result',
+            'status_url'   => $poll_url,
+            'result_url'   => $poll_url,
             'message'      => STLAI_UGC_Job_Service::message_for_provider_status( $status, $video_url ),
+            'provider_debug' => self::safe_debug( $config, self::start_url( $config ), $poll_url, $request_id, $data, true, false ),
         );
     }
 
@@ -136,45 +174,90 @@ class STLAI_MuAPI_UGC_Provider {
             return new WP_Error( 'MUAPI_KEY_MISSING', 'MuAPI Key não configurada.' );
         }
 
-        $base_url = esc_url_raw( (string) ( $settings['muApiBaseUrl'] ?? self::DEFAULT_BASE_URL ) );
-        if ( empty( $base_url ) ) {
-            $base_url = self::DEFAULT_BASE_URL;
-        }
-
-        $model = sanitize_text_field( (string) ( $settings['muApiModel'] ?? self::DEFAULT_MODEL ) );
-        if ( empty( $model ) ) {
-            $model = self::DEFAULT_MODEL;
-        }
+        $legacy_base_url = (string) ( $settings['muApiBaseUrl'] ?? '' );
+        $base_url = self::normalize_base_url( $legacy_base_url );
+        $model = self::normalize_model( (string) ( $settings['muApiModel'] ?? '' ), $legacy_base_url );
 
         return array(
             'api_key'  => $api_key,
-            'base_url' => untrailingslashit( $base_url ),
-            'model'    => ltrim( $model, '/' ),
+            'base_url' => $base_url,
+            'model'    => $model,
         );
     }
 
-    private static function prepare_image_url( $image_url, array $config ) {
-        $image_url = trim( (string) $image_url );
-        if ( '' === $image_url ) {
-            return new WP_Error( 'UGC_IMAGE_MISSING', 'Escolha uma imagem de referência para gerar o UGC.' );
+    public static function normalize_base_url( $base_url ) {
+        $base_url = trim( (string) $base_url );
+        if ( '' === $base_url ) {
+            return self::DEFAULT_BASE_URL;
         }
+        $base_url = preg_replace( '#/api/v1(?:/.*)?$#i', '', $base_url );
+        $base_url = esc_url_raw( $base_url );
+        return untrailingslashit( $base_url ?: self::DEFAULT_BASE_URL );
+    }
 
-        if ( preg_match( '#^https?://#i', $image_url ) ) {
-            return esc_url_raw( $image_url );
+    public static function normalize_model( $model, $legacy_base_url = '' ) {
+        $model = trim( (string) $model );
+        if ( '' === $model && preg_match( '#/api/v1/(.+)$#i', (string) $legacy_base_url, $matches ) ) {
+            $model = $matches[1];
         }
-
-        if ( 0 !== strpos( $image_url, 'data:image/' ) ) {
-            return new WP_Error( 'UGC_IMAGE_INVALID', 'Imagem de referência inválida para UGC.' );
+        if ( preg_match( '#^https?://#i', $model ) ) {
+            $path = (string) wp_parse_url( $model, PHP_URL_PATH );
+            if ( preg_match( '#/api/v1/(.+)$#i', $path, $matches ) ) {
+                $model = $matches[1];
+            } else {
+                $parts = array_values( array_filter( explode( '/', $path ) ) );
+                $model = end( $parts ) ?: '';
+            }
         }
+        $model = preg_replace( '#^/?api/v1/#i', '', $model );
+        $model = trim( $model, " \t\n\r\0\x0B/" );
+        $model = sanitize_text_field( $model );
+        return $model ?: self::DEFAULT_MODEL;
+    }
 
-        return self::upload_data_url( $image_url, $config );
+    private static function start_body( array $payload, $image_url ) {
+        return array_filter(
+            array(
+                'prompt'       => (string) ( $payload['prompt'] ?? '' ),
+                'image_url'    => esc_url_raw( $image_url ),
+                'aspect_ratio' => sanitize_text_field( (string) ( $payload['aspect_ratio'] ?? '9:16' ) ),
+                'duration'     => (int) ( $payload['duration'] ?? 9 ),
+                'resolution'   => sanitize_key( (string) ( $payload['resolution'] ?? '720p' ) ),
+                'quality'      => sanitize_key( (string) ( $payload['quality'] ?? '' ) ),
+                'mode'         => sanitize_text_field( (string) ( $payload['mode'] ?? '' ) ),
+                'name'         => sanitize_text_field( (string) ( $payload['name'] ?? '' ) ),
+            ),
+            function ( $value ) {
+                return '' !== $value && null !== $value;
+            }
+        );
+    }
+
+    private static function upload_fallback_image( $image_url, array $config ) {
+        if ( self::is_public_url( $image_url ) ) {
+            return self::upload_public_url( $image_url, $config );
+        }
+        if ( 0 === strpos( $image_url, 'data:image/' ) ) {
+            return self::upload_data_url( $image_url, $config );
+        }
+        return new WP_Error( 'UGC_IMAGE_INVALID', 'Imagem de referência inválida para UGC.' );
+    }
+
+    private static function upload_public_url( $image_url, array $config ) {
+        $response = wp_remote_get( $image_url, array( 'timeout' => self::DEFAULT_TIMEOUT ) );
+        if ( is_wp_error( $response ) ) {
+            return new WP_Error( 'MUAPI_UPLOAD_DOWNLOAD_FAILED', 'Não foi possível baixar a imagem para fallback MuAPI.' );
+        }
+        $status = (int) wp_remote_retrieve_response_code( $response );
+        $body = wp_remote_retrieve_body( $response );
+        if ( $status < 200 || $status >= 300 || '' === $body ) {
+            return new WP_Error( 'MUAPI_UPLOAD_DOWNLOAD_BAD_RESPONSE', 'Não foi possível preparar a imagem para fallback MuAPI.' );
+        }
+        $content_type = sanitize_mime_type( (string) wp_remote_retrieve_header( $response, 'content-type' ) );
+        return self::upload_binary( $body, $content_type ?: 'image/jpeg', $config );
     }
 
     private static function upload_data_url( $data_url, array $config ) {
-        if ( ! class_exists( 'CURLFile' ) ) {
-            return new WP_Error( 'MUAPI_UPLOAD_UNAVAILABLE', 'Upload MuAPI indisponível neste servidor.' );
-        }
-
         if ( ! preg_match( '#^data:(image/[a-zA-Z0-9.+-]+);base64,(.+)$#', $data_url, $matches ) ) {
             return new WP_Error( 'MUAPI_UPLOAD_INVALID_DATA_URL', 'Imagem base64 inválida para upload UGC.' );
         }
@@ -183,6 +266,14 @@ class STLAI_MuAPI_UGC_Provider {
         $binary = base64_decode( $matches[2], true );
         if ( false === $binary ) {
             return new WP_Error( 'MUAPI_UPLOAD_DECODE_FAILED', 'Não foi possível preparar a imagem para MuAPI.' );
+        }
+
+        return self::upload_binary( $binary, $mime, $config );
+    }
+
+    private static function upload_binary( $binary, $mime, array $config ) {
+        if ( ! class_exists( 'CURLFile' ) ) {
+            return new WP_Error( 'MUAPI_UPLOAD_UNAVAILABLE', 'Upload MuAPI indisponível neste servidor.' );
         }
 
         $extension = 'jpg';
@@ -222,7 +313,7 @@ class STLAI_MuAPI_UGC_Provider {
 
         $url = self::extract_video_url( $data );
         if ( ! $url ) {
-            $url = esc_url_raw( (string) ( $data['file_url'] ?? ( $data['data']['file_url'] ?? '' ) ) );
+            $url = esc_url_raw( (string) ( $data['file_url'] ?? ( $data['data']['file_url'] ?? ( $data['data']['url'] ?? '' ) ) ) );
         }
         if ( ! $url ) {
             return new WP_Error( 'MUAPI_UPLOAD_URL_MISSING', 'MuAPI não retornou URL da imagem enviada.' );
@@ -231,11 +322,16 @@ class STLAI_MuAPI_UGC_Provider {
         return $url;
     }
 
-    private static function endpoint_url( $base_url, $model ) {
-        if ( preg_match( '#^https?://#i', $model ) ) {
-            return esc_url_raw( $model );
-        }
-        return trailingslashit( $base_url ) . 'api/v1/' . ltrim( $model, '/' );
+    private static function start_url( array $config ) {
+        return trailingslashit( $config['base_url'] ) . 'api/v1/' . ltrim( $config['model'], '/' );
+    }
+
+    private static function poll_url( array $config, $request_id ) {
+        return trailingslashit( $config['base_url'] ) . 'api/v1/predictions/' . rawurlencode( $request_id ) . '/result';
+    }
+
+    private static function is_public_url( $url ) {
+        return is_string( $url ) && preg_match( '#^https?://#i', $url );
     }
 
     private static function extract_request_id( array $data ) {
@@ -259,11 +355,16 @@ class STLAI_MuAPI_UGC_Provider {
         $candidates = array(
             $data['outputs'][0] ?? '',
             $data['url'] ?? '',
+            $data['video_url'] ?? '',
             $data['output']['url'] ?? '',
             $data['data']['url'] ?? '',
             $data['data']['outputs'][0] ?? '',
             $data['data']['output']['url'] ?? '',
+            $data['result']['outputs'][0] ?? '',
+            $data['result']['url'] ?? '',
+            $data['result']['output']['url'] ?? '',
             $data['file_url'] ?? '',
+            $data['data']['file_url'] ?? '',
         );
 
         foreach ( $candidates as $candidate ) {
@@ -273,6 +374,35 @@ class STLAI_MuAPI_UGC_Provider {
         }
 
         return '';
+    }
+
+    private static function should_retry_with_upload( $error_data ) {
+        if ( ! is_array( $error_data ) ) {
+            return false;
+        }
+        $response = $error_data['response'] ?? array();
+        $message = self::safe_error_message( $response, '' );
+        $message = strtolower( $message );
+        foreach ( array( 'image_url', 'image url', 'invalid image', 'invalid url', 'inaccessible', 'not accessible', 'download', 'fetch', 'cannot access' ) as $needle ) {
+            if ( false !== strpos( $message, $needle ) ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function safe_debug( array $config, $start_url, $poll_url, $request_id, array $response, $direct_image_url_used, $upload_fallback_used ) {
+        return array(
+            'provider'              => 'muapi',
+            'base_url_normalized'   => esc_url_raw( $config['base_url'] ),
+            'model_normalized'      => sanitize_text_field( $config['model'] ),
+            'start_url_sem_key'     => esc_url_raw( $start_url ),
+            'poll_url_sem_key'      => esc_url_raw( $poll_url ),
+            'direct_image_url_used' => (bool) $direct_image_url_used,
+            'upload_fallback_used'  => (bool) $upload_fallback_used,
+            'request_id'            => sanitize_text_field( $request_id ),
+            'response_keys'         => array_values( array_map( 'sanitize_key', array_keys( $response ) ) ),
+        );
     }
 
     private static function safe_error_message( $data, $fallback ) {

@@ -1959,3 +1959,31 @@ Status:
 
 - Implementação concluída em código.
 - Falta teste real no WordPress com credenciais ativas de cada provider.
+
+## 2026-06-02 - MuAPI UGC alinhado ao padrão Open Generative AI
+
+Arquivos alterados:
+
+- stlai-vision-ads-pro/includes/ugc/class-stlai-muapi-ugc-provider.php
+- stlai-vision-ads-pro/includes/ugc/class-stlai-ugc-job-service.php
+- stlai-vision-ads-pro/includes/video/class-stlai-video-storage.php
+- stlai-vision-ads-pro/admin/settings-page.php
+- STATE.md
+- .bmad/active-context.md
+- .bmad/decisions.md
+- .bmad/api-contracts.md
+
+O que foi feito:
+
+- MuAPI usa Base URL padrão fixa `https://api.muapi.ai`.
+- O endpoint de start é resolvido automaticamente por model: `POST {base}/api/v1/{model}`.
+- Polling segue `GET {base}/api/v1/predictions/{request_id}/result`.
+- `image_url` pública é enviada diretamente no payload.
+- `/api/v1/upload_file` virou fallback para `data:image` ou URL pública rejeitada pela MuAPI.
+- Admin MuAPI mostra apenas API Key, Model e defaults UGC no card principal.
+- Valores antigos de `muApiBaseUrl` com `/api/v1/{endpoint}` são normalizados em runtime.
+
+Status:
+
+- Implementação concluída em código.
+- Falta teste real no WordPress com chave MuAPI ativa.

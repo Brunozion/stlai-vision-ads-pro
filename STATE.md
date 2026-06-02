@@ -22,6 +22,9 @@ fluxo comercial existente intacto.
 - UGC evoluído para multi-provider: MuAPI, Atlas Cloud, Fal.ai e Seedance/BytePlus,
   com adapters backend próprios, provider escolhido no admin e prompts/presets
   compartilhados.
+- MuAPI UGC simplificado para seguir o padrão Open Generative AI: Base URL default
+  `https://api.muapi.ai`, start em `/api/v1/{model}`, image_url pública enviada
+  direto e `upload_file` apenas como fallback.
 
 ## Fluxo de trabalho atual
 1. Pedir alteração ao Codex no VS Code.

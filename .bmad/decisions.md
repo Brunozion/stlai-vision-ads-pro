@@ -1675,3 +1675,23 @@ O admin tem campos de endpoint por provider. Fal.ai usa `status_url` retornada p
 ### Status
 
 Decidido
+
+## 2026-06-02 - MuAPI UGC usa image_url direta e upload apenas como fallback
+
+### Decisao
+
+O provider MuAPI UGC passa a seguir o padrão do Open Generative AI: Base URL default `https://api.muapi.ai`, start em `/api/v1/{model}`, polling em `/api/v1/predictions/{request_id}/result` e payload com `image_url` direta quando a imagem já é pública.
+
+`upload_file` fica restrito a fallback para imagens não públicas (`data:image`) ou quando a MuAPI rejeitar a URL pública por inacessibilidade/invalidade.
+
+### Motivo
+
+O fluxo anterior podia tentar upload antes do start e gerar `MUAPI_UPLOAD_BAD_RESPONSE` desnecessário. Para imagens vindas do WordPress/uploads, a MuAPI deve receber a URL diretamente.
+
+### Impacto
+
+Admin fica mais simples para MuAPI: API Key, Model e defaults. `muApiBaseUrl` continua compatível em runtime, mas é tratado como configuração avançada/legada. O provider normaliza base/model quando valores antigos incluem `/api/v1/{modelo}`.
+
+### Status
+
+Decidido

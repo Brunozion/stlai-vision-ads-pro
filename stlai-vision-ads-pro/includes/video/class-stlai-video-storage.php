@@ -212,6 +212,7 @@ class STLAI_Video_Storage {
 	                'status_url'          => esc_url_raw( $job['status_url'] ?? '' ),
 	                'result_url'          => esc_url_raw( $job['result_url'] ?? '' ),
 	                'endpoint_used'       => sanitize_text_field( $job['endpoint_used'] ?? '' ),
+	                'provider_debug'      => self::sanitize_ugc_provider_debug( $job['provider_debug'] ?? array() ),
 	                'status'              => sanitize_key( $job['status'] ?? 'processing' ),
 	                'image_url'           => is_string( $job['image_url'] ?? '' ) ? (string) $job['image_url'] : '',
 	                'selected_image_label' => sanitize_text_field( $job['selected_image_label'] ?? '' ),
@@ -245,6 +246,27 @@ class STLAI_Video_Storage {
 	            $by_id[ $job['ugc_job_id'] ] = self::stronger_ugc_job( $by_id[ $job['ugc_job_id'] ] ?? array(), $job );
 	        }
 	        return array_values( $by_id );
+	    }
+
+	    private static function sanitize_ugc_provider_debug( $debug ) {
+	        if ( ! is_array( $debug ) ) {
+	            return array();
+	        }
+	        $safe = array();
+	        foreach ( $debug as $key => $value ) {
+	            $safe_key = sanitize_key( $key );
+	            if ( in_array( $safe_key, array( 'api_key', 'x_api_key', 'authorization', 'secret', 'token' ), true ) ) {
+	                continue;
+	            }
+	            if ( is_bool( $value ) ) {
+	                $safe[ $safe_key ] = $value;
+	            } elseif ( is_array( $value ) ) {
+	                $safe[ $safe_key ] = array_values( array_map( 'sanitize_text_field', array_map( 'strval', $value ) ) );
+	            } else {
+	                $safe[ $safe_key ] = sanitize_text_field( (string) $value );
+	            }
+	        }
+	        return $safe;
 	    }
 
 	    private static function stronger_ugc_job( array $existing, array $incoming ) {
