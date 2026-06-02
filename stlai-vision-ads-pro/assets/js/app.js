@@ -125,6 +125,11 @@ const S = {
   ugcModalOpen: false,
   selectedUgcPreset: "ugc",
   selectedUgcImage: null,
+  ugc: {
+    selectedImageUrl: "",
+    selectedImageIndex: -1,
+    selectedImageLabel: ""
+  },
   ugcAspectRatio: window.stlaiConfig?.ugcDefaults?.aspectRatio || "9:16",
   ugcDuration: window.stlaiConfig?.ugcDefaults?.duration || 9,
   ugcResolution: window.stlaiConfig?.ugcDefaults?.resolution || "720p",
@@ -236,6 +241,40 @@ function resolveImageUrl(imageOrUrl){
   for(const candidate of candidates){
     const clean=normalizeMediaUrl(candidate);
     if(clean) return clean;
+  }
+  return "";
+}
+
+function getImagePublicUrl(image, element=null){
+  const dataset=element?.dataset || {};
+  const candidates=[
+    image?.full_url,
+    image?.fullUrl,
+    image?.url,
+    image?.image_url,
+    image?.imageUrl,
+    image?.download_url,
+    image?.downloadUrl,
+    image?.src,
+    image?.preview_url,
+    image?.previewUrl,
+    image?.original_url,
+    image?.originalUrl,
+    image?.generated_url,
+    image?.generatedUrl,
+    image?.prepared_frame_url,
+    image?.preparedFrameUrl,
+    image?.frame_url,
+    image?.frameUrl,
+    dataset.fullUrl,
+    dataset.url,
+    dataset.imageUrl,
+    dataset.downloadUrl,
+    dataset.src
+  ];
+  for(const candidate of candidates){
+    const clean=normalizeMediaUrl(candidate);
+    if(/^https?:\/\//i.test(clean)) return clean;
   }
   return "";
 }
@@ -3614,7 +3653,7 @@ function ugcAspectClass(aspect){
 }
 
 function defaultUgcImage(){
-  return [S.imgs4.find(img=>img.key==="hero"), S.imgs4.find(img=>img.key==="capa"), S.imgs4[0]].filter(Boolean)[0] || null;
+  return [S.imgs4.find(img=>img.key==="hero"), S.imgs4.find(img=>img.key==="capa"), S.imgs4[0]].filter(img=>img && getImagePublicUrl(img))[0] || S.imgs4.find(img=>getImagePublicUrl(img)) || null;
 }
 
 function renderUgcSection(){
@@ -3663,9 +3702,14 @@ function renderUgcPresetGrid(){
 function renderUgcImageList(){
   const list=document.getElementById("ugc-image-list");
   if(!list) return;
-  const images=S.imgs4.filter(img=>img && img.url);
-  if(!S.selectedUgcImage && images.length) S.selectedUgcImage=defaultUgcImage() || images[0];
-  list.innerHTML=images.map(img=>`<button type="button" class="ugc-image-choice ${S.selectedUgcImage?.key===img.key?"active":""}" onclick="selectUgcImage('${escAttr(img.key)}')"><img src="${escAttr(img.url)}" alt="${escAttr(img.label || img.key)}"><span>${esc(img.label || img.key)}</span></button>`).join("");
+  const images=S.imgs4.filter(Boolean);
+  if((!S.selectedUgcImage || !getImagePublicUrl(S.selectedUgcImage)) && images.length) selectUgcImage((defaultUgcImage() || images[0])?.key, false);
+  list.innerHTML=images.map((img,index)=>{
+    const publicUrl=getImagePublicUrl(img);
+    const thumb=normalizeMediaUrl(img.preview_url || img.previewUrl || img.src || img.url || publicUrl);
+    const disabled=!publicUrl;
+    return `<button type="button" class="ugc-image-choice ${S.selectedUgcImage?.key===img.key?"active":""}" data-image-index="${index}" data-image-url="${escAttr(publicUrl)}" data-url="${escAttr(publicUrl)}" data-src="${escAttr(thumb)}" ${disabled?"disabled aria-disabled=\"true\"":""} onclick="selectUgcImage('${escAttr(img.key)}', true, this)">${thumb?`<img src="${escAttr(thumb)}" alt="${escAttr(img.label || img.key)}">`:""}<span>${esc(img.label || img.key || "Imagem")}${disabled?" indisponível":""}</span></button>`;
+  }).join("");
 }
 
 function openUgcModal(preset=""){
@@ -3702,9 +3746,15 @@ function selectUgcPreset(preset){
   renderUgcPresetGrid();
 }
 
-function selectUgcImage(key){
+function selectUgcImage(key, shouldRender=true, element=null){
   S.selectedUgcImage=S.imgs4.find(img=>img.key===key) || S.selectedUgcImage;
-  renderUgcImageList();
+  const selected=S.selectedUgcImage || {};
+  const selectedIndex=S.imgs4.findIndex(img=>img && img.key===key);
+  S.ugc.selectedImageUrl=getImagePublicUrl(selected, element);
+  S.ugc.selectedImageIndex=selectedIndex;
+  S.ugc.selectedImageLabel=String(selected.label || selected.key || "Imagem selecionada");
+  console.log("[STLAI UGC] selected image url", S.ugc.selectedImageUrl);
+  if(shouldRender) renderUgcImageList();
 }
 
 async function ugcAjaxRequest(action,payload={}){
@@ -3736,8 +3786,9 @@ async function startUgcVideo(){
     return;
   }
   const selected=S.selectedUgcImage || defaultUgcImage();
-  if(!selected || !selected.url){
-    toast("Escolha uma imagem de referência.","warn");
+  const selectedImageUrl=S.ugc.selectedImageUrl || getImagePublicUrl(selected);
+  if(!selected || !/^https?:\/\//i.test(selectedImageUrl)){
+    toast("Selecione uma imagem válida para gerar UGC.","warn");
     return;
   }
   const ar=document.getElementById("ugc-aspect-ratio");
@@ -3752,8 +3803,11 @@ async function startUgcVideo(){
     const data=await ugcAjaxRequest("stlai_start_ugc_video",{
       parent_job_id:S.video.jobId || "",
       preset:S.selectedUgcPreset || "ugc",
-      image_url:selected.url,
-      selected_image_label:selected.label || selected.key || "Imagem selecionada",
+      image_url:selectedImageUrl,
+      reference_image_url:selectedImageUrl,
+      product_image_url:selectedImageUrl,
+      selected_image_url:selectedImageUrl,
+      selected_image_label:S.ugc.selectedImageLabel || selected.label || selected.key || "Imagem selecionada",
       aspect_ratio:S.ugcAspectRatio,
       duration:S.ugcDuration,
       resolution:S.ugcResolution,
@@ -4826,7 +4880,7 @@ function parseJSON(txt){
 function esc(s){
   return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
-function escAttr(s){return String(s ?? "").replace(/'/g,"&#39;");}
+function escAttr(s){return String(s ?? "").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/'/g,"&#39;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 function openLightbox(url, type="image", label="Imagem ampliada") {
   const lb = document.getElementById('lightbox');
   const img=document.getElementById('lightbox-img');

@@ -28,6 +28,9 @@ fluxo comercial existente intacto.
 - Correção definitiva do fallback MuAPI: URL pública `http/https` não tenta mais
   `upload_file` automaticamente; se o start falhar, retorna `MUAPI_START_FAILED`
   com debug seguro.
+- Corrigido envio da imagem selecionada no modal UGC: frontend resolve múltiplos
+  campos de URL pública, envia `image_url` e aliases, e o backend aceita aliases
+  antes de chamar o provider.
 
 ## Fluxo de trabalho atual
 1. Pedir alteração ao Codex no VS Code.

@@ -85,10 +85,24 @@ class STLAI_Video_Ajax {
             wp_send_json_error( array( 'message' => 'Sessão expirada. Recarregue a página e tente novamente.', 'code' => 'UGC_BAD_NONCE' ), 403 );
         }
 
+        $image_url = self::public_image_url_from_request();
+        if ( empty( $image_url ) ) {
+            wp_send_json_error(
+                array(
+                    'message' => 'Selecione uma imagem publicada para gerar UGC.',
+                    'code'    => 'UGC_IMAGE_REQUIRES_PUBLIC_URL',
+                    'debug'   => wp_json_encode( self::image_request_debug(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ),
+                )
+            );
+        }
+
         $payload = array(
             'parent_job_id'        => $_POST['parent_job_id'] ?? '',
             'preset'               => $_POST['preset'] ?? '',
-            'image_url'            => $_POST['image_url'] ?? '',
+            'image_url'            => $image_url,
+            'reference_image_url'  => $_POST['reference_image_url'] ?? '',
+            'product_image_url'    => $_POST['product_image_url'] ?? '',
+            'selected_image_url'   => $_POST['selected_image_url'] ?? '',
             'selected_image_label' => $_POST['selected_image_label'] ?? '',
             'aspect_ratio'         => $_POST['aspect_ratio'] ?? '',
             'duration'             => $_POST['duration'] ?? '',
@@ -585,6 +599,36 @@ class STLAI_Video_Ajax {
     private static function verify_ugc_nonce() {
         $nonce = sanitize_text_field( wp_unslash( $_POST['nonce'] ?? '' ) );
         return (bool) wp_verify_nonce( $nonce, 'stlai_ugc_video' );
+    }
+
+    private static function public_image_url_from_request() {
+        foreach ( array( 'image_url', 'reference_image_url', 'product_image_url', 'selected_image_url', 'url' ) as $key ) {
+            $value = trim( (string) wp_unslash( $_POST[ $key ] ?? '' ) );
+            if ( '' === $value ) {
+                continue;
+            }
+            $url = esc_url_raw( $value );
+            if ( preg_match( '#^https?://#i', $url ) ) {
+                return $url;
+            }
+        }
+        return '';
+    }
+
+    private static function image_request_debug() {
+        $keys = array( 'image_url', 'reference_image_url', 'product_image_url', 'selected_image_url', 'url' );
+        $debug = array(
+            'received_image_fields' => array(),
+            'payload_keys'          => array_values( array_map( 'sanitize_key', array_keys( $_POST ) ) ),
+        );
+        foreach ( $keys as $key ) {
+            $value = trim( (string) wp_unslash( $_POST[ $key ] ?? '' ) );
+            $debug[ 'has_' . $key ] = '' !== $value;
+            if ( '' !== $value ) {
+                $debug['received_image_fields'][] = $key;
+            }
+        }
+        return $debug;
     }
 
     private static function client_ready_clips_from_request() {

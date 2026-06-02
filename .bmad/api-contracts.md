@@ -1819,6 +1819,9 @@ Entrada esperada:
   "job_id": "stlai_video_...",
   "preset": "ugc",
   "image_url": "https://.../image.png",
+  "reference_image_url": "https://.../image.png",
+  "product_image_url": "https://.../image.png",
+  "selected_image_url": "https://.../image.png",
   "aspect_ratio": "9:16",
   "duration": "9",
   "resolution": "720p",
@@ -1826,6 +1829,16 @@ Entrada esperada:
   "product_description": "Descricao do produto"
 }
 ```
+
+Campos de imagem aceitos:
+
+- `image_url`
+- `reference_image_url`
+- `product_image_url`
+- `selected_image_url`
+- `url`
+
+O backend escolhe a primeira URL pública `http/https` válida e repassa internamente como `image_url`.
 
 Resposta de sucesso:
 

@@ -1715,3 +1715,23 @@ Falha da primeira tentativa agora retorna `MUAPI_START_FAILED` com debug seguro.
 ### Status
 
 Decidido
+
+## 2026-06-02 - Modal UGC sempre envia URL pública normalizada
+
+### Decisao
+
+O frontend do modal UGC deve resolver a URL pública da imagem selecionada usando múltiplos campos possíveis e enviar `image_url` no AJAX, junto com aliases de compatibilidade.
+
+O backend aceita `image_url`, `reference_image_url`, `product_image_url`, `selected_image_url` e `url`, validando `http/https` antes do job service chamar qualquer provider.
+
+### Motivo
+
+Algumas imagens da galeria podem ter a URL real em campos diferentes de `url`. Quando o modal dependia apenas de `selected.url`, a MuAPI recebia payload sem `image_url`.
+
+### Impacto
+
+O debug MuAPI esperado passa a incluir `direct_image_url_used=true`, `upload_attempted=false` e `payload_keys` contendo `image_url`.
+
+### Status
+
+Decidido

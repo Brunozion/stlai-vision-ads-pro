@@ -2002,3 +2002,18 @@ Status:
 
 - Correção concluída em código.
 - Falta reteste real no WordPress com MuAPI.
+
+## 2026-06-02 - Correção envio de image_url no modal UGC
+
+O que foi feito:
+
+- Criado helper JS `getImagePublicUrl(image)` para resolver URL pública em múltiplos campos.
+- O modal UGC grava `selectedImageUrl`, `selectedImageIndex` e `selectedImageLabel` ao selecionar imagem.
+- O AJAX de start UGC envia `image_url`, `reference_image_url`, `product_image_url` e `selected_image_url`.
+- O endpoint `stlai_start_ugc_video` aceita aliases de imagem: `image_url`, `reference_image_url`, `product_image_url`, `selected_image_url` e `url`.
+- `STLAI_UGC_Job_Service` também aceita os mesmos aliases e exige URL pública `http/https` antes de chamar o provider.
+
+Status:
+
+- Correção concluída em código.
+- Falta reteste real no WordPress com MuAPI.

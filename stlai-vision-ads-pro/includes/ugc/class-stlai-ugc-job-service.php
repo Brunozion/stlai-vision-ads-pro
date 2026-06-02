@@ -246,9 +246,23 @@ class STLAI_UGC_Job_Service {
             return new WP_Error( 'UGC_INVALID_PRESET', 'Preset UGC inválido.' );
         }
 
-        $image_url = trim( (string) wp_unslash( $payload['image_url'] ?? '' ) );
-        if ( '' === $image_url || ( 0 !== strpos( $image_url, 'data:image/' ) && ! preg_match( '#^https?://#i', $image_url ) ) ) {
-            return new WP_Error( 'UGC_INVALID_IMAGE', 'Escolha uma imagem válida para UGC.' );
+        $image_url = self::public_image_url_from_payload( $payload );
+        if ( '' === $image_url ) {
+            return new WP_Error(
+                'UGC_IMAGE_REQUIRES_PUBLIC_URL',
+                'Selecione uma imagem publicada para gerar UGC.',
+                array(
+                    'debug' => wp_json_encode(
+                        array(
+                            'received_image_fields' => array_values( array_filter( array( 'image_url', 'reference_image_url', 'product_image_url', 'selected_image_url', 'url' ), function( $key ) use ( $payload ) {
+                                return '' !== trim( (string) ( $payload[ $key ] ?? '' ) );
+                            } ) ),
+                            'payload_keys' => array_values( array_map( 'sanitize_key', array_keys( $payload ) ) ),
+                        ),
+                        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                    ),
+                )
+            );
         }
 
         $settings = self::ugc_config_status();
@@ -264,6 +278,20 @@ class STLAI_UGC_Job_Service {
             'resolution'           => self::sanitize_resolution( $payload['resolution'] ?? $settings['defaultResolution'] ),
             'prompt_public'        => self::default_prompt_for_preset( $preset ),
         );
+    }
+
+    private static function public_image_url_from_payload( array $payload ) {
+        foreach ( array( 'image_url', 'reference_image_url', 'product_image_url', 'selected_image_url', 'url' ) as $key ) {
+            $value = trim( (string) wp_unslash( $payload[ $key ] ?? '' ) );
+            if ( '' === $value ) {
+                continue;
+            }
+            $url = esc_url_raw( $value );
+            if ( preg_match( '#^https?://#i', $url ) ) {
+                return $url;
+            }
+        }
+        return '';
     }
 
     private static function parent_job( $parent_job_id, array $validated ) {
