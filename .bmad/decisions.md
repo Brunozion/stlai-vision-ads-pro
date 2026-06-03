@@ -80,6 +80,26 @@ O painel admin passa a armazenar as credenciais e modelos futuros. Nenhuma chave
 
 Decidido
 
+## 2026-06-03 - Campo de imagem MuAPI depende do modelo
+
+### Decisao
+
+O provider MuAPI UGC deve escolher automaticamente entre `image_url` e `images_list` conforme o modelo configurado.
+
+Modelos `first-last-frame`, `first_last_frame`, `vip-first-last-frame` e `sd-2-vip-first-last-frame` usam `images_list`. Demais modelos continuam usando `image_url`.
+
+### Motivo
+
+O modelo `sd-2-vip-first-last-frame-1080p` retornou HTTP 422 informando que `images_list` é obrigatório. Enviar sempre `image_url` não cobre todos os contratos MuAPI.
+
+### Impacto
+
+O payload do modelo atual passa a conter `images_list: [url_publica]`. O provider faz uma única tentativa automática com o campo alternativo quando a MuAPI responder 422 pedindo `images_list` ou `image_url`, sem voltar a usar `upload_file`.
+
+### Status
+
+Decidido
+
 ## 2026-06-02 - Falha MuAPI deve expor debug seguro e acionável
 
 ### Decisao

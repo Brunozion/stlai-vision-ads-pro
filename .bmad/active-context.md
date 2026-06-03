@@ -2003,6 +2003,23 @@ Status:
 - Correção concluída em código.
 - Falta reteste real no WordPress com MuAPI.
 
+## 2026-06-03 - MuAPI UGC com images_list por modelo
+
+O que foi feito:
+
+- `STLAI_MuAPI_UGC_Provider` agora detecta modelos MuAPI que exigem lista de imagens, como `sd-2-vip-first-last-frame-1080p`.
+- Para modelos `first-last-frame`/`first_last_frame`/`vip-first-last-frame`, o payload usa `images_list: [image_url]`.
+- Para modelos comuns image-to-video, o payload continua usando `image_url`.
+- Se a MuAPI responder HTTP 422 pedindo `images_list`, o provider refaz uma única tentativa com `images_list`.
+- Se a MuAPI responder HTTP 422 pedindo `image_url`, o provider refaz uma única tentativa com `image_url`.
+- Debug seguro agora registra `muapi_image_field_used`, `images_list_count`, `retried_with_images_list` e `retried_with_image_url`.
+- Texto do campo MuAPI Model no admin explica que o plugin detecta automaticamente `image_url` vs `images_list`.
+
+Status:
+
+- Correção concluída em código.
+- Falta reteste real no WordPress com o modelo `sd-2-vip-first-last-frame-1080p`.
+
 ## 2026-06-02 - Debug real do start MuAPI UGC
 
 O que foi feito:

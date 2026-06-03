@@ -545,7 +545,7 @@ function stlai_config_ia_page() {
                 stlai_admin_notice_row( 'Configure um provider UGC para habilitar geração no Resultado. Nenhuma API key é enviada ao frontend.', 'notice-info', 'stlai-ugc-provider-row stlai-ugc-provider-none' );
 
                 stlai_admin_field_row( 'MuAPI API Key', 'stlai_render_password_field', array( 'id' => 'muApiKey' ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi' );
-                stlai_admin_field_row( 'MuAPI Model', 'stlai_render_text_field', array( 'id' => 'muApiModel', 'default' => 'seedance-2.0-image-to-video', 'description' => 'Modelo/endpoint MuAPI. Ex: sd-2-vip-first-last-frame-1080p. O plugin chamará automaticamente /api/v1/{modelo}.' ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi' );
+                stlai_admin_field_row( 'MuAPI Model', 'stlai_render_text_field', array( 'id' => 'muApiModel', 'default' => 'seedance-2.0-image-to-video', 'description' => 'Modelo/endpoint usado em /api/v1/{modelo}. Alguns modelos usam image_url, outros usam images_list. O plugin detecta automaticamente.' ), 'stlai-ugc-provider-row stlai-ugc-provider-muapi' );
 
                 stlai_admin_field_row( 'Atlas Cloud API Key', 'stlai_render_password_field', array( 'id' => 'ugcAtlasApiKey' ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );
                 stlai_admin_field_row( 'Atlas Cloud Base URL', 'stlai_render_text_field', array( 'id' => 'ugcAtlasBaseUrl', 'default' => 'https://api.atlascloud.ai' ), 'stlai-ugc-provider-row stlai-ugc-provider-atlas' );

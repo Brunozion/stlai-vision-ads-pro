@@ -3,7 +3,7 @@
 > Atualize ISTO no FIM de cada sessão. Leia ISTO no COMEÇO da próxima.
 > Objetivo: retomar sem reler o repo inteiro.
 
-**Última atualização:** 2026-06-02
+**Última atualização:** 2026-06-03
 
 ## Foco atual (uma frase)
 STLAI Vision Ads Pro está evoluindo o módulo UGC para multi-provider, mantendo o
@@ -45,6 +45,12 @@ fluxo comercial existente intacto.
   `resolution`) e retorna debug seguro com HTTP code, body excerpt, payload,
   image probe, URL/model/base normalizados e warning para modelos
   `first-last-frame`.
+- Corrigido payload MuAPI para modelos que exigem `images_list`: modelos
+  `first-last-frame`/`sd-2-vip-first-last-frame` enviam `images_list: [url]`,
+  enquanto modelos image-to-video comuns continuam usando `image_url`. Se a
+  MuAPI responder HTTP 422 pedindo o campo alternativo, o provider faz um único
+  retry automático e registra `retried_with_images_list`/`retried_with_image_url`
+  no debug.
 
 ## Fluxo de trabalho atual
 1. Pedir alteração ao Codex no VS Code.
