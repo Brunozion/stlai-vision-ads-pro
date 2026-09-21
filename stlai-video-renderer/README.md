@@ -2,7 +2,7 @@
 
 Microserviço externo de composição de vídeo para o plugin STLAI Vision Ads Pro.
 
-Ele recebe 4 clipes + áudio ElevenLabs, baixa os arquivos em `temp/`, compõe o MP4 final com FFmpeg e publica o resultado em `/renders`.
+Ele recebe 4 clipes e áudio opcional, baixa os arquivos em `temp/`, compõe o MP4 final com FFmpeg e publica o resultado em `/renders`. Aceita `9:16`, `16:9`, `1:1` e `1:2`; o modo Etsy usa `1:2`, remove áudio, limita a duração e aplica texto on-screen.
 
 ## Requisitos
 
@@ -60,6 +60,8 @@ Resposta esperada:
 ```json
 {
   "ok": true,
+  "version": "1.1.0",
+  "supported_formats": ["9:16", "16:9", "1:1", "1:2"],
   "ffmpeg": true,
   "quality": "preview",
   "xfade": false,
@@ -140,6 +142,20 @@ Resposta inicial:
 ```
 
 O `POST /render` é assíncrono: ele valida o payload, cria `render_job_id`, grava `temp/jobs/{render_job_id}.json` e responde rápido. O FFmpeg roda em background e o status deve ser acompanhado por `GET /render/:render_job_id`.
+
+Para o vídeo silencioso do Etsy, envie também:
+
+```json
+{
+  "format": "1:2",
+  "narration_enabled": false,
+  "min_duration": 3,
+  "max_duration": 15,
+  "on_screen_text": ["Nome do produto", "Produto físico pronto, feito para enviar"]
+}
+```
+
+A imagem Docker instala `fonts-dejavu-core`, usada pelo filtro `drawtext` do FFmpeg.
 
 Consultar status:
 
@@ -321,8 +337,8 @@ O container instala FFmpeg e FFprobe via `apt-get`, não copia `.env`, não copi
 
 - Em `RENDER_OUTPUT_QUALITY=preview`, a composição usa concatenação simples por padrão.
 - Em `FAST_COMPOSE=true`, o renderer concatena os clipes originais e aplica escala/corte, corte na duração da narração e áudio final em uma única passagem do FFmpeg. Se o concat direto falhar, faz fallback para normalização dos clipes e concatenação simples.
-- Em `preview`, `9:16` gera `720x1280` por padrão e `16:9` gera `1280x720`. Para Render Free, `406x720` continua sendo o fallback mais leve via env.
-- Em `RENDER_OUTPUT_QUALITY=full`, `9:16` gera `1080x1920` e `16:9` gera `1920x1080`.
+- Em `preview`, `9:16` gera `720x1280`, `16:9` gera `1280x720`, `1:1` gera `720x720` e `1:2` gera `720x1440`.
+- Em `RENDER_OUTPUT_QUALITY=full`, `9:16` gera `1080x1920`, `16:9` gera `1920x1080`, `1:1` gera `1080x1080` e `1:2` gera `1080x2160`.
 - `transition_used` é `"cut"` por padrão no MVP preview.
 - `xfade` fica desligado por padrão. Para ativar fade com segurança, use `RENDER_OUTPUT_QUALITY=full`, `FAST_COMPOSE=false`, `ENABLE_XFADE=true` e envie `enable_fade: true` no POST. Se o xfade falhar, o job continua com corte simples e retorna `fallback_used: "cut_without_fade"`.
 - O vídeo é escalado com `force_original_aspect_ratio=increase` e `crop`, evitando distorção.
