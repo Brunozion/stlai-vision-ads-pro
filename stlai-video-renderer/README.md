@@ -2,7 +2,19 @@
 
 Microserviço externo de composição de vídeo para o plugin STLAI Vision Ads Pro.
 
-Ele recebe 4 clipes e áudio opcional, baixa os arquivos em `temp/`, compõe o MP4 final com FFmpeg e publica o resultado em `/renders`. Aceita `9:16`, `16:9`, `1:1` e `1:2`; o modo Etsy usa `1:2`, remove áudio, limita a duração e aplica texto on-screen.
+Ele recebe 4 clipes ou 1 vídeo-base MiniMax e áudio opcional, baixa os arquivos em `temp/`, compõe o MP4 final com FFmpeg e publica o resultado em `/renders`. Aceita `9:16`, `16:9`, `1:1` e `1:2`; o modo Etsy usa `1:2`, remove áudio, limita a duração e aplica texto on-screen.
+
+## Vídeo-base MiniMax (1.4.0)
+
+O plugin gera uma fonte a partir das quatro referências no Fal. Envia ao renderer
+`video_generation_mode: "reference_video"` com exatamente um item em `clips`.
+Sem esse modo explícito, continuam obrigatórios quatro clipes.
+
+Com narração, a fonte é repetida na mesma cadeia de xfade (0,5s) até cobrir a
+duração real do áudio, que entra uma única vez. Sem narração, preserva-se a
+duração da fonte, respeitando os limites do marketplace. As transições entre as
+quatro cenas internas são geradas pelo modelo; o renderer suaviza as emendas
+das repetições. Publique esta versão antes de habilitar MiniMax no WordPress.
 
 ## Requisitos
 
@@ -26,8 +38,6 @@ RENDER_API_KEY=uma-chave-forte-aqui
 PUBLIC_BASE_URL=http://localhost:3000
 MAX_RENDER_SECONDS=300
 RENDER_OUTPUT_QUALITY=preview
-FAST_COMPOSE=true
-ENABLE_XFADE=false
 RENDER_PREVIEW_WIDTH_9_16=720
 RENDER_PREVIEW_HEIGHT_9_16=1280
 RENDER_PREVIEW_WIDTH_16_9=1280
@@ -60,12 +70,16 @@ Resposta esperada:
 ```json
 {
   "ok": true,
-  "version": "1.1.0",
+  "version": "1.4.0",
+  "reference_video": true,
+  "supported_source_clip_counts": [1, 4],
   "supported_formats": ["9:16", "16:9", "1:1", "1:2"],
   "ffmpeg": true,
   "quality": "preview",
-  "xfade": false,
-  "fast_compose": true,
+  "xfade": true,
+  "fade_duration": 0.5,
+  "fps": 24,
+  "fast_compose": false,
   "background_music": false,
   "background_music_volume": 0
 }
@@ -123,7 +137,7 @@ curl -X POST http://localhost:3000/render \
     ],
     "transition": "fade",
     "enable_fade": true,
-    "fade_duration": 0.4,
+    "fade_duration": 0.5,
     "repeat_clips_until_audio_ends": true,
     "trim_to_audio_duration": true,
     "remove_clip_audio": true
@@ -187,9 +201,9 @@ Quando pronto:
   "final_video_url": "http://localhost:3000/renders/stlai-final-render_xxx.mp4",
   "duration": 72,
   "render_time_seconds": 38.5,
-  "transition_used": "cut",
+  "transition_used": "xfade",
   "fallback_used": "",
-  "fast_compose": true,
+  "fast_compose": false,
   "message": "Vídeo final composto com sucesso."
 }
 ```
@@ -231,8 +245,6 @@ RENDER_API_KEY=uma-chave-longa-e-secreta
 PUBLIC_BASE_URL=https://video-render.seudominio.com
 MAX_RENDER_SECONDS=300
 RENDER_OUTPUT_QUALITY=preview
-FAST_COMPOSE=true
-ENABLE_XFADE=false
 RENDER_PREVIEW_WIDTH_9_16=720
 RENDER_PREVIEW_HEIGHT_9_16=1280
 RENDER_PREVIEW_WIDTH_16_9=1280
@@ -293,8 +305,6 @@ docker run --rm -p 3000:3000 \
   -e PUBLIC_BASE_URL=http://localhost:3000 \
   -e MAX_RENDER_SECONDS=300 \
   -e RENDER_OUTPUT_QUALITY=preview \
-  -e FAST_COMPOSE=true \
-  -e ENABLE_XFADE=false \
   -e RENDER_PREVIEW_WIDTH_9_16=720 \
   -e RENDER_PREVIEW_HEIGHT_9_16=1280 \
   -e RENDER_PREVIEW_WIDTH_16_9=1280 \
@@ -311,8 +321,6 @@ Variáveis necessárias no serviço online:
 - `PUBLIC_BASE_URL`: URL pública do serviço, por exemplo `https://video-render.seudominio.com`.
 - `MAX_RENDER_SECONDS`: tempo máximo de renderização antes de abortar, por exemplo `300`.
 - `RENDER_OUTPUT_QUALITY`: `preview` para Render Free ou `full` para renderização maior.
-- `FAST_COMPOSE`: `true` por padrão. Usa concatenação rápida em uma passagem de FFmpeg, recomendado para Render Free.
-- `ENABLE_XFADE`: `false` por padrão. Use `true` apenas em instância maior e com `FAST_COMPOSE=false`.
 - `RENDER_PREVIEW_WIDTH_9_16` / `RENDER_PREVIEW_HEIGHT_9_16`: resolução do preview vertical. Padrão `720x1280`. Em Render Free com pouca memória, use `540x960` ou `406x720`.
 - `RENDER_PREVIEW_WIDTH_16_9` / `RENDER_PREVIEW_HEIGHT_16_9`: resolução do preview horizontal. Padrão `1280x720`.
 - `ENABLE_BACKGROUND_MUSIC`: `false` por padrão. Quando `true`, o renderer tenta mixar uma música de fundo configurada.
@@ -331,17 +339,16 @@ O container instala FFmpeg e FFprobe via `apt-get`, não copia `.env`, não copi
 - A API key não é logada nem retornada.
 - Erros retornam mensagem, código e debug resumido, sem stack trace completo.
 - Jobs assíncronos são salvos em `temp/jobs/{render_job_id}.json`. Se o JSON não estiver disponível mas o arquivo final `renders/stlai-final-{render_job_id}.mp4` existir, `GET /render/:render_job_id` retorna `ready` com a URL final.
-- Os logs seguros mostram `render_job_id`, quantidade de clipes, presença de áudio, duração detectada, início/fim do FFmpeg, `render_time_seconds`, `final_video_url` e erro resumido. A API key não é logada.
+- Os logs seguros mostram `render_job_id`, quantidade de clipes, presença de áudio, duração detectada, comando FFmpeg completo, stderr da composição, `render_time_seconds`, `final_video_url` e erro resumido. A API key não é logada.
 
 ## Observações técnicas
 
-- Em `RENDER_OUTPUT_QUALITY=preview`, a composição usa concatenação simples por padrão.
-- Em `FAST_COMPOSE=true`, o renderer concatena os clipes originais e aplica escala/corte, corte na duração da narração e áudio final em uma única passagem do FFmpeg. Se o concat direto falhar, faz fallback para normalização dos clipes e concatenação simples.
+- Cada entrada é normalizada dentro do próprio `filter_complex`, antes do `xfade`, com resolução final, 24 fps, SAR 1, `yuv420p` e timebase `AVTB`.
+- A composição usa `xfade` de 0,5 segundo entre todos os clipes e também na emenda de cada repetição da sequência.
 - Em `preview`, `9:16` gera `720x1280`, `16:9` gera `1280x720`, `1:1` gera `720x720` e `1:2` gera `720x1440`.
 - Em `RENDER_OUTPUT_QUALITY=full`, `9:16` gera `1080x1920`, `16:9` gera `1920x1080`, `1:1` gera `1080x1080` e `1:2` gera `1080x2160`.
-- `transition_used` é `"cut"` por padrão no MVP preview.
-- `xfade` fica desligado por padrão. Para ativar fade com segurança, use `RENDER_OUTPUT_QUALITY=full`, `FAST_COMPOSE=false`, `ENABLE_XFADE=true` e envie `enable_fade: true` no POST. Se o xfade falhar, o job continua com corte simples e retorna `fallback_used: "cut_without_fade"`.
-- O vídeo é escalado com `force_original_aspect_ratio=increase` e `crop`, evitando distorção.
+- `transition_used` é sempre `"xfade"`; falha no grafo encerra o job em vez de entregar um vídeo com cortes secos.
+- `9:16` e `16:9` usam `crop`; `1:1` e `1:2` usam `contain` com padding preto para preservar todo o produto sem distorção.
 - O áudio nativo dos clipes é ignorado; a narração ElevenLabs é sempre a faixa principal, em AAC 128k no preview.
 - Música de fundo é opcional e só entra se `ENABLE_BACKGROUND_MUSIC=true` e `BACKGROUND_MUSIC_URL` estiver configurada. Se o download ou mixagem falhar, o renderer não derruba o job: compõe com voz pura e retorna `fallback_used: "music_unavailable_voice_only"`.
 - Se o WordPress ficar muito tempo em `composition_queued`, `composition_processing` ou `composition_waiting`, verifique os logs do renderer pelo `render_job_id` e consulte `GET /render/:render_job_id`. O plugin deve manter polling em soft timeout e só transformar em erro no hard timeout ou em erro explícito do renderer, preservando áudio e clipes.
@@ -352,8 +359,6 @@ Para reduzir risco de timeout e memória no Render Free:
 
 ```env
 RENDER_OUTPUT_QUALITY=preview
-FAST_COMPOSE=true
-ENABLE_XFADE=false
 RENDER_PREVIEW_WIDTH_9_16=406
 RENDER_PREVIEW_HEIGHT_9_16=720
 RENDER_PREVIEW_WIDTH_16_9=1280
@@ -363,6 +368,6 @@ BACKGROUND_MUSIC_URL=
 BACKGROUND_MUSIC_VOLUME=0.06
 ```
 
-Esse modo prioriza estabilidade: transição em corte simples, H.264 baseline no preview, `preset ultrafast`, `crf 28`, 30fps e áudio AAC 128k. O fade/xfade fica para instâncias maiores ou produção.
+Esse modo usa resolução reduzida, H.264 baseline, `preset ultrafast`, `crf 28`, 24 fps, crossfade de 0,5 segundo e áudio AAC 128k.
 
 // teste Sun May 31 04:09:28 -03 2026

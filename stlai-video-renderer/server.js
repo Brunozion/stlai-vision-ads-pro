@@ -16,8 +16,6 @@ const RENDER_API_KEY = String(process.env.RENDER_API_KEY || "");
 const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
 const MAX_RENDER_SECONDS = Math.max(30, Number(process.env.MAX_RENDER_SECONDS || 300));
 const RENDER_OUTPUT_QUALITY = String(process.env.RENDER_OUTPUT_QUALITY || "preview").toLowerCase() === "full" ? "full" : "preview";
-const ENABLE_XFADE = String(process.env.ENABLE_XFADE || "false").toLowerCase() === "true";
-const FAST_COMPOSE = String(process.env.FAST_COMPOSE || "true").toLowerCase() !== "false";
 const ENABLE_BACKGROUND_MUSIC = String(process.env.ENABLE_BACKGROUND_MUSIC || "false").toLowerCase() === "true";
 const BACKGROUND_MUSIC_URL = String(process.env.BACKGROUND_MUSIC_URL || "").trim();
 const BACKGROUND_MUSIC_VOLUME = Math.min(0.2, Math.max(0, Number(process.env.BACKGROUND_MUSIC_VOLUME || 0.06)));
@@ -25,7 +23,8 @@ const PREVIEW_9_16_WIDTH = Math.max(240, Number(process.env.RENDER_PREVIEW_WIDTH
 const PREVIEW_9_16_HEIGHT = Math.max(426, Number(process.env.RENDER_PREVIEW_HEIGHT_9_16 || 1280));
 const PREVIEW_16_9_WIDTH = Math.max(640, Number(process.env.RENDER_PREVIEW_WIDTH_16_9 || 1280));
 const PREVIEW_16_9_HEIGHT = Math.max(360, Number(process.env.RENDER_PREVIEW_HEIGHT_16_9 || 720));
-const EFFECTIVE_XFADE = ENABLE_XFADE && RENDER_OUTPUT_QUALITY === "full" && !FAST_COMPOSE;
+const VIDEO_FPS = 24;
+const XFADE_DURATION = 0.5;
 const FFMPEG_BIN = process.env.FFMPEG_PATH || "ffmpeg";
 const FFPROBE_BIN = process.env.FFPROBE_PATH || "ffprobe";
 
@@ -33,7 +32,7 @@ const ROOT_DIR = __dirname;
 const TEMP_DIR = path.join(ROOT_DIR, "temp");
 const JOBS_DIR = path.join(TEMP_DIR, "jobs");
 const RENDERS_DIR = path.join(ROOT_DIR, "renders");
-const RENDERER_VERSION = "1.1.0";
+const RENDERER_VERSION = "1.4.0";
 const SUPPORTED_FORMATS = ["9:16", "16:9", "1:1", "1:2"];
 
 app.disable("x-powered-by");
@@ -123,8 +122,9 @@ function validateRenderBody(body) {
   }
   const backgroundMusicUrl = body.background_music_url ? validateUrl(body.background_music_url, "background_music_url") : "";
   const clips = Array.isArray(body.clips) ? body.clips : [];
-  if (clips.length !== 4) {
-    throw publicError("INVALID_CLIPS", "Envie exatamente 4 clipes para composição.", `clips=${clips.length}`);
+  const referenceVideo = body.video_generation_mode === "reference_video";
+  if (clips.length !== (referenceVideo ? 1 : 4)) {
+    throw publicError("INVALID_CLIPS", referenceVideo ? "Envie um vídeo-base para composição." : "Envie exatamente 4 clipes para composição.", `clips=${clips.length}`);
   }
 
   const normalizedClips = clips
@@ -158,11 +158,11 @@ function validateRenderBody(body) {
     minDuration: clampNumber(body.min_duration, 0, 60, 0),
     maxDuration: clampNumber(body.max_duration, 0, 60, 0),
     transition: String(body.transition || "fade"),
-    fadeDuration: clampNumber(body.fade_duration, 0.1, 2, 0.4),
+    fadeDuration: XFADE_DURATION,
     repeatClipsUntilAudioEnds: narrationEnabled && body.repeat_clips_until_audio_ends !== false,
     trimToAudioDuration: narrationEnabled && body.trim_to_audio_duration !== false,
     removeClipAudio: body.remove_clip_audio !== false,
-    enableFade: ( Boolean(body.enable_fade) || String(body.transition || "").toLowerCase() === "fade" ) && EFFECTIVE_XFADE
+    enableFade: true
   };
 }
 
@@ -186,7 +186,7 @@ function targetSettings(format) {
     return {
       width: full ? 1080 : 720,
       height: full ? 1080 : 720,
-      fps: 30,
+      fps: VIDEO_FPS,
       preset: full ? "veryfast" : "ultrafast",
       crf: full ? "22" : "28",
       fit: "contain"
@@ -196,7 +196,7 @@ function targetSettings(format) {
     return {
       width: full ? 1080 : 720,
       height: full ? 2160 : 1440,
-      fps: 30,
+      fps: VIDEO_FPS,
       preset: full ? "veryfast" : "ultrafast",
       crf: full ? "22" : "28",
       fit: "contain"
@@ -206,7 +206,7 @@ function targetSettings(format) {
     return {
       width: full ? 1080 : PREVIEW_9_16_WIDTH,
       height: full ? 1920 : PREVIEW_9_16_HEIGHT,
-      fps: 30,
+      fps: VIDEO_FPS,
       preset: full ? "veryfast" : "ultrafast",
       crf: full ? "22" : "28"
     };
@@ -215,7 +215,7 @@ function targetSettings(format) {
   return {
     width: full ? 1920 : PREVIEW_16_9_WIDTH,
     height: full ? 1080 : PREVIEW_16_9_HEIGHT,
-    fps: 30,
+    fps: VIDEO_FPS,
     preset: full ? "veryfast" : "ultrafast",
     crf: full ? "22" : "28"
   };
@@ -297,6 +297,10 @@ async function downloadFile(url, outputPath) {
 
 function runProcess(command, args, options = {}) {
   return new Promise((resolve, reject) => {
+    const logLabel = String(options.logLabel || "renderer");
+    if (options.logCommand) {
+      console.log(`[${logLabel}] ffmpeg_command - ${formatProcessCommand(command, args)}`);
+    }
     const child = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
@@ -315,7 +319,11 @@ function runProcess(command, args, options = {}) {
     });
 
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      if (options.logStderr) {
+        console.error(`[${logLabel}] ffmpeg_stderr - ${text.replace(/\s+$/, "")}`);
+      }
+      stderr += text;
       stderr = stderr.slice(-5000);
     });
 
@@ -334,6 +342,14 @@ function runProcess(command, args, options = {}) {
       reject(publicError("COMPOSER_RENDER_ERROR", "Não foi possível compor o vídeo final.", `${command} exit=${code}; ${stderr}`));
     });
   });
+}
+
+function formatProcessCommand(command, args) {
+  const quote = (value) => {
+    const text = String(value);
+    return /^[A-Za-z0-9_./:=+,-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`;
+  };
+  return [command, ...args].map(quote).join(" ");
 }
 
 async function probeDuration(filePath) {
@@ -395,6 +411,13 @@ function normalizeFilter(settings) {
   return `scale=${settings.width}:${settings.height}:force_original_aspect_ratio=increase,crop=${settings.width}:${settings.height},setsar=1,fps=${settings.fps},format=yuv420p`;
 }
 
+function xfadeNormalizeFilter(settings) {
+  const sizing = settings.fit === "contain"
+    ? `scale=${settings.width}:${settings.height}:force_original_aspect_ratio=decrease,pad=${settings.width}:${settings.height}:(ow-iw)/2:(oh-ih)/2:color=black`
+    : `scale=${settings.width}:${settings.height}:force_original_aspect_ratio=increase,crop=${settings.width}:${settings.height}`;
+  return `fps=${settings.fps},${sizing},setsar=1,format=yuv420p,settb=AVTB`;
+}
+
 function escapeFilterPath(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
@@ -429,6 +452,7 @@ async function applyListingRules({ inputPath, outputPath, workDir, format, maxDu
 
 function videoEncoderArgs(settings) {
   const args = [
+    "-r", String(settings.fps),
     "-c:v", "libx264",
     "-preset", settings.preset,
     "-crf", settings.crf,
@@ -452,6 +476,7 @@ async function normalizeClip(inputPath, outputPath, format) {
     "-c:v", "libx264",
     "-preset", settings.preset,
     "-crf", settings.crf,
+    "-r", String(settings.fps),
     "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
     outputPath
@@ -622,62 +647,76 @@ function appendFallback(existing, next) {
   return `${existing}_${next}`;
 }
 
-function buildXfadeFilter(sequence, fadeDuration) {
+function buildXfadeFilter(sequence, fadeDuration, settings = targetSettings("1:1")) {
+  const normalize = xfadeNormalizeFilter(settings);
   const filters = sequence.map((clip, idx) => {
     const duration = formatSeconds(clip.duration);
-    return `[${idx}:v]trim=duration=${duration},setpts=PTS-STARTPTS[v${idx}]`;
+    return `[${idx}:v]${normalize},trim=duration=${duration},setpts=PTS-STARTPTS[v${idx}]`;
   });
 
   if (sequence.length === 1) {
-    filters.push("[v0]copy[vout]");
+    filters.push("[v0]null[vout]");
     return filters.join(";");
   }
 
   let previous = "v0";
-  let offset = sequence[0].duration - fadeDuration;
+  let accumulatedDuration = sequence[0].duration;
   for (let idx = 1; idx < sequence.length; idx += 1) {
+    const offset = accumulatedDuration - fadeDuration;
     const output = idx === sequence.length - 1 ? "vout" : `x${idx}`;
     filters.push(`[${previous}][v${idx}]xfade=transition=fade:duration=${formatSeconds(fadeDuration)}:offset=${formatSeconds(offset)}[${output}]`);
     previous = output;
-    offset += sequence[idx].duration - fadeDuration;
+    accumulatedDuration = offset + sequence[idx].duration;
   }
 
   return filters.join(";");
 }
 
-async function composeXfade({ audioPath, normalizedClips, outputPath, audioDuration, fadeDuration, format }) {
+async function composeXfade({ audioPath = "", sourceClips, outputPath, audioDuration = 0, fadeDuration, format, renderJobId = "renderer" }) {
   const clipDurations = [];
-  for (const clipPath of normalizedClips) {
+  for (const clipPath of sourceClips) {
     clipDurations.push(await probeDuration(clipPath));
   }
 
-  const baseClips = normalizedClips.map((clipPath, idx) => ({
+  const baseClips = sourceClips.map((clipPath, idx) => ({
     path: clipPath,
     duration: clipDurations[idx]
   }));
 
-  const sequence = buildSequence(baseClips, audioDuration, fadeDuration);
+  const hasAudio = Boolean(audioPath && audioDuration > 0);
+  const sequence = hasAudio ? buildSequence(baseClips, audioDuration, fadeDuration) : baseClips;
   const audioIndex = sequence.length;
-  const filter = buildXfadeFilter(sequence, fadeDuration);
   const settings = targetSettings(format);
+  const filter = buildXfadeFilter(sequence, fadeDuration, settings);
   const args = ["-y"];
 
   sequence.forEach((clip) => {
     args.push("-i", clip.path);
   });
-  args.push("-i", audioPath);
+  if (hasAudio) args.push("-i", audioPath);
   args.push("-filter_complex", filter);
   args.push("-map", "[vout]");
-  args.push("-map", `${audioIndex}:a:0`);
-  args.push("-t", formatSeconds(audioDuration));
+  if (hasAudio) {
+    args.push("-map", `${audioIndex}:a:0`);
+    args.push("-t", formatSeconds(audioDuration));
+  }
   args.push(...videoEncoderArgs(settings));
-  args.push("-c:a", "aac");
-  args.push("-b:a", "128k");
+  if (hasAudio) {
+    args.push("-c:a", "aac");
+    args.push("-b:a", "128k");
+    args.push("-shortest");
+  } else {
+    args.push("-an");
+  }
   args.push("-movflags", "+faststart");
-  args.push("-shortest");
   args.push(outputPath);
 
-  await runProcess(FFMPEG_BIN, args, { timeoutSeconds: MAX_RENDER_SECONDS });
+  await runProcess(FFMPEG_BIN, args, {
+    timeoutSeconds: MAX_RENDER_SECONDS,
+    logCommand: true,
+    logStderr: true,
+    logLabel: renderJobId
+  });
   return { repeatedClips: sequence.length, fallbackUsed: false };
 }
 
@@ -698,14 +737,14 @@ async function processRenderJob(renderJobId, payload) {
   const renderStartedAt = Date.now();
   try {
     const settings = targetSettings(payload.format);
-    logJob(renderJobId, "processing", `quality=${RENDER_OUTPUT_QUALITY}; fast=${FAST_COMPOSE}; xfade=${payload.enableFade}; ${settings.width}x${settings.height}`);
+    logJob(renderJobId, "processing", `quality=${RENDER_OUTPUT_QUALITY}; xfade=true; fade=${payload.fadeDuration}s; fps=${settings.fps}; ${settings.width}x${settings.height}`);
     await writeJob(renderJobId, {
       status: "processing",
       progress: 10,
       message: "Baixando arquivos de mídia...",
 	      quality: RENDER_OUTPUT_QUALITY,
 	      xfade: payload.enableFade,
-	      fast_compose: FAST_COMPOSE,
+	      fast_compose: false,
 	      background_music_enabled: Boolean(payload.backgroundMusicUrl) || (ENABLE_BACKGROUND_MUSIC && Boolean(BACKGROUND_MUSIC_URL)),
 	      target_width: settings.width,
       target_height: settings.height
@@ -721,7 +760,6 @@ async function processRenderJob(renderJobId, payload) {
     let backgroundMusicUsed = false;
     const hasNarration = Boolean(payload.narrationEnabled && payload.audioUrl);
     const sourceClipPaths = payload.clips.map((clip) => path.join(workDir, `source-clip-${clip.index}.mp4`));
-    const normalizedClipPaths = payload.clips.map((clip) => path.join(workDir, `normalized-clip-${clip.index}.mp4`));
 
     const downloads = payload.clips.map((clip, idx) => downloadFile(clip.url, sourceClipPaths[idx]));
     if (hasNarration) downloads.unshift(downloadFile(payload.audioUrl, audioPath));
@@ -770,123 +808,30 @@ async function processRenderJob(renderJobId, payload) {
       status: "processing",
       progress: 40,
       duration: Number(audioDuration.toFixed(3)),
-      message: FAST_COMPOSE ? "Preparando composição rápida..." : "Normalizando clipes para composição leve..."
+      message: "Preparando clipes para transições suaves..."
     });
-
-    if (!FAST_COMPOSE || payload.enableFade) {
-      for (let idx = 0; idx < sourceClipPaths.length; idx += 1) {
-        await normalizeClip(sourceClipPaths[idx], normalizedClipPaths[idx], payload.format);
-        await writeJob(renderJobId, {
-          status: "processing",
-          progress: 40 + ((idx + 1) * 8),
-          message: `Normalizando clipe ${idx + 1} de 4...`
-        });
-      }
-    }
 
     const outputName = `stlai-final-${renderJobId}.mp4`;
     const outputPath = path.join(RENDERS_DIR, outputName);
     let debug = null;
-    let transitionUsed = "cut";
+    let transitionUsed = "xfade";
 
     await writeJob(renderJobId, {
       status: "processing",
       progress: 78,
-      message: FAST_COMPOSE ? "Compondo vídeo final em modo rápido..." : "Compondo vídeo final..."
+      message: "Compondo vídeo final com transições suaves..."
     });
-    logJob(renderJobId, "ffmpeg_command_started", `mode=${FAST_COMPOSE ? "fast_concat" : (payload.enableFade ? "xfade" : "concat")}; target=${settings.width}x${settings.height}; audio_duration=${hasNarration ? formatSeconds(audioDuration) : "none"}s`);
+    logJob(renderJobId, "ffmpeg_command_started", `mode=xfade; fade=${payload.fadeDuration}s; fps=${settings.fps}; target=${settings.width}x${settings.height}; audio_duration=${hasNarration ? formatSeconds(audioDuration) : "none"}s`);
 
-    if (!hasNarration && FAST_COMPOSE) {
-      try {
-        debug = await composeSilentFastConcat({
-          sourceClips: sourceClipPaths,
-          outputPath,
-          workDir,
-          format: payload.format
-        });
-        transitionUsed = "cut";
-      } catch (err) {
-        fallbackUsed = appendFallback(fallbackUsed, "silent_normalized_cut");
-        logJob(renderJobId, "silent_fast_compose_fallback", err.publicDebug || err.message);
-        for (let idx = 0; idx < sourceClipPaths.length; idx += 1) {
-          await normalizeClip(sourceClipPaths[idx], normalizedClipPaths[idx], payload.format);
-        }
-        debug = await composeSilentConcat({
-          normalizedClips: normalizedClipPaths,
-          outputPath,
-          workDir
-        });
-        transitionUsed = "cut";
-      }
-    } else if (!hasNarration) {
-      debug = await composeSilentConcat({
-        normalizedClips: normalizedClipPaths,
-        outputPath,
-        workDir
-      });
-      transitionUsed = "cut";
-    } else if (FAST_COMPOSE) {
-      try {
-        debug = await composeFastConcat({
-          audioPath: audioForRenderPath,
-          sourceClips: sourceClipPaths,
-          outputPath,
-          audioDuration,
-          workDir,
-          format: payload.format
-        });
-        transitionUsed = "cut";
-      } catch (err) {
-        fallbackUsed = appendFallback(fallbackUsed, "normalized_cut");
-        logJob(renderJobId, "fast_compose_fallback", err.publicDebug || err.message);
-        for (let idx = 0; idx < sourceClipPaths.length; idx += 1) {
-          await normalizeClip(sourceClipPaths[idx], normalizedClipPaths[idx], payload.format);
-        }
-        debug = await composeConcat({
-          audioPath: audioForRenderPath,
-          normalizedClips: normalizedClipPaths,
-          outputPath,
-          audioDuration,
-          workDir,
-          format: payload.format
-        });
-        transitionUsed = "cut";
-      }
-    } else if (payload.enableFade) {
-      try {
-        debug = await composeXfade({
-          audioPath: audioForRenderPath,
-          normalizedClips: normalizedClipPaths,
-          outputPath,
-          audioDuration,
-          fadeDuration: payload.fadeDuration,
-          format: payload.format
-        });
-        transitionUsed = "xfade";
-      } catch (err) {
-        fallbackUsed = appendFallback(fallbackUsed, "cut_without_fade");
-        logJob(renderJobId, "xfade_fallback", err.publicDebug || err.message);
-        debug = await composeConcat({
-          audioPath: audioForRenderPath,
-          normalizedClips: normalizedClipPaths,
-          outputPath,
-          audioDuration,
-          workDir,
-          format: payload.format
-        });
-        transitionUsed = "cut";
-      }
-    } else {
-      debug = await composeConcat({
-        audioPath: audioForRenderPath,
-        normalizedClips: normalizedClipPaths,
-        outputPath,
-        audioDuration,
-        workDir,
-        format: payload.format
-      });
-      transitionUsed = "cut";
-    }
+    debug = await composeXfade({
+      audioPath: hasNarration ? audioForRenderPath : "",
+      sourceClips: sourceClipPaths,
+      outputPath,
+      audioDuration,
+      fadeDuration: payload.fadeDuration,
+      format: payload.format,
+      renderJobId
+    });
 
     if (!hasNarration && (payload.maxDuration > 0 || payload.onScreenText.length)) {
       const constrainedPath = path.join(workDir, "listing-rules.mp4");
@@ -927,9 +872,9 @@ async function processRenderJob(renderJobId, payload) {
       fallback_used: fallbackUsed,
       background_music_used: backgroundMusicUsed,
       background_music_volume: backgroundMusicUsed ? backgroundMusicVolume : 0,
-      fast_compose: FAST_COMPOSE,
+      fast_compose: false,
       message: "Vídeo final composto com sucesso.",
-      debug: `clips=${debug.repeatedClips}; quality=${RENDER_OUTPUT_QUALITY}; fast=${FAST_COMPOSE}; xfade=${payload.enableFade}; transition=${transitionUsed}; fallback=${fallbackUsed || "none"}; music=${backgroundMusicUsed}; render_time=${renderTimeSeconds}s`
+      debug: `clips=${debug.repeatedClips}; quality=${RENDER_OUTPUT_QUALITY}; fps=${settings.fps}; fade=${payload.fadeDuration}s; transition=${transitionUsed}; fallback=${fallbackUsed || "none"}; music=${backgroundMusicUsed}; render_time=${renderTimeSeconds}s`
     });
   } catch (err) {
     if (workDir) {
@@ -948,7 +893,7 @@ async function processRenderJob(renderJobId, payload) {
 	    fallback_used: "",
 	    background_music_used: false,
 	    background_music_volume: 0,
-	    fast_compose: FAST_COMPOSE,
+	    fast_compose: false,
       debug: safeDebug(err.publicDebug || err.message)
     });
   }
@@ -959,10 +904,14 @@ app.get("/health", async (req, res) => {
     ok: true,
     version: RENDERER_VERSION,
     supported_formats: SUPPORTED_FORMATS,
+    reference_video: true,
+    supported_source_clip_counts: [1, 4],
     ffmpeg: await ffmpegAvailable(),
 	    quality: RENDER_OUTPUT_QUALITY,
-	    xfade: EFFECTIVE_XFADE,
-	    fast_compose: FAST_COMPOSE,
+	    xfade: true,
+	    fade_duration: XFADE_DURATION,
+	    fps: VIDEO_FPS,
+	    fast_compose: false,
 	    background_music: ENABLE_BACKGROUND_MUSIC && Boolean(BACKGROUND_MUSIC_URL),
 	    background_music_volume: ENABLE_BACKGROUND_MUSIC && BACKGROUND_MUSIC_URL ? BACKGROUND_MUSIC_VOLUME : 0
   });
@@ -978,7 +927,7 @@ app.post("/render", requireAuth, async (req, res) => {
     logJob(
       "renderer",
       "post_render_received",
-      `render_job_id=${renderJobId}; source_job_id=${payload.sourceJobId}; clips_count=${payload.clips.length}; audio_url_received=${Boolean(payload.audioUrl)}; format=${payload.format}; fast=${FAST_COMPOSE}; quality=${RENDER_OUTPUT_QUALITY}; xfade=${payload.enableFade}`
+      `render_job_id=${renderJobId}; source_job_id=${payload.sourceJobId}; clips_count=${payload.clips.length}; audio_url_received=${Boolean(payload.audioUrl)}; format=${payload.format}; fps=${settings.fps}; fade=${payload.fadeDuration}s; quality=${RENDER_OUTPUT_QUALITY}; xfade=true`
     );
 
     await writeJob(renderJobId, {
@@ -990,7 +939,7 @@ app.post("/render", requireAuth, async (req, res) => {
       format: payload.format,
       quality: RENDER_OUTPUT_QUALITY,
       xfade: payload.enableFade,
-      fast_compose: FAST_COMPOSE,
+      fast_compose: false,
       target_width: settings.width,
       target_height: settings.height
     });
@@ -1085,14 +1034,28 @@ app.use((err, req, res, next) => {
   return jsonError(res, 400, "BAD_REQUEST", "Request inválido.", err && err.message ? err.message : "Erro inesperado.");
 });
 
-ensureDirs()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`STLAI video renderer listening on port ${PORT}`);
-      console.log(`Renderer quality=${RENDER_OUTPUT_QUALITY}; xfade=${EFFECTIVE_XFADE}`);
+if (require.main === module) {
+  ensureDirs()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`STLAI video renderer listening on port ${PORT}`);
+        console.log(`Renderer quality=${RENDER_OUTPUT_QUALITY}; xfade=true; fade=${XFADE_DURATION}s; fps=${VIDEO_FPS}`);
+      });
+    })
+    .catch((err) => {
+      console.error("Failed to initialize renderer:", safeDebug(err.message));
+      process.exit(1);
     });
-  })
-  .catch((err) => {
-    console.error("Failed to initialize renderer:", safeDebug(err.message));
-    process.exit(1);
-  });
+}
+
+module.exports = {
+  validateRenderBody,
+  VIDEO_FPS,
+  XFADE_DURATION,
+  buildSequence,
+  buildXfadeFilter,
+  composeXfade,
+  normalizeClip,
+  probeDuration,
+  targetSettings
+};
