@@ -40,7 +40,7 @@ const ROOT_DIR = __dirname;
 const TEMP_DIR = path.join(ROOT_DIR, "temp");
 const JOBS_DIR = path.join(TEMP_DIR, "jobs");
 const RENDERS_DIR = path.join(ROOT_DIR, "renders");
-const RENDERER_VERSION = "1.4.1";
+const RENDERER_VERSION = "1.4.2";
 const SUPPORTED_FORMATS = ["9:16", "16:9", "1:1", "1:2"];
 
 function envDimension(name, fallback, minimum) {
@@ -151,6 +151,9 @@ function validateRenderBody(body) {
     throw publicError("INVALID_PAYLOAD", "audio_url é obrigatório quando a narração está ativada.", "audio_url vazio com narration_enabled=true.");
   }
   const backgroundMusicUrl = body.background_music_url ? validateUrl(body.background_music_url, "background_music_url") : "";
+  const backgroundMusicEnabled = Object.prototype.hasOwnProperty.call(body, "background_music_enabled")
+    ? body.background_music_enabled !== false && String(body.background_music_enabled) !== "0"
+    : Boolean(backgroundMusicUrl || (ENABLE_BACKGROUND_MUSIC && BACKGROUND_MUSIC_URL));
   const clips = Array.isArray(body.clips) ? body.clips : [];
   const referenceVideo = body.video_generation_mode === "reference_video";
   if (clips.length !== (referenceVideo ? 1 : 4)) {
@@ -171,10 +174,13 @@ function validateRenderBody(body) {
     })
     .sort((a, b) => a.index - b.index);
   const marketplace = String(body.marketplace || "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
-  const onScreenText = (marketplace === "etsy" ? [] : (Array.isArray(body.on_screen_text) ? body.on_screen_text : []))
+  const onScreenText = (Array.isArray(body.on_screen_text) ? body.on_screen_text : [])
     .map((text) => String(text || "").replace(/\s+/g, " ").trim().slice(0, 120))
     .filter(Boolean)
     .slice(0, 24);
+  const onScreenTextPosition = ["top", "center", "bottom"].includes(String(body.on_screen_text_position || ""))
+    ? String(body.on_screen_text_position)
+    : "bottom";
 
   return {
     sourceJobId: String(body.job_id || `stlai_video_${crypto.randomUUID()}`).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120),
@@ -183,10 +189,12 @@ function validateRenderBody(body) {
     narrationEnabled,
     audioUrl,
     audioVolume: clampNumber(body.audio_volume, 0.1, 2, 1),
+    backgroundMusicEnabled,
     backgroundMusicUrl,
     backgroundMusicVolume: clampNumber(body.background_music_volume, 0, 0.4, BACKGROUND_MUSIC_VOLUME),
     clips: normalizedClips,
     onScreenText,
+    onScreenTextPosition,
     minDuration: clampNumber(body.min_duration, 0, 60, 0),
     maxDuration: clampNumber(body.max_duration, 0, 60, 0),
     transition: String(body.transition || "fade"),
@@ -454,7 +462,7 @@ function escapeFilterPath(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
 
-async function applyListingRules({ inputPath, outputPath, workDir, format, maxDuration, onScreenText }) {
+async function applyListingRules({ inputPath, outputPath, workDir, format, maxDuration, onScreenText, onScreenTextPosition, preserveAudio }) {
   const settings = targetSettings(format);
   const filters = [];
   const captions = Array.isArray(onScreenText) ? onScreenText.filter(Boolean) : [];
@@ -467,7 +475,10 @@ async function applyListingRules({ inputPath, outputPath, workDir, format, maxDu
     const end = formatSeconds(Math.min(duration, (index + 1) * segment));
     const fontSize = Math.max(24, Math.round(settings.width * 0.03));
     const border = Math.max(10, Math.round(settings.width * 0.018));
-    filters.push(`drawtext=fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf':textfile='${escapeFilterPath(textPath)}':expansion=none:fontcolor=white:fontsize=${fontSize}:box=1:boxcolor=black@0.72:boxborderw=${border}:x=(w-text_w)/2:y=h-(text_h*2.5):fix_bounds=1:enable='between(t,${start},${end})'`);
+    const y = onScreenTextPosition === "top"
+      ? "h*0.10"
+      : (onScreenTextPosition === "center" ? "(h-text_h)/2" : "h-(text_h*2.5)");
+    filters.push(`drawtext=fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf':textfile='${escapeFilterPath(textPath)}':expansion=none:fontcolor=white:fontsize=${fontSize}:box=1:boxcolor=black@0.72:boxborderw=${border}:x=(w-text_w)/2:y=${y}:fix_bounds=1:enable='between(t,${start},${end})'`);
   }
   if (!filters.length) filters.push("format=yuv420p");
   const args = [
@@ -475,10 +486,17 @@ async function applyListingRules({ inputPath, outputPath, workDir, format, maxDu
     "-t", formatSeconds(duration),
     "-map", "0:v:0",
     "-vf", filters.join(","),
-    ...videoEncoderArgs(settings),
-    "-an", "-movflags", "+faststart",
-    outputPath
+    ...videoEncoderArgs(settings)
   ];
+  if (preserveAudio) {
+    args.push("-map", "0:a:0?", "-c:a", "copy");
+  } else {
+    args.push("-an");
+  }
+  args.push(
+    "-movflags", "+faststart",
+    outputPath
+  );
   await runProcess(FFMPEG_BIN, args, { timeoutSeconds: MAX_RENDER_SECONDS });
 }
 
@@ -672,6 +690,26 @@ async function mixBackgroundMusic({ voicePath, musicPath, outputPath, audioDurat
   }
 }
 
+async function addBackgroundMusicToVideo({ videoPath, musicPath, outputPath, musicVolume }) {
+  const safeMusicVolume = Math.min(0.4, Math.max(0, Number(musicVolume || 0.06)));
+  const args = [
+    "-y",
+    "-i", videoPath,
+    "-stream_loop", "-1",
+    "-i", musicPath,
+    "-filter_complex", `[1:a]volume=${safeMusicVolume},alimiter=limit=0.95[aout]`,
+    "-map", "0:v:0",
+    "-map", "[aout]",
+    "-c:v", "copy",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    "-shortest",
+    "-movflags", "+faststart",
+    outputPath
+  ];
+  await runProcess(FFMPEG_BIN, args, { timeoutSeconds: Math.min(MAX_RENDER_SECONDS, 120) });
+}
+
 function appendFallback(existing, next) {
   if (!next) return existing || "";
   if (!existing) return next;
@@ -777,7 +815,7 @@ async function processRenderJob(renderJobId, payload) {
 	      quality: RENDER_OUTPUT_QUALITY,
 	      xfade: payload.enableFade,
 	      fast_compose: false,
-	      background_music_enabled: Boolean(payload.backgroundMusicUrl) || (ENABLE_BACKGROUND_MUSIC && Boolean(BACKGROUND_MUSIC_URL)),
+	      background_music_enabled: payload.backgroundMusicEnabled,
 	      target_width: settings.width,
       target_height: settings.height
     });
@@ -788,13 +826,19 @@ async function processRenderJob(renderJobId, payload) {
     const audioPath = path.join(workDir, "audio.mp3");
     const musicPath = path.join(workDir, "background-music.mp3");
     const mixedAudioPath = path.join(workDir, "mixed-audio.m4a");
+    const musicVideoPath = path.join(workDir, "video-with-background-music.mp4");
     let audioForRenderPath = audioPath;
     let backgroundMusicUsed = false;
     const hasNarration = Boolean(payload.narrationEnabled && payload.audioUrl);
+    const backgroundMusicUrl = payload.backgroundMusicEnabled
+      ? (payload.backgroundMusicUrl || (ENABLE_BACKGROUND_MUSIC ? BACKGROUND_MUSIC_URL : ""))
+      : "";
+    const hasBackgroundMusic = Boolean(backgroundMusicUrl);
     const sourceClipPaths = payload.clips.map((clip) => path.join(workDir, `source-clip-${clip.index}.mp4`));
 
     const downloads = payload.clips.map((clip, idx) => downloadFile(clip.url, sourceClipPaths[idx]));
     if (hasNarration) downloads.unshift(downloadFile(payload.audioUrl, audioPath));
+    if (hasBackgroundMusic) downloads.unshift(downloadFile(backgroundMusicUrl, musicPath));
     await Promise.all(downloads);
 
     await writeJob(renderJobId, {
@@ -803,29 +847,29 @@ async function processRenderJob(renderJobId, payload) {
       message: hasNarration ? "Detectando duração da narração..." : "Preparando composição sem narração..."
     });
 
-    const audioDuration = hasNarration ? await probeDuration(audioPath) : 0;
-    logJob(renderJobId, hasNarration ? "audio_duration" : "silent_mode", hasNarration ? `${formatSeconds(audioDuration)}s` : "narration disabled");
+    const narrationDuration = hasNarration ? await probeDuration(audioPath) : 0;
+    let outputAudioDuration = narrationDuration;
+    logJob(renderJobId, hasNarration ? "audio_duration" : "silent_mode", hasNarration ? `${formatSeconds(narrationDuration)}s` : "narration disabled");
     let fallbackUsed = "";
 
-    const backgroundMusicUrl = payload.backgroundMusicUrl || (ENABLE_BACKGROUND_MUSIC ? BACKGROUND_MUSIC_URL : "");
     const backgroundMusicVolume = payload.backgroundMusicUrl ? payload.backgroundMusicVolume : BACKGROUND_MUSIC_VOLUME;
-    if (hasNarration && backgroundMusicUrl) {
+    if (hasNarration && hasBackgroundMusic) {
       try {
         await writeJob(renderJobId, {
           status: "processing",
           progress: 34,
           message: "Preparando música de fundo em volume baixo..."
         });
-        await downloadFile(backgroundMusicUrl, musicPath);
         await mixBackgroundMusic({
           voicePath: audioPath,
           musicPath,
           outputPath: mixedAudioPath,
-          audioDuration,
+          audioDuration: narrationDuration,
           musicVolume: backgroundMusicVolume,
           voiceVolume: payload.audioVolume
         });
         audioForRenderPath = mixedAudioPath;
+        outputAudioDuration = narrationDuration;
         backgroundMusicUsed = true;
         logJob(renderJobId, "background_music", `enabled music_volume=${backgroundMusicVolume}; voice_volume=${payload.audioVolume}`);
       } catch (err) {
@@ -834,12 +878,16 @@ async function processRenderJob(renderJobId, payload) {
         backgroundMusicUsed = false;
         logJob(renderJobId, "background_music_fallback", err.publicDebug || err.message);
       }
+    } else if (hasBackgroundMusic) {
+      backgroundMusicUsed = true;
+      logJob(renderJobId, "background_music", `music_only=true; music_volume=${backgroundMusicVolume}`);
     }
+    const hasOutputAudio = Boolean(hasNarration || backgroundMusicUsed);
 
     await writeJob(renderJobId, {
       status: "processing",
       progress: 40,
-      duration: Number(audioDuration.toFixed(3)),
+      duration: Number(outputAudioDuration.toFixed(3)),
       message: "Preparando clipes para transições suaves..."
     });
 
@@ -853,17 +901,29 @@ async function processRenderJob(renderJobId, payload) {
       progress: 78,
       message: "Compondo vídeo final com transições suaves..."
     });
-    logJob(renderJobId, "ffmpeg_command_started", `mode=xfade; fade=${payload.fadeDuration}s; fps=${settings.fps}; target=${settings.width}x${settings.height}; audio_duration=${hasNarration ? formatSeconds(audioDuration) : "none"}s`);
+    logJob(renderJobId, "ffmpeg_command_started", `mode=xfade; fade=${payload.fadeDuration}s; fps=${settings.fps}; target=${settings.width}x${settings.height}; audio_duration=${hasOutputAudio ? formatSeconds(outputAudioDuration) : "none"}s`);
 
     debug = await composeXfade({
       audioPath: hasNarration ? audioForRenderPath : "",
       sourceClips: sourceClipPaths,
       outputPath,
-      audioDuration,
+      audioDuration: hasNarration ? outputAudioDuration : 0,
       fadeDuration: payload.fadeDuration,
       format: payload.format,
       renderJobId
     });
+
+    if (!hasNarration && backgroundMusicUsed) {
+      await addBackgroundMusicToVideo({
+        videoPath: outputPath,
+        musicPath,
+        outputPath: musicVideoPath,
+        musicVolume: backgroundMusicVolume
+      });
+      await fsp.unlink(outputPath);
+      await fsp.rename(musicVideoPath, outputPath);
+      logJob(renderJobId, "background_music_applied", "music looped over the complete visual composition");
+    }
 
     if (!hasNarration && (payload.maxDuration > 0 || payload.onScreenText.length)) {
       const constrainedPath = path.join(workDir, "listing-rules.mp4");
@@ -873,11 +933,13 @@ async function processRenderJob(renderJobId, payload) {
         workDir,
         format: payload.format,
         maxDuration: payload.maxDuration,
-        onScreenText: payload.onScreenText
+        onScreenText: payload.onScreenText,
+        onScreenTextPosition: payload.onScreenTextPosition,
+        preserveAudio: hasOutputAudio
       });
       await fsp.unlink(outputPath);
       await fsp.rename(constrainedPath, outputPath);
-      logJob(renderJobId, "listing_rules_applied", `max_duration=${payload.maxDuration || "none"}; captions=${payload.onScreenText.length}; audio=removed`);
+      logJob(renderJobId, "listing_rules_applied", `max_duration=${payload.maxDuration || "none"}; captions=${payload.onScreenText.length}; text_position=${payload.onScreenTextPosition}; audio=${hasOutputAudio ? "preserved" : "removed"}`);
     }
 
     await assertOutput(outputPath);
@@ -885,7 +947,7 @@ async function processRenderJob(renderJobId, payload) {
     logJob(renderJobId, "ffmpeg_completed", `output=${path.basename(outputPath)}`);
     await removeDirSafe(workDir);
 
-    const finalDuration = !hasNarration ? await probeDuration(outputPath) : audioDuration;
+    const finalDuration = await probeDuration(outputPath);
     const renderTimeSeconds = Number(((Date.now() - renderStartedAt) / 1000).toFixed(3));
     const finalVideoUrl = `${PUBLIC_BASE_URL}/renders/${outputName}`;
     logJob(renderJobId, "ready", `duration=${formatSeconds(finalDuration)}s; render_time=${renderTimeSeconds}s; transition=${transitionUsed}; fallback=${fallbackUsed || "none"}; url=${finalVideoUrl}`);
@@ -942,6 +1004,9 @@ app.get("/health", async (req, res) => {
     version: RENDERER_VERSION,
     supported_formats: SUPPORTED_FORMATS,
     reference_video: true,
+    source_audio_stripping: true,
+    background_music_toggle: true,
+    on_screen_text_positions: ["top", "center", "bottom"],
     supported_source_clip_counts: [1, 4],
     ffmpeg: await ffmpegAvailable(),
 	    quality: RENDER_OUTPUT_QUALITY,
@@ -1093,6 +1158,7 @@ module.exports = {
   buildSequence,
   buildXfadeFilter,
   composeXfade,
+  addBackgroundMusicToVideo,
   normalizeClip,
   probeDuration,
   targetSettings

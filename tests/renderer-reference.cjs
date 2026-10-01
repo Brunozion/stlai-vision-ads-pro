@@ -3,13 +3,17 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const {execFileSync}=require('node:child_process');
-const {validateRenderBody,buildSequence,buildXfadeFilter,composeXfade,probeDuration,targetSettings}=require('../stlai-video-renderer/server');
+const {validateRenderBody,buildSequence,buildXfadeFilter,composeXfade,addBackgroundMusicToVideo,probeDuration,targetSettings}=require('../stlai-video-renderer/server');
 const base={format:'1:1',narration_enabled:false,clips:[{index:1,url:'https://example.test/base.mp4'}],video_generation_mode:'reference_video'};
 assert.equal(validateRenderBody(base).clips.length,1);
 assert.throws(()=>validateRenderBody({...base,video_generation_mode:'clips'}));
 assert.throws(()=>validateRenderBody({...base,clips:[...base.clips,...base.clips]}));
 assert.equal(validateRenderBody({...base,video_generation_mode:'clips',clips:Array.from({length:4},(_,i)=>({index:i+1,url:`https://example.test/${i}.mp4`}))}).clips.length,4);
-assert.deepEqual(validateRenderBody({...base,marketplace:'etsy',on_screen_text:['Legacy caption']}).onScreenText,[],'renderer strips captions defensively for Etsy');
+const positioned=validateRenderBody({...base,marketplace:'etsy',on_screen_text:['Optional caption'],on_screen_text_position:'center',background_music_enabled:false,background_music_url:'https://example.test/music.mp3'});
+assert.deepEqual(positioned.onScreenText,['Optional caption'],'renderer accepts optional Etsy text');
+assert.equal(positioned.onScreenTextPosition,'center');
+assert.equal(positioned.backgroundMusicEnabled,false,'explicit music off wins over configured URL');
+assert.equal(validateRenderBody({...base,on_screen_text_position:'invalid'}).onScreenTextPosition,'bottom');
 const repeated=buildSequence([{path:'base.mp4',duration:10}],26,.5);
 assert.equal(repeated.length,3);
 const filter=buildXfadeFilter(repeated,.5,targetSettings('1:1'));
@@ -31,7 +35,7 @@ if(!process.argv.includes('--render')){ console.log('Renderer reference-video co
 (async()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'stlai-reference-render-'));
   const clip=path.join(dir,'base.mp4'),audio=path.join(dir,'narration.wav');
-  execFileSync('ffmpeg',['-v','error','-y','-f','lavfi','-i','testsrc2=s=270x480:r=24:d=15','-c:v','libx264','-pix_fmt','yuv420p',clip]);
+  execFileSync('ffmpeg',['-v','error','-y','-f','lavfi','-i','testsrc2=s=270x480:r=24:d=15','-f','lavfi','-i','sine=frequency=220:sample_rate=44100:duration=15','-shortest','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac',clip]);
   execFileSync('ffmpeg',['-v','error','-y','-f','lavfi','-i','sine=frequency=440:sample_rate=44100:duration=23',audio]);
   for(const hasAudio of [false,true]){
     const output=path.join(dir,hasAudio?'loop.mp4':'silent.mp4');
@@ -46,5 +50,10 @@ if(!process.argv.includes('--render')){ console.log('Renderer reference-video co
     else assert.equal(video.width*16,video.height*9);
     assert.equal(probe.streams.filter(s=>s.codec_type==='audio').length,hasAudio?1:0);
   }
-  console.log('FFmpeg single-source native duration and narrated crossfade loop OK:',dir);
+  const silent=path.join(dir,'silent.mp4'),musicVideo=path.join(dir,'music-only.mp4');
+  await addBackgroundMusicToVideo({videoPath:silent,musicPath:audio,outputPath:musicVideo,musicVolume:.06});
+  const musicProbe=JSON.parse(execFileSync('ffprobe',['-v','error','-show_streams','-show_format','-of','json',musicVideo],{encoding:'utf8'}));
+  assert(Math.abs(Number(musicProbe.format.duration)-15)<.15,'music-only output preserves the complete video duration');
+  assert.equal(musicProbe.streams.filter(s=>s.codec_type==='audio').length,1,'music-only output has one soundtrack');
+  console.log('FFmpeg single-source, narration and optional music contracts OK:',dir);
 })().catch(e=>{console.error(e);process.exitCode=1;});
