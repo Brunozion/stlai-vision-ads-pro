@@ -1,6 +1,6 @@
 {
   "name": "stlai-video-renderer",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "External FFmpeg video composition service for STLAI Vision Ads Pro.",
   "main": "server.js",
   "scripts": {

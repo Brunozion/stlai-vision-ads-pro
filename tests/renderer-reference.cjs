@@ -3,7 +3,7 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const {execFileSync}=require('node:child_process');
-const {validateRenderBody,buildSequence,buildXfadeFilter,composeXfade,addBackgroundMusicToVideo,probeDuration,targetSettings}=require('../stlai-video-renderer/server');
+const {validateRenderBody,buildSequence,buildXfadeFilter,composeXfade,addBackgroundMusicToVideo,probeDuration,targetSettings,wrapCaptionText,applyListingRules}=require('../stlai-video-renderer/server');
 const base={format:'1:1',narration_enabled:false,clips:[{index:1,url:'https://example.test/base.mp4'}],video_generation_mode:'reference_video'};
 assert.equal(validateRenderBody(base).clips.length,1);
 assert.throws(()=>validateRenderBody({...base,video_generation_mode:'clips'}));
@@ -14,6 +14,9 @@ assert.deepEqual(positioned.onScreenText,['Optional caption'],'renderer accepts 
 assert.equal(positioned.onScreenTextPosition,'center');
 assert.equal(positioned.backgroundMusicEnabled,false,'explicit music off wins over configured URL');
 assert.equal(validateRenderBody({...base,on_screen_text_position:'invalid'}).onScreenTextPosition,'bottom');
+const wrappedCaption=wrapCaptionText('Uma escultura contemporânea da Sagrada Família feita para decorar diferentes ambientes',28);
+assert(wrappedCaption.includes('\n'),'long captions wrap instead of overflowing horizontally');
+assert(wrappedCaption.split('\n').every(line=>line.length<=28),'caption lines respect the calculated safe width');
 const repeated=buildSequence([{path:'base.mp4',duration:10}],26,.5);
 assert.equal(repeated.length,3);
 const filter=buildXfadeFilter(repeated,.5,targetSettings('1:1'));
@@ -51,9 +54,27 @@ if(!process.argv.includes('--render')){ console.log('Renderer reference-video co
     assert.equal(probe.streams.filter(s=>s.codec_type==='audio').length,hasAudio?1:0);
   }
   const silent=path.join(dir,'silent.mp4'),musicVideo=path.join(dir,'music-only.mp4');
+  const hasDrawtext=/\bdrawtext\b/.test(execFileSync('ffmpeg',['-hide_banner','-filters'],{encoding:'utf8'}));
+  if(hasDrawtext){
+    const captioned=path.join(dir,'captioned.mp4');
+    await applyListingRules({
+      inputPath:silent,
+      outputPath:captioned,
+      workDir:dir,
+      format:'9:16',
+      maxDuration:15,
+      onScreenText:['Uma escultura contemporânea da Sagrada Família feita para decorar diferentes ambientes sem cortar palavras nas laterais'],
+      onScreenTextPosition:'top',
+      preserveAudio:false
+    });
+    const captionProbe=JSON.parse(execFileSync('ffprobe',['-v','error','-show_streams','-show_format','-of','json',captioned],{encoding:'utf8'}));
+    const captionVideo=captionProbe.streams.find(s=>s.codec_type==='video');
+    assert.equal(captionVideo.width*16,captionVideo.height*9,'caption render preserves exact 9:16');
+    assert.equal(captionProbe.streams.filter(s=>s.codec_type==='audio').length,0,'caption render remains silent');
+  }
   await addBackgroundMusicToVideo({videoPath:silent,musicPath:audio,outputPath:musicVideo,musicVolume:.06});
   const musicProbe=JSON.parse(execFileSync('ffprobe',['-v','error','-show_streams','-show_format','-of','json',musicVideo],{encoding:'utf8'}));
   assert(Math.abs(Number(musicProbe.format.duration)-15)<.15,'music-only output preserves the complete video duration');
   assert.equal(musicProbe.streams.filter(s=>s.codec_type==='audio').length,1,'music-only output has one soundtrack');
-  console.log('FFmpeg single-source, narration and optional music contracts OK:',dir);
+  console.log(`FFmpeg single-source, caption wrapping${hasDrawtext?' rendered':' validated without local drawtext'}, narration and optional music contracts OK:`,dir);
 })().catch(e=>{console.error(e);process.exitCode=1;});

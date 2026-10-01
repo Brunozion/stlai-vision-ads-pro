@@ -4,12 +4,14 @@ Microserviço externo de composição de vídeo para o plugin STLAI Vision Ads P
 
 Ele recebe 4 clipes ou 1 vídeo MiniMax e áudio opcional, baixa os arquivos em `temp/`, compõe o MP4 final com FFmpeg e publica o resultado em `/renders`. Aceita `9:16`, `16:9`, `1:1` e `1:2`; o modo Etsy usa `9:16` nativo, remove áudio, mantém a entrega única de 15 segundos e aplica texto somente quando solicitado.
 
-## Vídeo MiniMax (1.4.2)
+## Vídeo MiniMax (1.4.3)
 
 - `background_music_enabled` controla explicitamente a trilha e prevalece sobre
   a configuração global do serviço.
 - Vídeos sem trilha e sem narração descartam qualquer áudio nativo do clipe.
 - `on_screen_text_position` aceita `top`, `center` ou `bottom`.
+- Cada mensagem aceita até 120 caracteres e é quebrada automaticamente em
+  múltiplas linhas dentro da área segura do vídeo.
 
 O plugin gera uma fonte a partir das quatro referências no Fal. Envia ao renderer
 `video_generation_mode: "reference_video"` com exatamente um item em `clips`.
@@ -79,7 +81,7 @@ Resposta esperada:
 ```json
 {
   "ok": true,
-  "version": "1.4.2",
+  "version": "1.4.3",
   "reference_video": true,
   "source_audio_stripping": true,
   "background_music_toggle": true,

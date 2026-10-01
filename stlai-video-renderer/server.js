@@ -40,7 +40,7 @@ const ROOT_DIR = __dirname;
 const TEMP_DIR = path.join(ROOT_DIR, "temp");
 const JOBS_DIR = path.join(TEMP_DIR, "jobs");
 const RENDERS_DIR = path.join(ROOT_DIR, "renders");
-const RENDERER_VERSION = "1.4.2";
+const RENDERER_VERSION = "1.4.3";
 const SUPPORTED_FORMATS = ["9:16", "16:9", "1:1", "1:2"];
 
 function envDimension(name, fallback, minimum) {
@@ -462,6 +462,33 @@ function escapeFilterPath(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
 
+function wrapCaptionText(value, maxCharsPerLine) {
+  const width = Math.max(12, Number(maxCharsPerLine) || 32);
+  const words = String(value || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const lines = [];
+  let line = "";
+  for (const originalWord of words) {
+    const chunks = [];
+    let word = originalWord;
+    while (word.length > width) {
+      chunks.push(word.slice(0, width));
+      word = word.slice(width);
+    }
+    if (word) chunks.push(word);
+    for (const chunk of chunks) {
+      const candidate = line ? `${line} ${chunk}` : chunk;
+      if (candidate.length <= width) {
+        line = candidate;
+      } else {
+        if (line) lines.push(line);
+        line = chunk;
+      }
+    }
+  }
+  if (line) lines.push(line);
+  return lines.join("\n");
+}
+
 async function applyListingRules({ inputPath, outputPath, workDir, format, maxDuration, onScreenText, onScreenTextPosition, preserveAudio }) {
   const settings = targetSettings(format);
   const filters = [];
@@ -470,15 +497,16 @@ async function applyListingRules({ inputPath, outputPath, workDir, format, maxDu
   const segment = captions.length ? duration / captions.length : duration;
   for (let index = 0; index < captions.length; index += 1) {
     const textPath = path.join(workDir, `caption-${index + 1}.txt`);
-    await fsp.writeFile(textPath, captions[index], "utf8");
     const start = formatSeconds(index * segment);
     const end = formatSeconds(Math.min(duration, (index + 1) * segment));
     const fontSize = Math.max(24, Math.round(settings.width * 0.03));
     const border = Math.max(10, Math.round(settings.width * 0.018));
+    const charsPerLine = Math.max(18, Math.floor((settings.width - (border * 4)) / (fontSize * 0.62)));
+    await fsp.writeFile(textPath, wrapCaptionText(captions[index], charsPerLine), "utf8");
     const y = onScreenTextPosition === "top"
-      ? "h*0.10"
-      : (onScreenTextPosition === "center" ? "(h-text_h)/2" : "h-(text_h*2.5)");
-    filters.push(`drawtext=fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf':textfile='${escapeFilterPath(textPath)}':expansion=none:fontcolor=white:fontsize=${fontSize}:box=1:boxcolor=black@0.72:boxborderw=${border}:x=(w-text_w)/2:y=${y}:fix_bounds=1:enable='between(t,${start},${end})'`);
+      ? "h*0.08"
+      : (onScreenTextPosition === "center" ? "(h-text_h)/2" : "h-text_h-h*0.08");
+    filters.push(`drawtext=fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf':textfile='${escapeFilterPath(textPath)}':expansion=none:fontcolor=white:fontsize=${fontSize}:line_spacing=${Math.max(4, Math.round(fontSize * 0.2))}:box=1:boxcolor=black@0.72:boxborderw=${border}:x=(w-text_w)/2:y=${y}:fix_bounds=1:enable='between(t,${start},${end})'`);
   }
   if (!filters.length) filters.push("format=yuv420p");
   const args = [
@@ -1161,5 +1189,7 @@ module.exports = {
   addBackgroundMusicToVideo,
   normalizeClip,
   probeDuration,
-  targetSettings
+  targetSettings,
+  wrapCaptionText,
+  applyListingRules
 };
