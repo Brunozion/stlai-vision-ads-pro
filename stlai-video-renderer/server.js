@@ -19,10 +19,18 @@ const RENDER_OUTPUT_QUALITY = String(process.env.RENDER_OUTPUT_QUALITY || "previ
 const ENABLE_BACKGROUND_MUSIC = String(process.env.ENABLE_BACKGROUND_MUSIC || "false").toLowerCase() === "true";
 const BACKGROUND_MUSIC_URL = String(process.env.BACKGROUND_MUSIC_URL || "").trim();
 const BACKGROUND_MUSIC_VOLUME = Math.min(0.2, Math.max(0, Number(process.env.BACKGROUND_MUSIC_VOLUME || 0.06)));
-const PREVIEW_9_16_WIDTH = Math.max(240, Number(process.env.RENDER_PREVIEW_WIDTH_9_16 || 720));
-const PREVIEW_9_16_HEIGHT = Math.max(426, Number(process.env.RENDER_PREVIEW_HEIGHT_9_16 || 1280));
+const PREVIEW_9_16_WIDTH = envDimension("RENDER_PREVIEW_WIDTH_9_16", 720, 240);
+const PREVIEW_9_16_HEIGHT = envDimension("RENDER_PREVIEW_HEIGHT_9_16", 1280, 426);
 const PREVIEW_16_9_WIDTH = Math.max(640, Number(process.env.RENDER_PREVIEW_WIDTH_16_9 || 1280));
 const PREVIEW_16_9_HEIGHT = Math.max(360, Number(process.env.RENDER_PREVIEW_HEIGHT_16_9 || 720));
+const ETSY_MIN_RESOLUTION = 500;
+const PREVIEW_9_16 = normalizedAspectDimensions(
+  PREVIEW_9_16_WIDTH,
+  PREVIEW_9_16_HEIGHT,
+  9,
+  16,
+  ETSY_MIN_RESOLUTION
+);
 const VIDEO_FPS = 24;
 const XFADE_DURATION = 0.5;
 const FFMPEG_BIN = process.env.FFMPEG_PATH || "ffmpeg";
@@ -32,8 +40,30 @@ const ROOT_DIR = __dirname;
 const TEMP_DIR = path.join(ROOT_DIR, "temp");
 const JOBS_DIR = path.join(TEMP_DIR, "jobs");
 const RENDERS_DIR = path.join(ROOT_DIR, "renders");
-const RENDERER_VERSION = "1.4.0";
+const RENDERER_VERSION = "1.4.1";
 const SUPPORTED_FORMATS = ["9:16", "16:9", "1:1", "1:2"];
+
+function envDimension(name, fallback, minimum) {
+  const parsed = Number(process.env[name]);
+  return Math.max(minimum, Number.isFinite(parsed) && parsed > 0 ? parsed : fallback);
+}
+
+function normalizedAspectDimensions(width, height, ratioWidth, ratioHeight, minimumSide = 0) {
+  let scale = Math.ceil(Math.max(
+    width / ratioWidth,
+    height / ratioHeight,
+    minimumSide / Math.min(ratioWidth, ratioHeight)
+  ));
+
+  // H.264 yuv420p requires even dimensions. With 9:16, an even scale
+  // preserves the exact aspect ratio and keeps both dimensions even.
+  if (scale % 2 !== 0) scale += 1;
+
+  return {
+    width: ratioWidth * scale,
+    height: ratioHeight * scale
+  };
+}
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
@@ -124,7 +154,7 @@ function validateRenderBody(body) {
   const clips = Array.isArray(body.clips) ? body.clips : [];
   const referenceVideo = body.video_generation_mode === "reference_video";
   if (clips.length !== (referenceVideo ? 1 : 4)) {
-    throw publicError("INVALID_CLIPS", referenceVideo ? "Envie um vídeo-base para composição." : "Envie exatamente 4 clipes para composição.", `clips=${clips.length}`);
+    throw publicError("INVALID_CLIPS", referenceVideo ? "Envie o vídeo para composição." : "Envie exatamente 4 clipes para composição.", `clips=${clips.length}`);
   }
 
   const normalizedClips = clips
@@ -140,13 +170,15 @@ function validateRenderBody(body) {
       };
     })
     .sort((a, b) => a.index - b.index);
-  const onScreenText = (Array.isArray(body.on_screen_text) ? body.on_screen_text : [])
+  const marketplace = String(body.marketplace || "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  const onScreenText = (marketplace === "etsy" ? [] : (Array.isArray(body.on_screen_text) ? body.on_screen_text : []))
     .map((text) => String(text || "").replace(/\s+/g, " ").trim().slice(0, 120))
     .filter(Boolean)
     .slice(0, 24);
 
   return {
     sourceJobId: String(body.job_id || `stlai_video_${crypto.randomUUID()}`).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120),
+    marketplace,
     format,
     narrationEnabled,
     audioUrl,
@@ -204,8 +236,8 @@ function targetSettings(format) {
   }
   if (format === "9:16") {
     return {
-      width: full ? 1080 : PREVIEW_9_16_WIDTH,
-      height: full ? 1920 : PREVIEW_9_16_HEIGHT,
+      width: full ? 1080 : PREVIEW_9_16.width,
+      height: full ? 1920 : PREVIEW_9_16.height,
       fps: VIDEO_FPS,
       preset: full ? "veryfast" : "ultrafast",
       crf: full ? "22" : "28"
@@ -900,6 +932,11 @@ async function processRenderJob(renderJobId, payload) {
 }
 
 app.get("/health", async (req, res) => {
+  const outputDimensions = Object.fromEntries(SUPPORTED_FORMATS.map((format) => {
+    const settings = targetSettings(format);
+    return [format, { width: settings.width, height: settings.height }];
+  }));
+
   res.json({
     ok: true,
     version: RENDERER_VERSION,
@@ -911,6 +948,7 @@ app.get("/health", async (req, res) => {
 	    xfade: true,
 	    fade_duration: XFADE_DURATION,
 	    fps: VIDEO_FPS,
+	    output_dimensions: outputDimensions,
 	    fast_compose: false,
 	    background_music: ENABLE_BACKGROUND_MUSIC && Boolean(BACKGROUND_MUSIC_URL),
 	    background_music_volume: ENABLE_BACKGROUND_MUSIC && BACKGROUND_MUSIC_URL ? BACKGROUND_MUSIC_VOLUME : 0

@@ -2,9 +2,9 @@
 
 Microserviço externo de composição de vídeo para o plugin STLAI Vision Ads Pro.
 
-Ele recebe 4 clipes ou 1 vídeo-base MiniMax e áudio opcional, baixa os arquivos em `temp/`, compõe o MP4 final com FFmpeg e publica o resultado em `/renders`. Aceita `9:16`, `16:9`, `1:1` e `1:2`; o modo Etsy usa `1:2`, remove áudio, limita a duração e aplica texto on-screen.
+Ele recebe 4 clipes ou 1 vídeo MiniMax e áudio opcional, baixa os arquivos em `temp/`, compõe o MP4 final com FFmpeg e publica o resultado em `/renders`. Aceita `9:16`, `16:9`, `1:1` e `1:2`; o modo Etsy usa `9:16` nativo, remove áudio, mantém a entrega única de 15 segundos e não grava legendas no vídeo.
 
-## Vídeo-base MiniMax (1.4.0)
+## Vídeo MiniMax (1.4.1)
 
 O plugin gera uma fonte a partir das quatro referências no Fal. Envia ao renderer
 `video_generation_mode: "reference_video"` com exatamente um item em `clips`.
@@ -15,6 +15,10 @@ duração real do áudio, que entra uma única vez. Sem narração, preserva-se 
 duração da fonte, respeitando os limites do marketplace. As transições entre as
 quatro cenas internas são geradas pelo modelo; o renderer suaviza as emendas
 das repetições. Publique esta versão antes de habilitar MiniMax no WordPress.
+
+No formato Etsy `9:16`, a saída preview nunca fica abaixo de `504x896`, mesmo
+que as variáveis do Render solicitem `480px`. Isso preserva o aspecto vertical
+exato, atende o mínimo de 500px e evita barras pretas.
 
 ## Requisitos
 
@@ -70,7 +74,7 @@ Resposta esperada:
 ```json
 {
   "ok": true,
-  "version": "1.4.0",
+  "version": "1.4.1",
   "reference_video": true,
   "supported_source_clip_counts": [1, 4],
   "supported_formats": ["9:16", "16:9", "1:1", "1:2"],
@@ -79,6 +83,7 @@ Resposta esperada:
   "xfade": true,
   "fade_duration": 0.5,
   "fps": 24,
+  "output_dimensions": {"9:16": {"width": 720, "height": 1280}},
   "fast_compose": false,
   "background_music": false,
   "background_music_volume": 0
